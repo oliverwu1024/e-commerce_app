@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { PrismaClient, Condition, ListingStatus, OrderStatus } from '../src/generated/prisma/client.js';
+import { PrismaClient, Condition, ListingStatus, OrderStatus, PaymentMethod } from '../src/generated/prisma/client.js';
 import { PrismaPg } from '@prisma/adapter-pg';
 import 'dotenv/config';
 
@@ -251,8 +251,11 @@ function placeholderImageUrl(title: string): string {
 
 async function main() {
   console.log('Clearing existing data...');
+  await prisma.message.deleteMany();
   await prisma.review.deleteMany();
   await prisma.order.deleteMany();
+  await prisma.cartItem.deleteMany();
+  await prisma.cart.deleteMany();
   await prisma.savedListing.deleteMany();
   await prisma.listingImage.deleteMany();
   await prisma.listing.deleteMany();
@@ -363,13 +366,19 @@ async function main() {
       data: { status: ListingStatus.SOLD },
     });
 
+    const paymentMethod = faker.helpers.arrayElement([
+      PaymentMethod.ONLINE,
+      PaymentMethod.IN_PERSON,
+    ]);
+
     const order = await prisma.order.create({
       data: {
         listingId: listing.id,
         buyerId: buyer.id,
         sellerId: listing.sellerId,
         amount: listing.price,
-        status: OrderStatus.PAID,
+        status: OrderStatus.COMPLETED,
+        paymentMethod,
         createdAt: randomDate(30),
       },
     });
