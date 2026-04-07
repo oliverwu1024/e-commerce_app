@@ -22,7 +22,7 @@ app.get('/api/health', async (_req, res) => {
     await prisma.$queryRaw`SELECT 1`;
     res.json({ status: 'ok', database: 'connected' });
   } catch {
-    res.status(500).json({ status: 'ok', database: 'disconnected' });
+    res.status(500).json({ status: 'error', database: 'disconnected' });
   }
 });
 

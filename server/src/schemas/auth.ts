@@ -11,7 +11,12 @@ export const registerSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100),
   location: z.string().optional(),
   bio: z.string().max(500).optional(),
-});
+  sellerType: z.enum(['PERSONAL', 'BUSINESS']).optional().default('PERSONAL'),
+  businessName: z.string().max(200).optional(),
+}).refine(
+  (data) => data.sellerType !== 'BUSINESS' || (data.businessName && data.businessName.trim().length > 0),
+  { message: 'Business name is required for business accounts', path: ['businessName'] },
+);
 
 export const loginSchema = z.object({
   email: z.string().email('Invalid email address'),

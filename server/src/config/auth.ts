@@ -1,3 +1,7 @@
+if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
+  throw new Error('JWT_SECRET environment variable is required in production');
+}
+
 export const AUTH_CONFIG = {
   jwtSecret: process.env.JWT_SECRET || 'dev_jwt_secret',
   jwtExpiresIn: '7d',

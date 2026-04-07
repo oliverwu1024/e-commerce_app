@@ -1,5 +1,5 @@
 import { faker } from '@faker-js/faker';
-import { PrismaClient, Condition, ListingStatus, OrderStatus, PaymentMethod } from '../src/generated/prisma/client.js';
+import { PrismaClient, Condition, ListingStatus, OrderStatus, PaymentMethod, SellerType, UserRole, VerificationStatus } from '../src/generated/prisma/client.js';
 import { PrismaPg } from '@prisma/adapter-pg';
 import 'dotenv/config';
 
@@ -263,15 +263,41 @@ async function main() {
 
   // --- Users ---------------------------------------------------------------
   console.log('Creating users...');
-  const usersData = Array.from({ length: 10 }, () => ({
-    email: faker.internet.email().toLowerCase(),
-    username: faker.internet.username().toLowerCase().replace(/[^a-z0-9_]/g, '_'),
-    password: '$2b$10$dummyhashedpasswordforseeding000000000000000000', // placeholder
-    name: faker.person.fullName(),
-    location: faker.helpers.arrayElement(australianCities),
-    bio: faker.lorem.sentence(),
-    createdAt: randomDate(90),
-  }));
+  const businessNames = [
+    'TechHub Electronics',
+    'Sydney Phone Traders',
+    'PC Parts Warehouse',
+  ];
+
+  // User 0 = admin, users 1-3 = business sellers, users 4-9 = personal sellers
+  const usersData = Array.from({ length: 10 }, (_, i) => {
+    const isAdmin = i === 0;
+    const isBusiness = i >= 1 && i <= 3;
+
+    return {
+      email: isAdmin ? 'admin@marketplace.com' : faker.internet.email().toLowerCase(),
+      username: isAdmin ? 'admin' : faker.internet.username().toLowerCase().replace(/[^a-z0-9_]/g, '_'),
+      password: '***REMOVED***', // "password123"
+      name: isAdmin ? 'Admin User' : faker.person.fullName(),
+      role: isAdmin ? UserRole.ADMIN : UserRole.USER,
+      location: faker.helpers.arrayElement(australianCities),
+      bio: faker.lorem.sentence(),
+      phone: faker.phone.number({ style: 'national' }),
+      emailVerified: true,
+      phoneVerified: true,
+      sellerType: isBusiness ? SellerType.BUSINESS : SellerType.PERSONAL,
+      businessName: isBusiness ? businessNames[i - 1] : null,
+      abn: isBusiness ? faker.string.numeric(11) : null,
+      abnVerified: isBusiness,
+      idDocumentUrl: !isBusiness && !isAdmin ? 'https://placehold.co/400x300?text=ID+Document' : null,
+      idVerification: isAdmin
+        ? VerificationStatus.NOT_SUBMITTED
+        : isBusiness
+          ? VerificationStatus.NOT_SUBMITTED // businesses don't need ID
+          : VerificationStatus.APPROVED,
+      createdAt: randomDate(90),
+    };
+  });
 
   const users = await Promise.all(
     usersData.map((u) => prisma.user.create({ data: u }))
@@ -366,10 +392,15 @@ async function main() {
       data: { status: ListingStatus.SOLD },
     });
 
-    const paymentMethod = faker.helpers.arrayElement([
-      PaymentMethod.ONLINE,
-      PaymentMethod.IN_PERSON,
-    ]);
+    const seller = users.find((u) => u.id === listing.sellerId)!;
+    const isBizSeller = seller.sellerType === SellerType.BUSINESS;
+
+    const personalMethods = [PaymentMethod.CASH, PaymentMethod.BANK_TRANSFER, PaymentMethod.PAYPAL];
+    const businessMethods = [...personalMethods, PaymentMethod.SQUARE, PaymentMethod.STRIPE];
+
+    const paymentMethod = faker.helpers.arrayElement(
+      isBizSeller ? businessMethods : personalMethods,
+    );
 
     const order = await prisma.order.create({
       data: {
@@ -426,7 +457,7 @@ async function main() {
   for (const user of users) {
     const numSaved = faker.number.int({ min: 0, max: 5 });
     const activeListings = allListings.filter(
-      (l) => l.sellerId !== user.id && l.status === 'ACTIVE'
+      (l) => l.sellerId !== user.id && l.status === ListingStatus.ACTIVE
     );
     const toSave = faker.helpers.shuffle(activeListings).slice(0, numSaved);
     for (const listing of toSave) {

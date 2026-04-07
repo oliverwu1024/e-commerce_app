@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import rateLimit from 'express-rate-limit';
+import { Prisma } from '../generated/prisma/client.js';
 import prisma from '../lib/prisma.js';
 import { AUTH_CONFIG } from '../config/auth.js';
 import { registerSchema, loginSchema } from '../schemas/auth.js';
@@ -34,102 +35,134 @@ function setTokenCookie(res: Response, token: string): void {
 
 // POST /api/auth/register
 router.post('/register', authLimiter, async (req: Request, res: Response) => {
-  const parsed = registerSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0].message });
-    return;
+  try {
+    const parsed = registerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+
+    const { email, username, password, name, location, bio, sellerType, businessName } = parsed.data;
+
+    const existing = await prisma.user.findFirst({
+      where: { OR: [{ email }, { username }] },
+    });
+    if (existing) {
+      const field = existing.email === email ? 'Email' : 'Username';
+      res.status(409).json({ error: `${field} already taken` });
+      return;
+    }
+
+    const hashedPassword = await bcrypt.hash(password, AUTH_CONFIG.bcryptRounds);
+
+    const user = await prisma.user.create({
+      data: {
+        email, username, password: hashedPassword, name, location, bio,
+        sellerType,
+        businessName: sellerType === 'BUSINESS' ? businessName : null,
+      },
+    });
+
+    const token = signToken(user.id);
+    setTokenCookie(res, token);
+
+    res.status(201).json({
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        name: user.name,
+        location: user.location,
+        bio: user.bio,
+        sellerType: user.sellerType,
+        businessName: user.businessName,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      res.status(409).json({ error: 'Email or username already taken' });
+      return;
+    }
+    console.error('Register error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  const { email, username, password, name, location, bio } = parsed.data;
-
-  const existing = await prisma.user.findFirst({
-    where: { OR: [{ email }, { username }] },
-  });
-  if (existing) {
-    const field = existing.email === email ? 'Email' : 'Username';
-    res.status(409).json({ error: `${field} already taken` });
-    return;
-  }
-
-  const hashedPassword = await bcrypt.hash(password, AUTH_CONFIG.bcryptRounds);
-
-  const user = await prisma.user.create({
-    data: { email, username, password: hashedPassword, name, location, bio },
-  });
-
-  const token = signToken(user.id);
-  setTokenCookie(res, token);
-
-  res.status(201).json({
-    user: {
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      name: user.name,
-      location: user.location,
-      bio: user.bio,
-    },
-  });
 });
 
 // POST /api/auth/login
 router.post('/login', authLimiter, async (req: Request, res: Response) => {
-  const parsed = loginSchema.safeParse(req.body);
-  if (!parsed.success) {
-    res.status(400).json({ error: parsed.error.issues[0].message });
-    return;
+  try {
+    const parsed = loginSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+
+    const { email, password } = parsed.data;
+
+    const user = await prisma.user.findUnique({ where: { email } });
+    if (!user) {
+      res.status(401).json({ error: 'Invalid email or password' });
+      return;
+    }
+
+    const valid = await bcrypt.compare(password, user.password);
+    if (!valid) {
+      res.status(401).json({ error: 'Invalid email or password' });
+      return;
+    }
+
+    const token = signToken(user.id);
+    setTokenCookie(res, token);
+
+    res.json({
+      user: {
+        id: user.id,
+        email: user.email,
+        username: user.username,
+        name: user.name,
+        location: user.location,
+        bio: user.bio,
+        sellerType: user.sellerType,
+        businessName: user.businessName,
+        role: user.role,
+      },
+    });
+  } catch (err) {
+    console.error('Login error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  const { email, password } = parsed.data;
-
-  const user = await prisma.user.findUnique({ where: { email } });
-  if (!user) {
-    res.status(401).json({ error: 'Invalid email or password' });
-    return;
-  }
-
-  const valid = await bcrypt.compare(password, user.password);
-  if (!valid) {
-    res.status(401).json({ error: 'Invalid email or password' });
-    return;
-  }
-
-  const token = signToken(user.id);
-  setTokenCookie(res, token);
-
-  res.json({
-    user: {
-      id: user.id,
-      email: user.email,
-      username: user.username,
-      name: user.name,
-      location: user.location,
-      bio: user.bio,
-    },
-  });
 });
 
 // GET /api/auth/me
 router.get('/me', authenticate, async (req: Request, res: Response) => {
-  const user = await prisma.user.findUnique({
-    where: { id: req.userId },
-    select: {
-      id: true,
-      email: true,
-      username: true,
-      name: true,
-      location: true,
-      bio: true,
-      createdAt: true,
-    },
-  });
+  try {
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        name: true,
+        location: true,
+        bio: true,
+        sellerType: true,
+        businessName: true,
+        role: true,
+        createdAt: true,
+      },
+    });
 
-  if (!user) {
-    res.status(404).json({ error: 'User not found' });
-    return;
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    res.json({ user });
+  } catch (err) {
+    console.error('Fetch user error:', err);
+    res.status(500).json({ error: 'Internal server error' });
   }
-
-  res.json({ user });
 });
 
 // POST /api/auth/logout
