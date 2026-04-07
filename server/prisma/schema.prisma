@@ -7,29 +7,119 @@ datasource db {
   provider = "postgresql"
 }
 
+enum Condition {
+  LIKE_NEW
+  GOOD
+  FAIR
+  POOR
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  REMOVED
+}
+
+enum OrderStatus {
+  PENDING
+  PAID
+  CANCELLED
+}
+
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
+  username  String   @unique
   password  String
   name      String
+  location  String?
+  bio       String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  products Product[]
+  listings      Listing[]
+  purchases     Order[]        @relation("buyer")
+  sales         Order[]        @relation("seller")
+  reviews       Review[]       @relation("reviewer")
+  reviewsAbout  Review[]       @relation("reviewedSeller")
+  savedListings SavedListing[]
 }
 
-model Product {
-  id          String   @id @default(uuid())
+model Listing {
+  id          String        @id @default(uuid())
   title       String
   description String
   price       Float
   category    String
-  condition   String
-  imageUrl    String?
-  sold        Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  subcategory String?
+  platform    String?
+  brand       String?
+  condition   Condition
+  status      ListingStatus @default(ACTIVE)
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
 
   seller   User   @relation(fields: [sellerId], references: [id])
   sellerId String
+
+  images        ListingImage[]
+  orders        Order[]
+  savedByUsers  SavedListing[]
+}
+
+model ListingImage {
+  id           String  @id @default(uuid())
+  url          String
+  displayOrder Int
+
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listingId String
+}
+
+model Order {
+  id        String      @id @default(uuid())
+  amount    Float
+  status    OrderStatus @default(PENDING)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+
+  listing   Listing @relation(fields: [listingId], references: [id])
+  listingId String
+
+  buyer   User   @relation("buyer", fields: [buyerId], references: [id])
+  buyerId String
+
+  seller   User   @relation("seller", fields: [sellerId], references: [id])
+  sellerId String
+
+  review Review?
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  order   Order  @relation(fields: [orderId], references: [id])
+  orderId String @unique
+
+  reviewer   User   @relation("reviewer", fields: [reviewerId], references: [id])
+  reviewerId String
+
+  seller   User   @relation("reviewedSeller", fields: [sellerId], references: [id])
+  sellerId String
+}
+
+model SavedListing {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  user      User    @relation(fields: [userId], references: [id])
+  userId    String
+
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listingId String
+
+  @@unique([userId, listingId])
 }
