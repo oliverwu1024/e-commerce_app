@@ -1,7 +1,7 @@
 services:
   db:
     image: postgres:16-alpine
-    restart: unless-stopped
+    restart: "no"
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
@@ -13,7 +13,7 @@ services:
 
   server:
     build: ./server
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "5000:5000"
     environment:
@@ -27,7 +27,7 @@ services:
 
   client:
     build: ./client
-    restart: unless-stopped
+    restart: "no"
     ports:
       - "3000:3000"
     environment:
