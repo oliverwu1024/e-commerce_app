@@ -5,8 +5,10 @@ import rateLimit from 'express-rate-limit';
 import { Prisma } from '../generated/prisma/client.js';
 import prisma from '../lib/prisma.js';
 import { AUTH_CONFIG } from '../config/auth.js';
+import { EMAIL_CONFIG } from '../config/email.js';
 import { registerSchema, loginSchema } from '../schemas/auth.js';
 import { authenticate, JwtPayload } from '../middleware/auth.js';
+import { generateVerificationToken, sendVerificationEmail } from '../utils/email.js';
 
 const router = Router();
 
@@ -21,7 +23,7 @@ const authLimiter = rateLimit({
 function signToken(userId: string): string {
   return jwt.sign({ userId } satisfies JwtPayload, AUTH_CONFIG.jwtSecret, {
     expiresIn: AUTH_CONFIG.jwtExpiresIn,
-  });
+  } as jwt.SignOptions);
 }
 
 function setTokenCookie(res: Response, token: string): void {
@@ -54,13 +56,21 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
     }
 
     const hashedPassword = await bcrypt.hash(password, AUTH_CONFIG.bcryptRounds);
+    const verificationToken = generateVerificationToken();
 
     const user = await prisma.user.create({
       data: {
         email, username, password: hashedPassword, name, location, bio,
         sellerType,
         businessName: sellerType === 'BUSINESS' ? businessName : null,
+        emailVerificationToken: verificationToken,
+        emailVerificationExpires: new Date(Date.now() + EMAIL_CONFIG.verificationTokenExpires),
       },
+    });
+
+    // Send verification email (non-blocking — don't fail registration if email fails)
+    sendVerificationEmail(email, verificationToken).catch((err) => {
+      console.error('Failed to send verification email:', err);
     });
 
     const token = signToken(user.id);
@@ -77,6 +87,7 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
         sellerType: user.sellerType,
         businessName: user.businessName,
         role: user.role,
+        emailVerified: user.emailVerified,
       },
     });
   } catch (err) {
@@ -126,6 +137,7 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
         sellerType: user.sellerType,
         businessName: user.businessName,
         role: user.role,
+        emailVerified: user.emailVerified,
       },
     });
   } catch (err) {
@@ -149,6 +161,7 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
         sellerType: true,
         businessName: true,
         role: true,
+        emailVerified: true,
         createdAt: true,
       },
     });
@@ -169,6 +182,70 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
 router.post('/logout', (_req: Request, res: Response) => {
   res.clearCookie(AUTH_CONFIG.cookie.name);
   res.json({ message: 'Logged out' });
+});
+
+// GET /api/auth/verify-email/:token
+router.get('/verify-email/:token', async (req: Request<{ token: string }>, res: Response) => {
+  try {
+    const { token } = req.params;
+
+    const user = await prisma.user.findUnique({
+      where: { emailVerificationToken: token },
+    });
+
+    if (!user || !user.emailVerificationExpires || user.emailVerificationExpires < new Date()) {
+      res.status(400).json({ error: 'Invalid or expired verification link' });
+      return;
+    }
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerified: true,
+        emailVerificationToken: null,
+        emailVerificationExpires: null,
+      },
+    });
+
+    res.json({ message: 'Email verified successfully' });
+  } catch (err) {
+    console.error('Email verification error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /api/auth/resend-verification
+router.post('/resend-verification', authenticate, async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.findUnique({ where: { id: req.userId } });
+
+    if (!user) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    if (user.emailVerified) {
+      res.status(400).json({ error: 'Email is already verified' });
+      return;
+    }
+
+    const verificationToken = generateVerificationToken();
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        emailVerificationToken: verificationToken,
+        emailVerificationExpires: new Date(Date.now() + EMAIL_CONFIG.verificationTokenExpires),
+      },
+    });
+
+    await sendVerificationEmail(user.email, verificationToken);
+
+    res.json({ message: 'Verification email sent' });
+  } catch (err) {
+    console.error('Resend verification error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
 });
 
 export default router;

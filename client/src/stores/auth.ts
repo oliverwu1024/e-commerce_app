@@ -11,6 +11,7 @@ export type User = {
   sellerType: 'PERSONAL' | 'BUSINESS';
   businessName: string | null;
   role: 'USER' | 'ADMIN';
+  emailVerified: boolean;
   createdAt?: string;
 };
 
@@ -22,6 +23,7 @@ type AuthState = {
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
+  resendVerification: () => Promise<void>;
   clearError: () => void;
 };
 
@@ -86,6 +88,19 @@ export const useAuthStore = create<AuthState>((set) => ({
       set({ user: res.user, loading: false });
     } catch {
       set({ user: null, loading: false });
+    }
+  },
+
+  resendVerification: async () => {
+    set({ error: null });
+    try {
+      await api<{ message: string }>('/api/auth/resend-verification', {
+        method: 'POST',
+      });
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to resend verification email';
+      set({ error: message });
+      throw err;
     }
   },
 

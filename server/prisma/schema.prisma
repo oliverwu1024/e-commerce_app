@@ -63,8 +63,10 @@ model User {
   location       String?
   bio            String?
   phone          String?
-  emailVerified  Boolean  @default(false)
-  phoneVerified  Boolean  @default(false)
+  emailVerified           Boolean   @default(false)
+  emailVerificationToken  String?   @unique
+  emailVerificationExpires DateTime?
+  phoneVerified           Boolean   @default(false)
   sellerType     SellerType @default(PERSONAL)
   businessName   String?    // only for BUSINESS sellers
   abn            String?    // Australian Business Number — BUSINESS only

@@ -1,11 +1,10 @@
+import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import dotenv from 'dotenv';
 import prisma from './lib/prisma.js';
 import authRoutes from './routes/auth.js';
-
-dotenv.config();
+import listingRoutes from './routes/listings.js';
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -27,6 +26,7 @@ app.get('/api/health', async (_req, res) => {
 });
 
 app.use('/api/auth', authRoutes);
+app.use('/api/listings', listingRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
