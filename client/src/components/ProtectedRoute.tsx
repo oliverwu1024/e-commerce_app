@@ -1,23 +1,24 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth';
 
 export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
-  const { user } = useAuthStore();
+  const { user, loading } = useAuthStore();
   const router = useRouter();
+  const pathname = usePathname();
 
   useEffect(() => {
-    if (!user) {
-      router.replace('/login');
+    if (!loading && !user) {
+      router.replace(`/login?returnTo=${encodeURIComponent(pathname)}`);
     }
-  }, [user, router]);
+  }, [user, loading, router, pathname]);
 
-  if (!user) {
+  if (loading || !user) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <p className="text-zinc-500">Redirecting...</p>
+        <p className="text-zinc-500">Loading...</p>
       </div>
     );
   }

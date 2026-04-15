@@ -9,9 +9,17 @@ export default function Navbar() {
   return (
     <header className="border-b border-zinc-200 bg-white">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-        <Link href="/" className="text-lg font-bold text-zinc-900">
-          ElectroMarket
-        </Link>
+        <div className="flex items-center gap-6">
+          <Link href="/" className="text-lg font-bold text-zinc-900">
+            ElectroMarket
+          </Link>
+          <Link
+            href="/browse"
+            className="text-sm font-medium text-zinc-600 hover:text-zinc-900 transition-colors"
+          >
+            Browse
+          </Link>
+        </div>
 
         <div className="flex items-center gap-4">
           {user ? (

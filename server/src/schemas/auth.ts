@@ -9,8 +9,8 @@ export const registerSchema = z.object({
     .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
   password: z.string().min(8, 'Password must be at least 8 characters'),
   name: z.string().min(1, 'Name is required').max(100),
-  location: z.string().optional(),
-  bio: z.string().max(500).optional(),
+  location: z.string().min(1).optional().or(z.literal('').transform(() => undefined)),
+  bio: z.string().min(1).max(500).optional().or(z.literal('').transform(() => undefined)),
   sellerType: z.enum(['PERSONAL', 'BUSINESS']).optional().default('PERSONAL'),
   businessName: z.string().max(200).optional(),
 }).refine(

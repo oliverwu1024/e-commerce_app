@@ -108,6 +108,11 @@ model Listing {
   orders        Order[]
   savedByUsers  SavedListing[]
   cartItems     CartItem[]
+
+  @@index([status, createdAt])
+  @@index([status, category])
+  @@index([status, price])
+  @@index([sellerId])
 }
 
 model ListingImage {

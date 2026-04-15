@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import prisma from '../lib/prisma.js';
+import { Prisma } from '../generated/prisma/client.js';
 import { listingQuerySchema, createListingSchema, updateListingSchema, paginationSchema } from '../schemas/listings.js';
 import { uuidSchema } from '../schemas/common.js';
 import { authenticate } from '../middleware/auth.js';
@@ -27,7 +28,7 @@ router.get('/', async (req: Request, res: Response) => {
     const { category, brand, condition, minPrice, maxPrice, search, sort, page, limit } = parsed.data;
 
     // Build filter conditions
-    const where: Record<string, unknown> = {
+    const where: Prisma.ListingWhereInput = {
       status: 'ACTIVE',
     };
 
@@ -51,11 +52,14 @@ router.get('/', async (req: Request, res: Response) => {
     }
 
     if (search) {
-      where.title = { contains: search, mode: 'insensitive' };
+      where.OR = [
+        { title: { contains: search, mode: 'insensitive' } },
+        { description: { contains: search, mode: 'insensitive' } },
+      ];
     }
 
     // Build sort order
-    let orderBy: Record<string, string>;
+    let orderBy: Prisma.ListingOrderByWithRelationInput;
     switch (sort) {
       case 'price_asc':
         orderBy = { price: 'asc' };
@@ -239,6 +243,13 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
     const { images, ...updateData } = parsed.data;
 
     const listing = await prisma.$transaction(async (tx) => {
+      // Re-verify status inside transaction to prevent TOCTOU race
+      const current = await tx.listing.findUnique({
+        where: { id },
+        select: { status: true },
+      });
+      if (current?.status !== 'ACTIVE') return null;
+
       if (images !== undefined) {
         await tx.listingImage.deleteMany({ where: { listingId: id } });
         if (images.length > 0) {
@@ -257,6 +268,11 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
         },
       });
     });
+
+    if (!listing) {
+      res.status(409).json({ error: 'Listing is no longer available for editing' });
+      return;
+    }
 
     res.json({ listing });
   } catch (err) {
@@ -304,10 +320,25 @@ router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Re
       return;
     }
 
-    await prisma.listing.update({
-      where: { id },
-      data: { status: 'REMOVED' },
+    const removed = await prisma.$transaction(async (tx) => {
+      // Re-verify status inside transaction to prevent TOCTOU race
+      const current = await tx.listing.findUnique({
+        where: { id },
+        select: { status: true },
+      });
+      if (current?.status !== 'ACTIVE') return false;
+
+      await tx.listing.update({
+        where: { id },
+        data: { status: 'REMOVED' },
+      });
+      return true;
     });
+
+    if (!removed) {
+      res.status(409).json({ error: 'Listing status changed. Please refresh and try again.' });
+      return;
+    }
 
     res.json({ message: 'Listing removed successfully' });
   } catch (err) {

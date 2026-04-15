@@ -1,13 +1,21 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
-import { useRouter } from 'next/navigation';
+import { useState, useEffect, FormEvent, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/stores/auth';
 
-export default function LoginPage() {
+function LoginContent() {
   const router = useRouter();
-  const { login, error, clearError } = useAuthStore();
+  const searchParams = useSearchParams();
+  const { user, login, error, clearError } = useAuthStore();
+
+  const returnTo = searchParams.get('returnTo') || '/';
+
+  useEffect(() => {
+    if (user) router.replace(returnTo);
+  }, [user, router, returnTo]);
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -17,7 +25,7 @@ export default function LoginPage() {
     setSubmitting(true);
     try {
       await login(email, password);
-      router.push('/');
+      router.push(returnTo);
     } catch {
       // error is set in store
     } finally {
@@ -87,5 +95,13 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="flex flex-1 items-center justify-center"><p className="text-zinc-500">Loading...</p></div>}>
+      <LoginContent />
+    </Suspense>
   );
 }

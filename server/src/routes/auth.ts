@@ -215,7 +215,7 @@ router.get('/verify-email/:token', async (req: Request<{ token: string }>, res: 
 });
 
 // POST /api/auth/resend-verification
-router.post('/resend-verification', authenticate, async (req: Request, res: Response) => {
+router.post('/resend-verification', authenticate, authLimiter, async (req: Request, res: Response) => {
   try {
     const user = await prisma.user.findUnique({ where: { id: req.userId } });
 

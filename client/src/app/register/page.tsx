@@ -1,13 +1,17 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/stores/auth';
 
 export default function RegisterPage() {
   const router = useRouter();
-  const { register, error, clearError } = useAuthStore();
+  const { user, register, error, clearError } = useAuthStore();
+
+  useEffect(() => {
+    if (user) router.replace('/');
+  }, [user, router]);
   const [submitting, setSubmitting] = useState(false);
 
   const [name, setName] = useState('');

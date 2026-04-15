@@ -1,12 +1,16 @@
 import { z } from 'zod';
 
+// Keep in sync with client/src/types/listings.ts CATEGORIES
 const CATEGORIES = [
   'Phones', 'Laptops', 'Desktops', 'Tablets',
   'Consoles', 'Cameras', 'Audio', 'Accessories', 'PC Parts',
 ] as const;
 
 const imageSchema = z.object({
-  url: z.string().url('Invalid image URL'),
+  url: z.string().url('Invalid image URL').refine(
+    (u) => u.startsWith('https://') || u.startsWith('http://'),
+    { message: 'Image URL must use http or https' },
+  ),
   displayOrder: z.number().int().min(0),
 });
 
@@ -68,7 +72,7 @@ export const listingQuerySchema = paginationSchema.extend({
   search: z.string().max(200).optional(),
   sort: z.enum(['newest', 'price_asc', 'price_desc']).optional().default('newest'),
 }).refine(
-  (data) => !data.minPrice || !data.maxPrice || data.minPrice <= data.maxPrice,
+  (data) => data.minPrice == null || data.maxPrice == null || data.minPrice <= data.maxPrice,
   { message: 'Min price must be less than or equal to max price', path: ['minPrice'] },
 );
 
