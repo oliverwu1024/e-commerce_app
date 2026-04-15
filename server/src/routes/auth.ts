@@ -44,14 +44,15 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
       return;
     }
 
-    const { email, username, password, name, location, bio, sellerType, businessName } = parsed.data;
+    const { password, name, location, bio, sellerType, businessName } = parsed.data;
+    const email = parsed.data.email.toLowerCase();
+    const username = parsed.data.username.toLowerCase();
 
     const existing = await prisma.user.findFirst({
       where: { OR: [{ email }, { username }] },
     });
     if (existing) {
-      const field = existing.email === email ? 'Email' : 'Username';
-      res.status(409).json({ error: `${field} already taken` });
+      res.status(409).json({ error: 'Email or username already taken' });
       return;
     }
 
@@ -109,7 +110,8 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
       return;
     }
 
-    const { email, password } = parsed.data;
+    const { password } = parsed.data;
+    const email = parsed.data.email.toLowerCase();
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {

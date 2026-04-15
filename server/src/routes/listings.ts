@@ -243,12 +243,12 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
     const { images, ...updateData } = parsed.data;
 
     const listing = await prisma.$transaction(async (tx) => {
-      // Re-verify status inside transaction to prevent TOCTOU race
+      // Re-verify ownership + status inside transaction to prevent TOCTOU race
       const current = await tx.listing.findUnique({
         where: { id },
-        select: { status: true },
+        select: { status: true, sellerId: true },
       });
-      if (current?.status !== 'ACTIVE') return null;
+      if (current?.status !== 'ACTIVE' || current.sellerId !== req.userId) return null;
 
       if (images !== undefined) {
         await tx.listingImage.deleteMany({ where: { listingId: id } });
@@ -321,12 +321,12 @@ router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Re
     }
 
     const removed = await prisma.$transaction(async (tx) => {
-      // Re-verify status inside transaction to prevent TOCTOU race
+      // Re-verify ownership + status inside transaction to prevent TOCTOU race
       const current = await tx.listing.findUnique({
         where: { id },
-        select: { status: true },
+        select: { status: true, sellerId: true },
       });
-      if (current?.status !== 'ACTIVE') return false;
+      if (current?.status !== 'ACTIVE' || current.sellerId !== req.userId) return false;
 
       await tx.listing.update({
         where: { id },

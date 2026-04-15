@@ -18,6 +18,35 @@ export type ListingSummary = {
   }[];
 };
 
+export type ListingDetail = {
+  id: string;
+  title: string;
+  description: string;
+  price: string;
+  category: string;
+  subcategory: string | null;
+  platform: string | null;
+  brand: string | null;
+  condition: Condition;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+  seller: {
+    id: string;
+    username: string;
+    location: string | null;
+    createdAt: string;
+    avgRating: number | null;
+    totalReviews: number;
+    totalSales: number;
+  };
+  images: {
+    id: string;
+    url: string;
+    displayOrder: number;
+  }[];
+};
+
 export type Pagination = {
   page: number;
   limit: number;

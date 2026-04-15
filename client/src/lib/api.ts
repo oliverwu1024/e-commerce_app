@@ -20,10 +20,16 @@ export async function api<T>(
     },
   });
 
-  const data = await res.json();
+  const text = await res.text();
+  let data: Record<string, unknown>;
+  try {
+    data = text ? JSON.parse(text) : {};
+  } catch {
+    data = { error: `Server error (${res.status})` };
+  }
 
   if (!res.ok) {
-    throw new Error(data.error || 'Something went wrong');
+    throw new Error((data.error as string) || 'Something went wrong');
   }
 
   return data as T;
