@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { type ListingSummary, formatPrice, getConditionStyle } from '@/types/listings';
+import SaveButton from '@/components/SaveButton';
 
 type Props = {
   listing: ListingSummary;
@@ -43,6 +44,9 @@ export default function ListingCard({ listing }: Props) {
           className={`absolute top-2 left-2 rounded-md px-2 py-0.5 text-xs font-medium ${condition.bg}`}
         >
           {condition.label}
+        </span>
+        <span className="absolute top-2 right-2">
+          <SaveButton listingId={listing.id} />
         </span>
       </div>
 

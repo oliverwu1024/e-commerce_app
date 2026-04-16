@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { api } from '@/lib/api';
+import { useSavedStore } from '@/stores/saved';
+import ListingCard from '@/components/ListingCard';
 import {
   type ListingSummary,
   type Pagination,
@@ -13,7 +15,7 @@ import {
   STATUS_STYLES,
 } from '@/types/listings';
 
-type Tab = 'listings' | 'purchases' | 'sales';
+type Tab = 'listings' | 'saved' | 'purchases' | 'sales';
 
 export default function DashboardPage() {
   return (
@@ -28,6 +30,7 @@ function Dashboard() {
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'listings', label: 'My Listings' },
+    { key: 'saved', label: 'Saved' },
     { key: 'purchases', label: 'My Purchases' },
     { key: 'sales', label: 'My Sales' },
   ];
@@ -58,6 +61,7 @@ function Dashboard() {
       {/* Tab content */}
       <div className="mt-6">
         {activeTab === 'listings' && <MyListingsTab />}
+        {activeTab === 'saved' && <SavedListingsTab />}
         {activeTab === 'purchases' && <PlaceholderTab name="Purchases" />}
         {activeTab === 'sales' && <PlaceholderTab name="Sales" />}
       </div>
@@ -330,6 +334,107 @@ function StatCard({ label, value, color }: { label: string; value: number; color
     <div className="rounded-xl border border-zinc-200 bg-white p-4">
       <p className="text-xs font-medium text-zinc-500">{label}</p>
       <p className={`mt-1 text-2xl font-bold ${color ?? 'text-zinc-900'}`}>{value}</p>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Saved Listings tab
+// ---------------------------------------------------------------------------
+
+function SavedListingsTab() {
+  const [allListings, setAllListings] = useState<ListingSummary[]>([]);
+  const [pagination, setPagination] = useState<Pagination | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const savedIds = useSavedStore((s) => s.ids);
+
+  const fetchSaved = useCallback(async (p: number) => {
+    setLoading(true);
+    try {
+      const data = await api<{ listings: ListingSummary[]; pagination: Pagination }>(
+        `/api/saved?page=${p}&limit=12`,
+      );
+      setAllListings(data.listings);
+      setPagination(data.pagination);
+    } catch {
+      // silently fail
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchSaved(page);
+  }, [page, fetchSaved]);
+
+  const listings = allListings.filter((l) => savedIds.has(l.id));
+
+  if (loading) {
+    return (
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 6 }).map((_, i) => (
+          <div key={i} className="rounded-xl border border-zinc-200 bg-white overflow-hidden animate-pulse">
+            <div className="aspect-[4/3] bg-zinc-200" />
+            <div className="p-3 space-y-2">
+              <div className="h-4 w-3/4 rounded bg-zinc-200" />
+              <div className="h-5 w-1/3 rounded bg-zinc-200" />
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  }
+
+  if (listings.length === 0) {
+    return (
+      <div className="rounded-xl border border-zinc-200 bg-white px-6 py-12 text-center">
+        <svg className="mx-auto h-12 w-12 text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+          <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
+        </svg>
+        <h3 className="mt-3 text-sm font-medium text-zinc-900">No saved listings</h3>
+        <p className="mt-1 text-sm text-zinc-500">
+          Browse listings and tap the heart icon to save items you like.
+        </p>
+        <Link
+          href="/browse"
+          className="mt-4 inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        >
+          Browse Listings
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {listings.map((listing) => (
+          <ListingCard key={listing.id} listing={listing} />
+        ))}
+      </div>
+
+      {pagination && pagination.totalPages > 1 && (
+        <div className="mt-6 flex items-center justify-center gap-2">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-zinc-500">
+            Page {page} of {pagination.totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
+            disabled={page === pagination.totalPages}
+            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
 }
