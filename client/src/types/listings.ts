@@ -7,6 +7,7 @@ export type ListingSummary = {
   condition: Condition;
   status: string;
   createdAt: string;
+  updatedAt?: string;
   seller: {
     id: string;
     username: string;
@@ -16,6 +17,13 @@ export type ListingSummary = {
     id: string;
     url: string;
   }[];
+};
+
+export const STATUS_STYLES: Record<string, { label: string; bg: string }> = {
+  ACTIVE: { label: 'Active', bg: 'bg-emerald-100 text-emerald-700' },
+  SOLD: { label: 'Sold', bg: 'bg-blue-100 text-blue-700' },
+  ON_HOLD: { label: 'On Hold', bg: 'bg-purple-100 text-purple-700' },
+  REMOVED: { label: 'Removed', bg: 'bg-zinc-100 text-zinc-500' },
 };
 
 export type ListingDetail = {
