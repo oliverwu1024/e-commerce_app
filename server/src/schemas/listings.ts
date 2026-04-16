@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { S3_BUCKET, S3_REGION } from '../config/s3.js';
 
 // Keep in sync with client/src/types/listings.ts CATEGORIES
 const CATEGORIES = [
@@ -6,11 +7,26 @@ const CATEGORIES = [
   'Consoles', 'Cameras', 'Audio', 'Accessories', 'PC Parts',
 ] as const;
 
+const s3Prefix = S3_BUCKET
+  ? `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/listings/`
+  : null;
+
+function imageSchemaForUser(userId: string) {
+  return z.object({
+    url: z.string().url('Invalid image URL').refine(
+      (u) => {
+        if (!s3Prefix) return false; // No uploads possible without S3
+        return u.startsWith(`${s3Prefix}${userId}/`);
+      },
+      { message: 'Image must be from your own uploads' },
+    ),
+    displayOrder: z.number().int().min(0),
+  });
+}
+
+// Fallback schema for non-user-scoped validation (updateListingSchema type export)
 const imageSchema = z.object({
-  url: z.string().url('Invalid image URL').refine(
-    (u) => u.startsWith('https://') || u.startsWith('http://'),
-    { message: 'Image URL must use http or https' },
-  ),
+  url: z.string().url('Invalid image URL'),
   displayOrder: z.number().int().min(0),
 });
 
@@ -27,41 +43,47 @@ export const paginationSchema = z.object({
   limit: z.coerce.number().int().min(1).max(50).optional().default(20),
 });
 
-export const createListingSchema = z.object({
-  title: z.string().min(3, 'Title must be at least 3 characters').max(200),
-  description: z.string().min(10, 'Description must be at least 10 characters').max(5000),
-  price: priceSchema,
-  category: z.enum(CATEGORIES, { message: 'Invalid category' }),
-  subcategory: z.string().optional(),
-  platform: z.string().optional(),
-  brand: z.string().max(100).optional(),
-  condition: z.enum(['LIKE_NEW', 'GOOD', 'FAIR', 'POOR'], {
-    message: 'Condition is required',
-  }),
-  images: z.array(imageSchema).max(10, 'Maximum 10 images allowed')
-    .refine(imgs => new Set(imgs.map(i => i.displayOrder)).size === imgs.length,
-      { message: 'Image display orders must be unique' })
-    .optional(),
-});
+export function createListingSchemaForUser(userId: string) {
+  const imgSchema = imageSchemaForUser(userId);
+  return z.object({
+    title: z.string().min(3, 'Title must be at least 3 characters').max(200),
+    description: z.string().min(10, 'Description must be at least 10 characters').max(5000),
+    price: priceSchema,
+    category: z.enum(CATEGORIES, { message: 'Invalid category' }),
+    subcategory: z.string().optional(),
+    platform: z.string().optional(),
+    brand: z.string().max(100).optional(),
+    condition: z.enum(['LIKE_NEW', 'GOOD', 'FAIR', 'POOR'], {
+      message: 'Condition is required',
+    }),
+    images: z.array(imgSchema).max(10, 'Maximum 10 images allowed')
+      .refine(imgs => new Set(imgs.map(i => i.displayOrder)).size === imgs.length,
+        { message: 'Image display orders must be unique' })
+      .optional(),
+  });
+}
 
-export type CreateListingInput = z.infer<typeof createListingSchema>;
+export type CreateListingInput = z.infer<ReturnType<typeof createListingSchemaForUser>>;
 
-export const updateListingSchema = z.object({
-  title: z.string().min(3, 'Title must be at least 3 characters').max(200).optional(),
-  description: z.string().min(10, 'Description must be at least 10 characters').max(5000).optional(),
-  price: priceSchema.optional(),
-  category: z.enum(CATEGORIES, { message: 'Invalid category' }).optional(),
-  subcategory: z.string().nullable().optional(),
-  platform: z.string().nullable().optional(),
-  brand: z.string().max(100).nullable().optional(),
-  condition: z.enum(['LIKE_NEW', 'GOOD', 'FAIR', 'POOR']).optional(),
-  images: z.array(imageSchema).max(10, 'Maximum 10 images allowed')
-    .refine(imgs => new Set(imgs.map(i => i.displayOrder)).size === imgs.length,
-      { message: 'Image display orders must be unique' })
-    .optional(),
-});
+export function updateListingSchemaForUser(userId: string) {
+  const imgSchema = imageSchemaForUser(userId);
+  return z.object({
+    title: z.string().min(3, 'Title must be at least 3 characters').max(200).optional(),
+    description: z.string().min(10, 'Description must be at least 10 characters').max(5000).optional(),
+    price: priceSchema.optional(),
+    category: z.enum(CATEGORIES, { message: 'Invalid category' }).optional(),
+    subcategory: z.string().nullable().optional(),
+    platform: z.string().nullable().optional(),
+    brand: z.string().max(100).nullable().optional(),
+    condition: z.enum(['LIKE_NEW', 'GOOD', 'FAIR', 'POOR']).optional(),
+    images: z.array(imgSchema).max(10, 'Maximum 10 images allowed')
+      .refine(imgs => new Set(imgs.map(i => i.displayOrder)).size === imgs.length,
+        { message: 'Image display orders must be unique' })
+      .optional(),
+  });
+}
 
-export type UpdateListingInput = z.infer<typeof updateListingSchema>;
+export type UpdateListingInput = z.infer<ReturnType<typeof updateListingSchemaForUser>>;
 
 export const listingQuerySchema = paginationSchema.extend({
   category: z.string().optional(),

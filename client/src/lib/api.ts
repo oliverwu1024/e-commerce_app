@@ -29,6 +29,9 @@ export async function api<T>(
   }
 
   if (!res.ok) {
+    if (res.status === 401) {
+      window.dispatchEvent(new Event('auth:unauthorized'));
+    }
     throw new Error((data.error as string) || 'Something went wrong');
   }
 

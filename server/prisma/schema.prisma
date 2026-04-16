@@ -122,6 +122,8 @@ model ListingImage {
 
   listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   listingId String
+
+  @@unique([listingId, displayOrder])
 }
 
 model Cart {
@@ -183,6 +185,8 @@ model Review {
 
   seller   User   @relation("reviewedSeller", fields: [sellerId], references: [id])
   sellerId String
+
+  @@index([sellerId])
 }
 
 model SavedListing {

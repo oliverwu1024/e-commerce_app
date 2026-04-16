@@ -2,7 +2,7 @@ import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
 import prisma from '../lib/prisma.js';
 import { Prisma } from '../generated/prisma/client.js';
-import { listingQuerySchema, createListingSchema, updateListingSchema, paginationSchema } from '../schemas/listings.js';
+import { listingQuerySchema, createListingSchemaForUser, updateListingSchemaForUser, paginationSchema } from '../schemas/listings.js';
 import { uuidSchema } from '../schemas/common.js';
 import { authenticate } from '../middleware/auth.js';
 
@@ -176,7 +176,7 @@ router.get('/my', authenticate, async (req: Request, res: Response) => {
 // POST /api/listings — Create a new listing
 router.post('/', authenticate, createListingLimiter, async (req: Request, res: Response) => {
   try {
-    const parsed = createListingSchema.safeParse(req.body);
+    const parsed = createListingSchemaForUser(req.userId!).safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues[0].message });
       return;
@@ -234,7 +234,7 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
       return;
     }
 
-    const parsed = updateListingSchema.safeParse(req.body);
+    const parsed = updateListingSchemaForUser(req.userId!).safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues[0].message });
       return;
