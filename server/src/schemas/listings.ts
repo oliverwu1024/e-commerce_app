@@ -24,12 +24,6 @@ function imageSchemaForUser(userId: string) {
   });
 }
 
-// Fallback schema for non-user-scoped validation (updateListingSchema type export)
-const imageSchema = z.object({
-  url: z.string().url('Invalid image URL'),
-  displayOrder: z.number().int().min(0),
-});
-
 const priceSchema = z.number()
   .positive('Price must be greater than 0')
   .max(999999.99, 'Price too high')
@@ -50,8 +44,8 @@ export function createListingSchemaForUser(userId: string) {
     description: z.string().min(10, 'Description must be at least 10 characters').max(5000),
     price: priceSchema,
     category: z.enum(CATEGORIES, { message: 'Invalid category' }),
-    subcategory: z.string().optional(),
-    platform: z.string().optional(),
+    subcategory: z.string().max(100).optional(),
+    platform: z.string().max(100).optional(),
     brand: z.string().max(100).optional(),
     condition: z.enum(['LIKE_NEW', 'GOOD', 'FAIR', 'POOR'], {
       message: 'Condition is required',
@@ -72,8 +66,8 @@ export function updateListingSchemaForUser(userId: string) {
     description: z.string().min(10, 'Description must be at least 10 characters').max(5000).optional(),
     price: priceSchema.optional(),
     category: z.enum(CATEGORIES, { message: 'Invalid category' }).optional(),
-    subcategory: z.string().nullable().optional(),
-    platform: z.string().nullable().optional(),
+    subcategory: z.string().max(100).nullable().optional(),
+    platform: z.string().max(100).nullable().optional(),
     brand: z.string().max(100).nullable().optional(),
     condition: z.enum(['LIKE_NEW', 'GOOD', 'FAIR', 'POOR']).optional(),
     images: z.array(imgSchema).max(10, 'Maximum 10 images allowed')

@@ -9,11 +9,14 @@ import { useSavedStore } from '@/stores/saved';
 import ListingCard from '@/components/ListingCard';
 import {
   type ListingSummary,
+  type ListingStatus,
   type Pagination,
   formatPrice,
   getConditionStyle,
   STATUS_STYLES,
 } from '@/types/listings';
+
+type StatusCounts = Record<ListingStatus, number>;
 
 type Tab = 'listings' | 'saved' | 'purchases' | 'sales';
 
@@ -77,6 +80,7 @@ function MyListingsTab() {
   const router = useRouter();
   const [listings, setListings] = useState<ListingSummary[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
+  const [counts, setCounts] = useState<StatusCounts | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
@@ -89,11 +93,14 @@ function MyListingsTab() {
     setLoading(true);
     setError('');
     try {
-      const data = await api<{ listings: ListingSummary[]; pagination: Pagination }>(
-        `/api/listings/my?page=${p}&limit=12`,
-      );
+      const data = await api<{
+        listings: ListingSummary[];
+        pagination: Pagination;
+        counts: StatusCounts;
+      }>(`/api/listings/my?page=${p}&limit=12`);
       setListings(data.listings);
       setPagination(data.pagination);
+      setCounts(data.counts);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load listings');
     } finally {
@@ -119,17 +126,13 @@ function MyListingsTab() {
     }
   }
 
-  // Compute stats
-  const totalActive = listings.filter((l) => l.status === 'ACTIVE').length;
-  const totalSold = listings.filter((l) => l.status === 'SOLD').length;
-
   return (
     <div>
       {/* Stats row */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">
         <StatCard label="Total Listings" value={pagination?.total ?? 0} />
-        <StatCard label="Active" value={totalActive} color="text-emerald-600" />
-        <StatCard label="Sold" value={totalSold} color="text-blue-600" />
+        <StatCard label="Active" value={counts?.ACTIVE ?? 0} color="text-emerald-600" />
+        <StatCard label="Sold" value={counts?.SOLD ?? 0} color="text-blue-600" />
         <Link
           href="/listings/new"
           className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 p-4 text-sm font-medium text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors"
@@ -190,10 +193,7 @@ function MyListingsTab() {
           {listings.map((listing) => {
             const imageUrl = listing.images[0]?.url;
             const condition = getConditionStyle(listing.condition);
-            const statusStyle = STATUS_STYLES[listing.status] ?? {
-              label: listing.status,
-              bg: 'bg-zinc-100 text-zinc-600',
-            };
+            const statusStyle = STATUS_STYLES[listing.status];
             const date = new Intl.DateTimeFormat('en-AU', {
               day: 'numeric',
               month: 'short',
@@ -368,6 +368,7 @@ function SavedListingsTab() {
     fetchSaved(page);
   }, [page, fetchSaved]);
 
+  // Client-side filter lets optimistic unsaves disappear without refetching.
   const listings = allListings.filter((l) => savedIds.has(l.id));
 
   if (loading) {

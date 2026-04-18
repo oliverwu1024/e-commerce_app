@@ -1,3 +1,10 @@
 node_modules
 .next
-.env
+.env*
+.git
+.gitignore
+*.log
+npm-debug.log*
+Dockerfile
+.dockerignore
+tsconfig.tsbuildinfo

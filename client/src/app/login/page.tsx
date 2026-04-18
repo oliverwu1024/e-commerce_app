@@ -11,7 +11,13 @@ function LoginContent() {
   const { user, login, error, clearError } = useAuthStore();
 
   const raw = searchParams.get('returnTo') || '/';
-  const returnTo = raw.startsWith('/') && !raw.startsWith('//') ? raw : '/';
+  const safe =
+    raw.startsWith('/') &&
+    !raw.startsWith('//') &&
+    !raw.startsWith('/\\') &&
+    !raw.includes('\\') &&
+    !raw.includes('..');
+  const returnTo = safe ? raw : '/';
 
   useEffect(() => {
     if (user) router.replace(returnTo);

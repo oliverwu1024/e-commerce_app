@@ -137,7 +137,7 @@ router.get('/my', authenticate, async (req: Request, res: Response) => {
 
     const where = { sellerId: req.userId! };
 
-    const [listings, total] = await Promise.all([
+    const [listings, total, statusCounts] = await Promise.all([
       prisma.listing.findMany({
         where,
         orderBy: { createdAt: 'desc' },
@@ -161,11 +161,20 @@ router.get('/my', authenticate, async (req: Request, res: Response) => {
         },
       }),
       prisma.listing.count({ where }),
+      prisma.listing.groupBy({
+        by: ['status'],
+        where,
+        _count: { status: true },
+      }),
     ]);
+
+    const counts = { ACTIVE: 0, ON_HOLD: 0, SOLD: 0, REMOVED: 0 };
+    for (const row of statusCounts) counts[row.status] = row._count.status;
 
     res.json({
       listings,
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+      counts,
     });
   } catch (err) {
     console.error('My listings error:', err);

@@ -1,3 +1,5 @@
+export type ListingStatus = 'ACTIVE' | 'ON_HOLD' | 'SOLD' | 'REMOVED';
+
 export type ListingSummary = {
   id: string;
   title: string;
@@ -5,7 +7,7 @@ export type ListingSummary = {
   category: string;
   brand: string | null;
   condition: Condition;
-  status: string;
+  status: ListingStatus;
   createdAt: string;
   updatedAt?: string;
   seller: {
@@ -19,7 +21,7 @@ export type ListingSummary = {
   }[];
 };
 
-export const STATUS_STYLES: Record<string, { label: string; bg: string }> = {
+export const STATUS_STYLES: Record<ListingStatus, { label: string; bg: string }> = {
   ACTIVE: { label: 'Active', bg: 'bg-emerald-100 text-emerald-700' },
   SOLD: { label: 'Sold', bg: 'bg-blue-100 text-blue-700' },
   ON_HOLD: { label: 'On Hold', bg: 'bg-purple-100 text-purple-700' },
@@ -36,7 +38,7 @@ export type ListingDetail = {
   platform: string | null;
   brand: string | null;
   condition: Condition;
-  status: string;
+  status: ListingStatus;
   createdAt: string;
   updatedAt: string;
   seller: {
@@ -103,11 +105,11 @@ export function getConditionStyle(condition: string) {
 
 export function formatPrice(price: string | number): string {
   const num = typeof price === 'string' ? parseFloat(price) : price;
-  if (isNaN(num)) return '$0';
+  if (isNaN(num)) return '$0.00';
   return new Intl.NumberFormat('en-AU', {
     style: 'currency',
     currency: 'AUD',
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   }).format(num);
 }

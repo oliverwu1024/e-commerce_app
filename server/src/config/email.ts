@@ -2,7 +2,7 @@ import nodemailer from 'nodemailer';
 
 export const EMAIL_CONFIG = {
   verificationTokenExpires: 24 * 60 * 60 * 1000, // 24 hours
-  from: process.env.EMAIL_FROM || 'ElectroMarket <noreply@electromarket.dev>',
+  from: process.env.EMAIL_FROM || 'ElectroMarket <noreply@electromarket.example>',
 };
 
 export const transporter = nodemailer.createTransport({

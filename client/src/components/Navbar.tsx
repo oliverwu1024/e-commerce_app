@@ -4,7 +4,9 @@ import Link from 'next/link';
 import { useAuthStore } from '@/stores/auth';
 
 export default function Navbar() {
-  const { user, logout } = useAuthStore();
+  const user = useAuthStore((s) => s.user);
+  const loading = useAuthStore((s) => s.loading);
+  const logout = useAuthStore((s) => s.logout);
 
   return (
     <header className="border-b border-zinc-200 bg-white">
@@ -22,16 +24,10 @@ export default function Navbar() {
         </div>
 
         <div className="flex items-center gap-4">
-          {user ? (
+          {loading ? (
+            <div className="h-7 w-32 animate-pulse rounded bg-zinc-100" aria-hidden="true" />
+          ) : user ? (
             <>
-              {user.role === 'ADMIN' && (
-                <Link
-                  href="/admin"
-                  className="text-sm font-medium text-red-600 hover:text-red-700"
-                >
-                  Admin
-                </Link>
-              )}
               <Link
                 href="/dashboard"
                 className="text-sm font-medium text-zinc-600 hover:text-zinc-900 transition-colors"

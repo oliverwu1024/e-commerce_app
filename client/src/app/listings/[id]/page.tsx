@@ -70,7 +70,13 @@ function ImageGallery({ images, title }: { images: ListingDetail['images']; titl
 
       {/* Thumbnails */}
       {images.length > 1 && (
-        <div className="mt-3 flex gap-2 overflow-x-auto" role="group" aria-label="Image thumbnails" onKeyDown={handleKeyDown}>
+        <div
+          className="mt-3 flex gap-2 overflow-x-auto focus:outline-none"
+          role="group"
+          aria-label="Image thumbnails"
+          tabIndex={0}
+          onKeyDown={handleKeyDown}
+        >
           {images.map((img, idx) => (
             <button
               key={img.id}
