@@ -169,6 +169,10 @@ model Order {
 
   review   Review?
   messages Message[]
+
+  @@index([sellerId, createdAt])
+  @@index([buyerId, createdAt])
+  @@index([listingId])
 }
 
 model Review {
@@ -215,4 +219,6 @@ model Message {
 
   receiver   User   @relation("receiver", fields: [receiverId], references: [id])
   receiverId String
+
+  @@index([orderId, createdAt])
 }

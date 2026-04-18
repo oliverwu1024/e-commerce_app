@@ -10,6 +10,11 @@ import uploadRoutes from './routes/uploads.js';
 import savedRoutes from './routes/saved.js';
 import cartRoutes from './routes/cart.js';
 import orderRoutes from './routes/orders.js';
+import webhookRoutes from './routes/webhooks.js';
+import { validateSquareWebhookConfig } from './config/square.js';
+
+// Startup config checks — fail fast rather than silently-400 every webhook.
+validateSquareWebhookConfig();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -19,6 +24,12 @@ app.use(cors({
   origin: process.env.CLIENT_URL || 'http://localhost:3000',
   credentials: true,
 }));
+
+// Webhook routes get the raw body (Stripe/Square signatures are computed
+// over the exact bytes sent). Mount BEFORE express.json() so they aren't
+// parsed into objects that lose the original bytes.
+app.use('/api/webhooks', express.raw({ type: 'application/json' }), webhookRoutes);
+
 app.use(express.json({ limit: '200kb' }));
 app.use(cookieParser());
 
