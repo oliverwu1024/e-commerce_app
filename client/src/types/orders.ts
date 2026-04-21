@@ -61,6 +61,7 @@ export type Order = {
   listing: OrderListing;
   buyer: OrderParty;
   seller: OrderSeller;
+  review: { id: string; rating: number } | null;
 };
 
 export type OrderMessage = {

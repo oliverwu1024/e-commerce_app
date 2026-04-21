@@ -83,6 +83,7 @@ const ORDER_SUMMARY_SELECT = {
   seller: {
     select: { id: true, username: true, location: true, sellerType: true },
   },
+  review: { select: { id: true, rating: true } },
 } satisfies Prisma.OrderSelect;
 
 const MESSAGE_SELECT = {

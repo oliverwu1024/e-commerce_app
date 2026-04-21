@@ -25,7 +25,7 @@ router.get('/', async (req: Request, res: Response) => {
       return;
     }
 
-    const { category, brand, condition, minPrice, maxPrice, search, sort, page, limit } = parsed.data;
+    const { category, brand, condition, minPrice, maxPrice, search, sellerId, sort, page, limit } = parsed.data;
 
     // Build filter conditions
     const where: Prisma.ListingWhereInput = {
@@ -42,6 +42,10 @@ router.get('/', async (req: Request, res: Response) => {
 
     if (condition) {
       where.condition = condition;
+    }
+
+    if (sellerId) {
+      where.sellerId = sellerId;
     }
 
     if (minPrice !== undefined || maxPrice !== undefined) {

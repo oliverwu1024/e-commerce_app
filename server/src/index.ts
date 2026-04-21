@@ -10,6 +10,8 @@ import uploadRoutes from './routes/uploads.js';
 import savedRoutes from './routes/saved.js';
 import cartRoutes from './routes/cart.js';
 import orderRoutes from './routes/orders.js';
+import reviewRoutes from './routes/reviews.js';
+import userRoutes from './routes/users.js';
 import webhookRoutes from './routes/webhooks.js';
 import { validateSquareWebhookConfig } from './config/square.js';
 
@@ -48,6 +50,8 @@ app.use('/api/uploads', uploadRoutes);
 app.use('/api/saved', savedRoutes);
 app.use('/api/cart', cartRoutes);
 app.use('/api/orders', orderRoutes);
+app.use('/api/reviews', reviewRoutes);
+app.use('/api/users', userRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

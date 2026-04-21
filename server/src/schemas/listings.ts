@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { S3_BUCKET, S3_REGION } from '../config/s3.js';
+import { uuidSchema } from './common.js';
 
 // Keep in sync with client/src/types/listings.ts CATEGORIES
 const CATEGORIES = [
@@ -86,6 +87,7 @@ export const listingQuerySchema = paginationSchema.extend({
   minPrice: z.coerce.number().min(0, 'Min price must be non-negative').optional(),
   maxPrice: z.coerce.number().min(0, 'Max price must be non-negative').optional(),
   search: z.string().max(200).optional(),
+  sellerId: uuidSchema.optional(),
   sort: z.enum(['newest', 'price_asc', 'price_desc']).optional().default('newest'),
 }).refine(
   (data) => data.minPrice == null || data.maxPrice == null || data.minPrice <= data.maxPrice,

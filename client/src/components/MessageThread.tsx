@@ -10,6 +10,11 @@ type Props = {
   otherPartyName: string;
 };
 
+// Two consecutive messages from the same sender are grouped if their createdAt
+// is within this window (ms). Only the last message in each group shows the
+// sender/time footer, so a quick back-and-forth doesn't repeat "You · 10:42".
+const GROUP_WINDOW_MS = 5 * 60 * 1000;
+
 export default function MessageThread({
   orderId,
   currentUserId,
@@ -67,8 +72,7 @@ export default function MessageThread({
       el.scrollHeight - el.scrollTop - el.clientHeight < 40;
   }
 
-  async function handleSend(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleSend() {
     const trimmed = content.trim();
     if (!trimmed || sending) return;
 
@@ -94,12 +98,25 @@ export default function MessageThread({
     }
   }
 
+  function handleFormSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    handleSend();
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // Enter sends; Shift+Enter (or any modifier) inserts a newline.
+    if (e.key === 'Enter' && !e.shiftKey && !e.altKey && !e.ctrlKey && !e.metaKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  }
+
   return (
     <div className="rounded-lg border border-zinc-200 bg-zinc-50">
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="max-h-64 overflow-y-auto p-3 space-y-2"
+        className="max-h-64 overflow-y-auto p-3 space-y-1"
         aria-label={`Messages with ${otherPartyName}`}
       >
         {loading ? (
@@ -109,8 +126,15 @@ export default function MessageThread({
             No messages yet. Say hi to {otherPartyName} to coordinate the sale.
           </p>
         ) : (
-          messages.map((msg) => {
+          messages.map((msg, idx) => {
             const mine = msg.sender.id === currentUserId;
+            const next = messages[idx + 1];
+            const continuesRun =
+              next &&
+              next.sender.id === msg.sender.id &&
+              new Date(next.createdAt).getTime() - new Date(msg.createdAt).getTime() <
+                GROUP_WINDOW_MS;
+            const showFooter = !continuesRun;
             const time = new Intl.DateTimeFormat('en-AU', {
               hour: 'numeric',
               minute: '2-digit',
@@ -120,7 +144,7 @@ export default function MessageThread({
             return (
               <div
                 key={msg.id}
-                className={`flex ${mine ? 'justify-end' : 'justify-start'}`}
+                className={`flex ${mine ? 'justify-end' : 'justify-start'} ${continuesRun ? '' : 'pb-1'}`}
               >
                 <div
                   className={`max-w-[75%] rounded-lg px-3 py-1.5 text-sm ${
@@ -130,13 +154,15 @@ export default function MessageThread({
                   }`}
                 >
                   <p className="whitespace-pre-wrap break-words">{msg.content}</p>
-                  <p
-                    className={`mt-0.5 text-[10px] ${
-                      mine ? 'text-blue-100' : 'text-zinc-400'
-                    }`}
-                  >
-                    {mine ? 'You' : msg.sender.username} · {time}
-                  </p>
+                  {showFooter && (
+                    <p
+                      className={`mt-0.5 text-[10px] ${
+                        mine ? 'text-blue-100' : 'text-zinc-400'
+                      }`}
+                    >
+                      {mine ? 'You' : msg.sender.username} · {time}
+                    </p>
+                  )}
                 </div>
               </div>
             );
@@ -149,17 +175,18 @@ export default function MessageThread({
       )}
 
       <form
-        onSubmit={handleSend}
-        className="flex gap-2 border-t border-zinc-200 p-3"
+        onSubmit={handleFormSubmit}
+        className="flex items-end gap-2 border-t border-zinc-200 p-3"
       >
-        <input
-          type="text"
+        <textarea
           value={content}
           onChange={(e) => setContent(e.target.value)}
-          placeholder={`Message ${otherPartyName}...`}
+          onKeyDown={handleKeyDown}
+          placeholder={`Message ${otherPartyName}... (Enter to send, Shift+Enter for newline)`}
           maxLength={2000}
+          rows={2}
           disabled={sending}
-          className="flex-1 rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="flex-1 resize-none rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
         />
         <button
           type="submit"

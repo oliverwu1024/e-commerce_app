@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { formatPrice } from '@/types/listings';
@@ -11,6 +11,7 @@ import {
   PAYMENT_METHOD_LABELS,
 } from '@/types/orders';
 import MessageThread from '@/components/MessageThread';
+import { StarInput } from '@/components/Stars';
 
 type Role = 'buyer' | 'seller';
 
@@ -27,6 +28,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
   const [error, setError] = useState('');
   const [showCompletePicker, setShowCompletePicker] = useState(false);
   const [showPayPicker, setShowPayPicker] = useState(false);
+  const [showReviewForm, setShowReviewForm] = useState(false);
 
   const imageUrl = order.listing.images[0]?.url;
   const otherParty = role === 'buyer' ? order.seller : order.buyer;
@@ -179,8 +181,21 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           Cancel
         </button>,
       );
+    } else if (order.status === 'COMPLETED' && !order.review) {
+      actions.push(
+        <button
+          key="review"
+          onClick={() => setShowReviewForm((v) => !v)}
+          disabled={busy}
+          className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50 transition-colors"
+        >
+          Leave a review
+        </button>,
+      );
     }
   }
+
+  const otherPartyLabel = role === 'buyer' ? 'Seller' : 'Buyer';
 
   return (
     <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden">
@@ -217,7 +232,17 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
               {statusStyle.label}
             </span>
             <span className="text-zinc-500">
-              {role === 'buyer' ? 'Seller' : 'Buyer'}: {otherParty.username}
+              {otherPartyLabel}:{' '}
+              {role === 'buyer' ? (
+                <Link
+                  href={`/sellers/${otherParty.id}`}
+                  className="text-zinc-700 hover:text-blue-600 hover:underline transition-colors"
+                >
+                  {otherParty.username}
+                </Link>
+              ) : (
+                <span className="text-zinc-700">{otherParty.username}</span>
+              )}
             </span>
             <span className="text-zinc-400">&middot;</span>
             <span className="text-zinc-400">{createdDate}</span>
@@ -227,6 +252,20 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
                 <span className="text-zinc-500">
                   Paid: {PAYMENT_METHOD_LABELS[order.paymentMethod]}
                 </span>
+              </>
+            )}
+            {role === 'buyer' && order.review && (
+              <>
+                <span className="text-zinc-400">&middot;</span>
+                <Link
+                  href={`/sellers/${order.seller.id}?tab=reviews`}
+                  className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+                >
+                  <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
+                    <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
+                  </svg>
+                  Reviewed {order.review.rating}
+                </Link>
               </>
             )}
           </div>
@@ -247,6 +286,19 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
         <div className="border-t border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
           {error}
         </div>
+      )}
+
+      {/* Review form — buyer, completed, not yet reviewed */}
+      {showReviewForm && role === 'buyer' && order.status === 'COMPLETED' && !order.review && (
+        <ReviewForm
+          orderId={order.id}
+          sellerUsername={order.seller.username}
+          onCancel={() => setShowReviewForm(false)}
+          onSubmitted={() => {
+            setShowReviewForm(false);
+            onChange();
+          }}
+        />
       )}
 
       {/* Payment picker — seller completing manually */}
@@ -366,5 +418,123 @@ function PaymentOption({
     >
       {label}
     </button>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Review form (inline)
+// ---------------------------------------------------------------------------
+
+function ReviewForm({
+  orderId,
+  sellerUsername,
+  onCancel,
+  onSubmitted,
+}: {
+  orderId: string;
+  sellerUsername: string;
+  onCancel: () => void;
+  onSubmitted: () => void;
+}) {
+  const [rating, setRating] = useState(0);
+  const [comment, setComment] = useState('');
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  // Synchronous guard — setSubmitting is async, so two rapid clicks can both
+  // reach the fetch before the button disables. A ref flips immediately.
+  const submittingRef = useRef(false);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    if (submittingRef.current) return;
+    if (rating < 1) {
+      setError('Please choose a rating');
+      return;
+    }
+    submittingRef.current = true;
+    setSubmitting(true);
+    setError('');
+    try {
+      await api('/api/reviews', {
+        method: 'POST',
+        body: JSON.stringify({
+          orderId,
+          rating,
+          ...(comment.trim() && { comment: comment.trim() }),
+        }),
+      });
+      onSubmitted();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to submit review');
+      submittingRef.current = false;
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <form
+      onSubmit={handleSubmit}
+      className="border-t border-zinc-200 bg-amber-50/40 p-4 space-y-3"
+    >
+      <div>
+        <p className="text-sm font-medium text-zinc-900">
+          Review your purchase from {sellerUsername}
+        </p>
+        <p className="text-xs text-zinc-500 mt-0.5">
+          Reviews help other buyers and are visible on the seller&apos;s profile.
+        </p>
+      </div>
+
+      <div>
+        <label className="block text-xs font-medium text-zinc-700 mb-1">
+          Rating
+        </label>
+        <StarInput value={rating} onChange={setRating} disabled={submitting} />
+      </div>
+
+      <div>
+        <label
+          htmlFor={`review-comment-${orderId}`}
+          className="block text-xs font-medium text-zinc-700 mb-1"
+        >
+          Comment <span className="text-zinc-400">(optional, max 2000 chars)</span>
+        </label>
+        <textarea
+          id={`review-comment-${orderId}`}
+          value={comment}
+          onChange={(e) => setComment(e.target.value)}
+          maxLength={2000}
+          rows={3}
+          disabled={submitting}
+          placeholder={`How was your experience with ${sellerUsername}?`}
+          className="w-full resize-none rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
+        />
+        <p className="mt-1 text-right text-[10px] text-zinc-400">
+          {comment.length}/2000
+        </p>
+      </div>
+
+      {error && (
+        <p className="text-xs text-red-600">{error}</p>
+      )}
+
+      <div className="flex justify-end gap-2">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={submitting}
+          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+        >
+          Cancel
+        </button>
+        <button
+          type="submit"
+          disabled={submitting || rating < 1}
+          className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+        >
+          {submitting ? 'Submitting...' : 'Submit review'}
+        </button>
+      </div>
+    </form>
   );
 }

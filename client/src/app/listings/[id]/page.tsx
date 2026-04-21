@@ -8,31 +8,7 @@ import { useAuthStore } from '@/stores/auth';
 import { type ListingDetail, formatPrice, getConditionStyle } from '@/types/listings';
 import SaveButton from '@/components/SaveButton';
 import AddToCartButton from '@/components/AddToCartButton';
-
-// ---------------------------------------------------------------------------
-// Star rating display
-// ---------------------------------------------------------------------------
-
-function Stars({ rating }: { rating: number }) {
-  return (
-    <div className="flex gap-0.5" aria-label={`${rating.toFixed(1)} out of 5 stars`}>
-      {[1, 2, 3, 4, 5].map((star) => {
-        const filled = rating >= star;
-        const half = !filled && rating >= star - 0.5;
-        return (
-          <svg
-            key={star}
-            className={`h-4 w-4 ${filled || half ? 'text-amber-400' : 'text-zinc-200'}`}
-            viewBox="0 0 20 20"
-            fill="currentColor"
-          >
-            <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
-          </svg>
-        );
-      })}
-    </div>
-  );
-}
+import Stars from '@/components/Stars';
 
 // ---------------------------------------------------------------------------
 // Image gallery
@@ -379,20 +355,33 @@ export default function ListingDetailPage() {
             {/* Seller card */}
             <div className="mt-6 border-t border-zinc-200 pt-6">
               <h2 className="text-sm font-semibold text-zinc-900 mb-3">Seller</h2>
-              <div className="rounded-xl border border-zinc-200 bg-white p-4">
+              <Link
+                href={`/sellers/${listing.seller.id}`}
+                className="block rounded-xl border border-zinc-200 bg-white p-4 hover:border-blue-300 hover:shadow-sm transition-all"
+              >
                 <div className="flex items-center gap-3">
                   {/* Avatar placeholder */}
                   <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold text-sm">
                     {listing.seller.username.charAt(0).toUpperCase()}
                   </div>
-                  <div>
-                    <p className="text-sm font-medium text-zinc-900">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-zinc-900 hover:text-blue-600 transition-colors">
                       {listing.seller.username}
                     </p>
                     {listing.seller.location && (
                       <p className="text-xs text-zinc-500">{listing.seller.location}</p>
                     )}
                   </div>
+                  <svg
+                    className="h-4 w-4 text-zinc-400"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                    stroke="currentColor"
+                    strokeWidth={2}
+                    aria-hidden="true"
+                  >
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+                  </svg>
                 </div>
 
                 {/* Rating */}
@@ -418,7 +407,7 @@ export default function ListingDetailPage() {
                   <span aria-hidden="true">&middot;</span>
                   <span>Member since {memberSince}</span>
                 </div>
-              </div>
+              </Link>
             </div>
           </div>
         </div>
