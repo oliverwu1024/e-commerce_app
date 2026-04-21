@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { type ListingSummary, formatPrice, getConditionStyle } from '@/types/listings';
 import SaveButton from '@/components/SaveButton';
+import AddToCartButton from '@/components/AddToCartButton';
 
 type Props = {
   listing: ListingSummary;
@@ -45,7 +46,13 @@ export default function ListingCard({ listing }: Props) {
         >
           {condition.label}
         </span>
-        <span className="absolute top-2 right-2">
+        <span className="absolute top-2 right-2 flex gap-1.5">
+          <AddToCartButton
+            listingId={listing.id}
+            sellerId={listing.seller.id}
+            status={listing.status}
+            variant="icon"
+          />
           <SaveButton listingId={listing.id} />
         </span>
       </div>

@@ -20,6 +20,13 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Fixed bcrypt hash used when a login attempt finds no user — ensures the
+// response time stays constant regardless of whether the email exists. Prevents
+// attackers from enumerating registered emails via timing side-channel.
+// This is NOT a real password hash; its plaintext is unknown and unknowable.
+const DUMMY_PASSWORD_HASH =
+  '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
+
 function signToken(userId: string): string {
   return jwt.sign({ userId } satisfies JwtPayload, AUTH_CONFIG.jwtSecret, {
     expiresIn: AUTH_CONFIG.jwtExpiresIn,
@@ -69,10 +76,16 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
       },
     });
 
-    // Send verification email (non-blocking — don't fail registration if email fails)
-    sendVerificationEmail(email, verificationToken).catch((err) => {
+    // Await the email send so we can surface the outcome to the client. On
+    // failure, the account is still created — the client can prompt the user
+    // to retry via the resend flow.
+    let verificationEmailSent = true;
+    try {
+      await sendVerificationEmail(email, verificationToken);
+    } catch (err) {
+      verificationEmailSent = false;
       console.error('Failed to send verification email:', err);
-    });
+    }
 
     const token = signToken(user.id);
     setTokenCookie(res, token);
@@ -90,6 +103,7 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
         role: user.role,
         emailVerified: user.emailVerified,
       },
+      verificationEmailSent,
     });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -114,13 +128,10 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
     const email = parsed.data.email.toLowerCase();
 
     const user = await prisma.user.findUnique({ where: { email } });
-    if (!user) {
-      res.status(401).json({ error: 'Invalid email or password' });
-      return;
-    }
-
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) {
+    // Always run bcrypt.compare — even on a missing user — so response time
+    // doesn't reveal whether the email exists.
+    const valid = await bcrypt.compare(password, user?.password ?? DUMMY_PASSWORD_HASH);
+    if (!user || !valid) {
       res.status(401).json({ error: 'Invalid email or password' });
       return;
     }
@@ -187,7 +198,7 @@ router.post('/logout', (_req: Request, res: Response) => {
 });
 
 // GET /api/auth/verify-email/:token
-router.get('/verify-email/:token', async (req: Request<{ token: string }>, res: Response) => {
+router.get('/verify-email/:token', authLimiter, async (req: Request<{ token: string }>, res: Response) => {
   try {
     const { token } = req.params;
 

@@ -44,7 +44,7 @@ export default function RegisterPage() {
 
     setSubmitting(true);
     try {
-      await register({
+      const { verificationEmailSent } = await register({
         name,
         username,
         email,
@@ -52,7 +52,11 @@ export default function RegisterPage() {
         sellerType,
         ...(sellerType === 'BUSINESS' ? { businessName } : {}),
       });
-      router.push('/');
+      // If the verification email failed to send, route to the verify page so
+      // the user sees a clear explanation + the Resend button, instead of the
+      // generic "please verify your email" banner on home (which implies one
+      // was actually sent).
+      router.push(verificationEmailSent ? '/' : '/verify-email?retry=1');
     } catch {
       // error is set in store
     } finally {

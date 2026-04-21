@@ -1,12 +1,14 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { Suspense, useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { api } from '@/lib/api';
 import { useSavedStore } from '@/stores/saved';
+import { useAuthStore } from '@/stores/auth';
 import ListingCard from '@/components/ListingCard';
+import OrderRow from '@/components/OrderRow';
 import {
   type ListingSummary,
   type ListingStatus,
@@ -15,21 +17,133 @@ import {
   getConditionStyle,
   STATUS_STYLES,
 } from '@/types/listings';
+import {
+  type Order,
+  type OrderStatus,
+  type OrderListResponse,
+} from '@/types/orders';
 
 type StatusCounts = Record<ListingStatus, number>;
 
 type Tab = 'listings' | 'saved' | 'purchases' | 'sales';
 
+const VALID_TABS: Tab[] = ['listings', 'saved', 'purchases', 'sales'];
+
 export default function DashboardPage() {
   return (
     <ProtectedRoute>
-      <Dashboard />
+      <Suspense fallback={<DashboardFallback />}>
+        <Dashboard />
+      </Suspense>
     </ProtectedRoute>
   );
 }
 
+function DashboardFallback() {
+  return (
+    <div className="mx-auto max-w-6xl px-4 py-8">
+      <div className="h-8 w-32 rounded bg-zinc-200 animate-pulse" />
+    </div>
+  );
+}
+
 function Dashboard() {
-  const [activeTab, setActiveTab] = useState<Tab>('listings');
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const initialTab: Tab =
+    tabParam && (VALID_TABS as string[]).includes(tabParam) ? (tabParam as Tab) : 'listings';
+
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+
+  // Keep active tab in sync with URL — handles back/forward and redirects.
+  useEffect(() => {
+    const t = searchParams.get('tab');
+    setActiveTab(t && (VALID_TABS as string[]).includes(t) ? (t as Tab) : 'listings');
+  }, [searchParams]);
+
+  // Payment return banner + PayPal capture handler
+  const paymentStatus = searchParams.get('payment');
+  const paymentOrderId = searchParams.get('order');
+  const paypalToken = searchParams.get('token');
+  const [paymentBanner, setPaymentBanner] = useState<
+    { type: 'success' | 'error' | 'info'; message: string } | null
+  >(null);
+  const [capturingPayPal, setCapturingPayPal] = useState(false);
+  // Bumped whenever a server-side order state change completes (e.g., PayPal
+  // capture). PurchasesTab subscribes to this via a prop and re-fetches.
+  const [ordersRefreshKey, setOrdersRefreshKey] = useState(0);
+  // Prevents a double-capture in React StrictMode (dev) or a user refreshing
+  // mid-return. PayPal's `captureOrder` is not idempotent at the API level,
+  // so a second call after a successful one returns ORDER_ALREADY_CAPTURED.
+  const captureFiredRef = useRef(false);
+
+  useEffect(() => {
+    if (!paymentStatus) return;
+
+    if (paymentStatus === 'cancelled') {
+      setPaymentBanner({
+        type: 'info',
+        message: 'Payment was cancelled. You can try again at any time.',
+      });
+      router.replace('/dashboard?tab=purchases');
+      return;
+    }
+
+    if (paymentStatus === 'success' && paymentOrderId && paypalToken) {
+      if (captureFiredRef.current) return;
+      captureFiredRef.current = true;
+      setCapturingPayPal(true);
+      api<{ order: Order }>(
+        `/api/orders/${paymentOrderId}/pay/paypal/capture`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ paypalOrderId: paypalToken }),
+        },
+      )
+        .then(() => {
+          setPaymentBanner({
+            type: 'success',
+            message: 'Payment completed successfully.',
+          });
+          setOrdersRefreshKey((k) => k + 1);
+        })
+        .catch((err) => {
+          setPaymentBanner({
+            type: 'error',
+            message:
+              err instanceof Error
+                ? err.message
+                : 'Payment capture failed. Please contact support.',
+          });
+        })
+        .finally(() => {
+          setCapturingPayPal(false);
+          router.replace('/dashboard?tab=purchases');
+        });
+      return;
+    }
+
+    if (paymentStatus === 'success') {
+      setPaymentBanner({
+        type: 'success',
+        message:
+          'Payment submitted. It may take a moment to reflect below.',
+      });
+      // Stripe / Square land here. The webhook may have already flipped the
+      // order; refresh so the UI picks up the new state.
+      setOrdersRefreshKey((k) => k + 1);
+      router.replace('/dashboard?tab=purchases');
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [paymentStatus, paymentOrderId, paypalToken]);
+
+  function selectTab(tab: Tab) {
+    setActiveTab(tab);
+    const params = new URLSearchParams();
+    if (tab !== 'listings') params.set('tab', tab);
+    router.replace(`/dashboard${params.size > 0 ? `?${params.toString()}` : ''}`);
+  }
 
   const tabs: { key: Tab; label: string }[] = [
     { key: 'listings', label: 'My Listings' },
@@ -42,13 +156,43 @@ function Dashboard() {
     <div className="mx-auto max-w-6xl px-4 py-8">
       <h1 className="text-2xl font-bold text-zinc-900">Dashboard</h1>
 
+      {/* Payment banner */}
+      {(paymentBanner || capturingPayPal) && (
+        <div
+          className={`mt-4 rounded-lg border p-3 text-sm flex items-center justify-between ${
+            capturingPayPal
+              ? 'border-blue-200 bg-blue-50 text-blue-800'
+              : paymentBanner?.type === 'success'
+              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              : paymentBanner?.type === 'error'
+              ? 'border-red-200 bg-red-50 text-red-800'
+              : 'border-zinc-200 bg-zinc-50 text-zinc-700'
+          }`}
+        >
+          <span>
+            {capturingPayPal
+              ? 'Finalising your PayPal payment...'
+              : paymentBanner?.message}
+          </span>
+          {paymentBanner && !capturingPayPal && (
+            <button
+              onClick={() => setPaymentBanner(null)}
+              className="font-medium hover:opacity-70"
+              aria-label="Dismiss"
+            >
+              &times;
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Tabs */}
       <div className="mt-6 border-b border-zinc-200">
         <nav className="flex gap-6" aria-label="Dashboard tabs">
           {tabs.map((tab) => (
             <button
               key={tab.key}
-              onClick={() => setActiveTab(tab.key)}
+              onClick={() => selectTab(tab.key)}
               className={`pb-3 text-sm font-medium transition-colors ${
                 activeTab === tab.key
                   ? 'border-b-2 border-blue-600 text-blue-600'
@@ -65,8 +209,8 @@ function Dashboard() {
       <div className="mt-6">
         {activeTab === 'listings' && <MyListingsTab />}
         {activeTab === 'saved' && <SavedListingsTab />}
-        {activeTab === 'purchases' && <PlaceholderTab name="Purchases" />}
-        {activeTab === 'sales' && <PlaceholderTab name="Sales" />}
+        {activeTab === 'purchases' && <PurchasesTab refreshKey={ordersRefreshKey} />}
+        {activeTab === 'sales' && <SalesTab />}
       </div>
     </div>
   );
@@ -441,17 +585,192 @@ function SavedListingsTab() {
 }
 
 // ---------------------------------------------------------------------------
-// Placeholder tab
+// Shared orders tab (purchases + sales)
 // ---------------------------------------------------------------------------
 
-function PlaceholderTab({ name }: { name: string }) {
+const ORDER_STATUS_FILTERS: { value: OrderStatus | 'ALL'; label: string }[] = [
+  { value: 'ALL', label: 'All' },
+  { value: 'PENDING_CONFIRMATION', label: 'Pending' },
+  { value: 'CONFIRMED', label: 'Confirmed' },
+  { value: 'COMPLETED', label: 'Completed' },
+  { value: 'CANCELLED', label: 'Cancelled' },
+];
+
+function OrdersTab({
+  role,
+  refreshKey = 0,
+}: {
+  role: 'buyer' | 'seller';
+  refreshKey?: number;
+}) {
+  const currentUser = useAuthStore((s) => s.user);
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [pagination, setPagination] = useState<Pagination | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [page, setPage] = useState(1);
+  const [statusFilter, setStatusFilter] = useState<OrderStatus | 'ALL'>('ALL');
+
+  const endpoint = role === 'buyer' ? 'purchases' : 'sales';
+  const emptyCopy = role === 'buyer'
+    ? {
+        title: 'No purchases yet',
+        body: 'Items you buy will appear here.',
+        cta: { href: '/browse', label: 'Browse Listings' },
+      }
+    : {
+        title: 'No sales yet',
+        body: 'When buyers request your listings, they’ll appear here to confirm.',
+        cta: { href: '/listings/new', label: 'Post a Listing' },
+      };
+
+  const fetchOrders = useCallback(
+    async (p: number, status: OrderStatus | 'ALL') => {
+      setLoading(true);
+      setError('');
+      try {
+        const params = new URLSearchParams({ page: String(p), limit: '10' });
+        if (status !== 'ALL') params.set('status', status);
+        const data = await api<OrderListResponse>(
+          `/api/orders/${endpoint}?${params.toString()}`,
+        );
+        setOrders(data.orders);
+        setPagination(data.pagination);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load orders');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [endpoint],
+  );
+
+  useEffect(() => {
+    fetchOrders(page, statusFilter);
+  }, [page, statusFilter, refreshKey, fetchOrders]);
+
+  function refresh() {
+    fetchOrders(page, statusFilter);
+  }
+
+  function changeFilter(v: OrderStatus | 'ALL') {
+    setStatusFilter(v);
+    setPage(1);
+  }
+
+  if (!currentUser) return null;
+
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white px-6 py-12 text-center">
-      <svg className="mx-auto h-12 w-12 text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-        <path strokeLinecap="round" strokeLinejoin="round" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-      </svg>
-      <h3 className="mt-3 text-sm font-medium text-zinc-900">My {name}</h3>
-      <p className="mt-1 text-sm text-zinc-500">This section will be available soon.</p>
+    <div>
+      {/* Status filter */}
+      <div className="mb-4 flex flex-wrap gap-2">
+        {ORDER_STATUS_FILTERS.map((f) => (
+          <button
+            key={f.value}
+            onClick={() => changeFilter(f.value)}
+            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+              statusFilter === f.value
+                ? 'bg-blue-600 text-white'
+                : 'border border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:text-zinc-900'
+            }`}
+          >
+            {f.label}
+          </button>
+        ))}
+      </div>
+
+      {error && (
+        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+          {error}
+        </div>
+      )}
+
+      {loading && (
+        <div className="space-y-3">
+          {Array.from({ length: 3 }).map((_, i) => (
+            <div
+              key={i}
+              className="flex gap-4 rounded-xl border border-zinc-200 bg-white p-4 animate-pulse"
+            >
+              <div className="h-20 w-20 flex-shrink-0 rounded-lg bg-zinc-200" />
+              <div className="flex-1 space-y-2">
+                <div className="h-4 w-2/3 rounded bg-zinc-200" />
+                <div className="h-4 w-1/3 rounded bg-zinc-200" />
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {!loading && orders.length === 0 && (
+        <div className="rounded-xl border border-zinc-200 bg-white px-6 py-12 text-center">
+          <svg
+            className="mx-auto h-12 w-12 text-zinc-300"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={1}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+            />
+          </svg>
+          <h3 className="mt-3 text-sm font-medium text-zinc-900">{emptyCopy.title}</h3>
+          <p className="mt-1 text-sm text-zinc-500">{emptyCopy.body}</p>
+          <Link
+            href={emptyCopy.cta.href}
+            className="mt-4 inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          >
+            {emptyCopy.cta.label}
+          </Link>
+        </div>
+      )}
+
+      {!loading && orders.length > 0 && (
+        <div className="space-y-3">
+          {orders.map((order) => (
+            <OrderRow
+              key={order.id}
+              order={order}
+              role={role}
+              currentUserId={currentUser.id}
+              onChange={refresh}
+            />
+          ))}
+        </div>
+      )}
+
+      {pagination && pagination.totalPages > 1 && (
+        <div className="mt-6 flex items-center justify-center gap-2">
+          <button
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+            disabled={page === 1}
+            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Previous
+          </button>
+          <span className="text-sm text-zinc-500">
+            Page {page} of {pagination.totalPages}
+          </span>
+          <button
+            onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
+            disabled={page === pagination.totalPages}
+            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Next
+          </button>
+        </div>
+      )}
     </div>
   );
+}
+
+function PurchasesTab({ refreshKey }: { refreshKey: number }) {
+  return <OrdersTab role="buyer" refreshKey={refreshKey} />;
+}
+
+function SalesTab() {
+  return <OrdersTab role="seller" />;
 }

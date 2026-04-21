@@ -3,6 +3,7 @@
 import { useEffect, useCallback } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { useSavedStore } from '@/stores/saved';
+import { useCartStore } from '@/stores/cart';
 
 export default function AuthProvider({ children }: { children: React.ReactNode }) {
   const { fetchUser } = useAuthStore();
@@ -11,6 +12,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   const handleUnauthorized = useCallback(() => {
     useAuthStore.setState({ user: null, loading: false });
     useSavedStore.setState({ ids: new Set(), loaded: false });
+    useCartStore.getState().reset();
   }, []);
 
   useEffect(() => {
@@ -20,6 +22,10 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   useEffect(() => {
     if (user) {
       useSavedStore.getState().fetchSavedIds();
+      useCartStore.getState().fetchCart();
+    } else {
+      useSavedStore.setState({ ids: new Set(), loaded: false });
+      useCartStore.getState().reset();
     }
   }, [user]);
 

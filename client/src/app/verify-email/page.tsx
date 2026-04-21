@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth';
 function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get('token');
+  const retry = searchParams.get('retry') === '1';
   const { user, resendVerification, fetchUser } = useAuthStore();
 
   const [status, setStatus] = useState<'verifying' | 'success' | 'error' | 'idle'>(
@@ -26,6 +27,11 @@ function VerifyEmailContent() {
         setStatus('success');
         setMessage(res.message);
         fetchUser();
+        // Scrub the token from the URL so it doesn't leak via browser history,
+        // the Referer header of any outbound link on this page, or analytics.
+        if (typeof window !== 'undefined') {
+          window.history.replaceState({}, '', '/verify-email');
+        }
       })
       .catch((err) => {
         setStatus('error');
@@ -97,11 +103,15 @@ function VerifyEmailContent() {
 
         {status === 'idle' && (
           <>
-            <h1 className="text-xl font-bold text-zinc-900 mb-2">Verify Your Email</h1>
+            <h1 className="text-xl font-bold text-zinc-900 mb-2">
+              {retry ? 'Verification email failed to send' : 'Verify Your Email'}
+            </h1>
             <p className="text-zinc-600 mb-6">
-              {user
-                ? "Check your inbox for a verification email, or request a new one below."
-                : "Please log in first to resend a verification email."}
+              {retry
+                ? "Your account is created, but we couldn't send the verification email just now. Click below to try again."
+                : user
+                ? 'Check your inbox for a verification email, or request a new one below.'
+                : 'Please log in first to resend a verification email.'}
             </p>
             {user && !user.emailVerified && (
               <>

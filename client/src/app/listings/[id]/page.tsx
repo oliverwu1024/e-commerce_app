@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import { type ListingDetail, formatPrice, getConditionStyle } from '@/types/listings';
 import SaveButton from '@/components/SaveButton';
+import AddToCartButton from '@/components/AddToCartButton';
 
 // ---------------------------------------------------------------------------
 // Star rating display
@@ -280,12 +281,24 @@ export default function ListingDetailPage() {
                 </>
               ) : listing.status === 'ACTIVE' ? (
                 <>
-                  <button className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 transition-colors">
-                    Add to Cart
-                  </button>
+                  <AddToCartButton
+                    listingId={listing.id}
+                    sellerId={listing.seller.id}
+                    status={listing.status}
+                    variant="full"
+                    onError={setError}
+                  />
                   <SaveButton listingId={listing.id} size="md" />
                 </>
-              ) : null}
+              ) : (
+                <div className="flex-1 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-center text-sm text-zinc-600">
+                  {listing.status === 'SOLD'
+                    ? 'This listing has been sold.'
+                    : listing.status === 'ON_HOLD'
+                    ? 'This listing is on hold for another buyer.'
+                    : 'This listing is no longer available.'}
+                </div>
+              )}
             </div>
 
             {/* Remove confirmation */}

@@ -1,9 +1,15 @@
-if (process.env.NODE_ENV === 'production' && !process.env.JWT_SECRET) {
-  throw new Error('JWT_SECRET environment variable is required in production');
+// Require JWT_SECRET everywhere except the test suite. Staging / preview /
+// self-hosted deployments don't reliably set NODE_ENV=production, so the
+// previous production-only gate let a shared default secret ship wherever
+// NODE_ENV was unset — a free forgery vector.
+if (!process.env.JWT_SECRET && process.env.NODE_ENV !== 'test') {
+  throw new Error(
+    'JWT_SECRET environment variable is required. Set NODE_ENV=test only when running tests.',
+  );
 }
 
 export const AUTH_CONFIG = {
-  jwtSecret: process.env.JWT_SECRET || 'dev_jwt_secret',
+  jwtSecret: process.env.JWT_SECRET || 'test-only-jwt-secret-do-not-use',
   jwtExpiresIn: '7d',
   bcryptRounds: 10,
   cookie: {

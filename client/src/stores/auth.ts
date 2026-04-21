@@ -19,7 +19,7 @@ type AuthState = {
   user: User | null;
   loading: boolean;
   error: string | null;
-  register: (data: RegisterData) => Promise<void>;
+  register: (data: RegisterData) => Promise<{ verificationEmailSent: boolean }>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
   fetchUser: () => Promise<void>;
@@ -46,11 +46,14 @@ export const useAuthStore = create<AuthState>((set) => ({
   register: async (data) => {
     set({ error: null });
     try {
-      const res = await api<{ user: User }>('/api/auth/register', {
-        method: 'POST',
-        body: JSON.stringify(data),
-      });
+      const res = await api<{ user: User; verificationEmailSent?: boolean }>(
+        '/api/auth/register',
+        { method: 'POST', body: JSON.stringify(data) },
+      );
       set({ user: res.user });
+      // Default true for forwards compatibility: an older server (pre-fix)
+      // simply omits the field, and the legacy behaviour was non-blocking.
+      return { verificationEmailSent: res.verificationEmailSent ?? true };
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Registration failed';
       set({ error: message });

@@ -50,15 +50,17 @@ export function getSquareWebhookUrl(): string {
 
 /**
  * Startup check: if the webhook signature key is configured but SQUARE_WEBHOOK_URL
- * isn't, every real event will fail verification. Fail loudly at boot instead of
- * silently 400-ing every webhook in production.
+ * isn't, every real event will fail verification. Warn loudly at boot — previously
+ * this threw, which took the whole server down for tenants that don't use Square.
+ * One provider's misconfiguration shouldn't break auth/listings/cart for everyone.
  */
 export function validateSquareWebhookConfig(): void {
   if (process.env.SQUARE_WEBHOOK_SIGNATURE_KEY && !process.env.SQUARE_WEBHOOK_URL) {
-    throw new Error(
-      'SQUARE_WEBHOOK_SIGNATURE_KEY is set but SQUARE_WEBHOOK_URL is not. ' +
+    console.warn(
+      '[square] SQUARE_WEBHOOK_SIGNATURE_KEY is set but SQUARE_WEBHOOK_URL is not. ' +
         'Square verifies signatures against the URL configured in the Developer Dashboard; ' +
-        'set SQUARE_WEBHOOK_URL to the same URL.',
+        'set SQUARE_WEBHOOK_URL to the same URL, or unset the signature key to disable the ' +
+        'Square webhook entirely. All Square events will 500 until this is fixed.',
     );
   }
 }

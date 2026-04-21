@@ -80,7 +80,9 @@ const ORDER_SUMMARY_SELECT = {
     },
   },
   buyer: { select: { id: true, username: true, location: true } },
-  seller: { select: { id: true, username: true, location: true } },
+  seller: {
+    select: { id: true, username: true, location: true, sellerType: true },
+  },
 } satisfies Prisma.OrderSelect;
 
 const MESSAGE_SELECT = {
@@ -774,8 +776,27 @@ router.post(
       }
 
       const ordersController = new OrdersController(getPaypalClient());
-      const capture = await ordersController.captureOrder({ id: paypalOrderId });
-      const captured = capture.result;
+
+      // Inspect PayPal's current view of the order before capturing. If it is
+      // already COMPLETED (a prior capture — e.g., the buyer double-submitted,
+      // or the client re-fired after a refresh), skip captureOrder so PayPal
+      // doesn't respond with ORDER_ALREADY_CAPTURED (which would bubble up as
+      // a 500 here). markOrderPaid downstream is idempotent.
+      const existing = await ordersController.getOrder({ id: paypalOrderId });
+      const existingOrder = existing.result;
+
+      let captured;
+      if (existingOrder.status === 'COMPLETED') {
+        captured = existingOrder;
+      } else if (existingOrder.status === 'APPROVED') {
+        const capture = await ordersController.captureOrder({ id: paypalOrderId });
+        captured = capture.result;
+      } else {
+        res.status(409).json({
+          error: `PayPal order is in ${existingOrder.status ?? 'unknown'} state and cannot be captured`,
+        });
+        return;
+      }
 
       // Verify the PayPal order's custom_id matches OUR order — prevents a
       // malicious client from capturing someone else's approved order against
@@ -783,11 +804,12 @@ router.post(
       const customId = captured.purchaseUnits?.[0]?.payments?.captures?.[0]?.customId
         ?? captured.purchaseUnits?.[0]?.customId;
       if (customId !== id) {
+        // Do NOT log raw purchaseUnits — they contain payer email + address + name.
         console.error('PayPal customId mismatch:', {
           ourOrderId: id,
           capturedCustomId: customId,
           paypalOrderId,
-          rawPurchaseUnits: JSON.stringify(captured.purchaseUnits),
+          paypalStatus: captured.status,
         });
         res.status(400).json({ error: 'PayPal order does not belong to this order' });
         return;
@@ -800,7 +822,24 @@ router.post(
         return;
       }
 
-      const result = await markOrderPaid(id, 'PAYPAL');
+      // Extract what PayPal says was actually captured, so we can cross-check
+      // against order.amount. Buyer could have altered the approval URL.
+      const captureDetail = captured.purchaseUnits?.[0]?.payments?.captures?.[0];
+      const captureAmount = captureDetail?.amount;
+      if (!captureAmount?.value || !captureAmount?.currencyCode) {
+        console.error('[paypal capture] missing amount/currency on capture:', {
+          ourOrderId: id,
+          paypalOrderId,
+        });
+        res.status(502).json({ error: 'PayPal capture missing amount/currency' });
+        return;
+      }
+      const reportedCents = new Prisma.Decimal(captureAmount.value).mul(100).toFixed(0);
+
+      const result = await markOrderPaid(id, 'PAYPAL', {
+        amountCents: reportedCents,
+        currency: captureAmount.currencyCode,
+      });
       if (result.status === 'not_found') {
         res.status(404).json({ error: 'Order not found' });
         return;
@@ -809,6 +848,18 @@ router.post(
         // Could happen if the order was cancelled between approval and capture.
         res.status(409).json({
           error: 'Order is no longer in a confirmable state',
+        });
+        return;
+      }
+      if (result.status === 'amount_mismatch') {
+        console.error('[paypal capture] amount mismatch — NOT marking paid', {
+          ourOrderId: id,
+          paypalOrderId,
+          expected: result.expected,
+          reported: result.reported,
+        });
+        res.status(409).json({
+          error: 'Payment amount does not match order amount',
         });
         return;
       }
