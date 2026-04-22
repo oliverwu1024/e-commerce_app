@@ -1,5 +1,50 @@
 export type SellerType = 'PERSONAL' | 'BUSINESS';
 
+export type IdVerificationStatus =
+  | 'NOT_SUBMITTED'
+  | 'PENDING_REVIEW'
+  | 'APPROVED'
+  | 'REJECTED';
+
+export type SelfProfile = {
+  id: string;
+  email: string;
+  username: string;
+  name: string;
+  role: 'USER' | 'ADMIN';
+  location: string | null;
+  bio: string | null;
+  phone: string | null;
+  emailVerified: boolean;
+  phoneVerified: boolean;
+  sellerType: SellerType;
+  businessName: string | null;
+  abn: string | null;
+  abnVerified: boolean;
+  idVerification: IdVerificationStatus;
+  idRejectionReason: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type ProfileResponse = {
+  user: SelfProfile;
+  canSell: boolean;
+  missing: string[];
+};
+
+export type PendingVerification = {
+  id: string;
+  username: string;
+  name: string;
+  email: string;
+  sellerType: SellerType;
+  idDocumentUrl: string | null;
+  idSubmittedAt: string | null;
+  createdAt: string;
+};
+
+
 export type PublicUser = {
   id: string;
   username: string;

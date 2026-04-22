@@ -9,24 +9,30 @@ import { authenticate } from '../middleware/auth.js';
 
 const router = Router();
 
-const ALLOWED_TYPES: Record<string, string> = {
+const LISTING_TYPES: Record<string, string> = {
   'image/jpeg': 'jpg',
   'image/png': 'png',
   'image/webp': 'webp',
+};
+
+// ID documents: images OR PDFs (common for government-issued scans).
+const ID_DOCUMENT_TYPES: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'application/pdf': 'pdf',
 };
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 const PRESIGNED_URL_EXPIRY = 300; // 5 minutes
 
 const presignedUrlSchema = z.object({
-  fileType: z.string().refine((t) => t in ALLOWED_TYPES, {
-    message: 'File type must be image/jpeg, image/png, or image/webp',
-  }),
+  fileType: z.string(),
   fileSize: z
     .number()
     .int()
     .positive()
     .max(MAX_FILE_SIZE, 'File size must be under 5 MB'),
+  purpose: z.enum(['listing', 'id-document']).optional().default('listing'),
 });
 
 const uploadLimiter = rateLimit({
@@ -57,9 +63,19 @@ router.post(
         return;
       }
 
-      const { fileType, fileSize } = parsed.data;
-      const ext = ALLOWED_TYPES[fileType];
-      const key = `listings/${req.userId}/${crypto.randomUUID()}.${ext}`;
+      const { fileType, fileSize, purpose } = parsed.data;
+      const allowedTypes = purpose === 'id-document' ? ID_DOCUMENT_TYPES : LISTING_TYPES;
+      if (!(fileType in allowedTypes)) {
+        const allowedList =
+          purpose === 'id-document'
+            ? 'image/jpeg, image/png, or application/pdf'
+            : 'image/jpeg, image/png, or image/webp';
+        res.status(400).json({ error: `File type must be ${allowedList}` });
+        return;
+      }
+      const ext = allowedTypes[fileType];
+      const prefix = purpose === 'id-document' ? 'id-documents' : 'listings';
+      const key = `${prefix}/${req.userId}/${crypto.randomUUID()}.${ext}`;
 
       const command = new PutObjectCommand({
         Bucket: S3_BUCKET,

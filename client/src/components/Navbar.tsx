@@ -61,6 +61,20 @@ export default function Navbar() {
                 Dashboard
               </Link>
               <Link
+                href="/account/settings"
+                className="text-sm font-medium text-zinc-600 hover:text-zinc-900 transition-colors"
+              >
+                Account
+              </Link>
+              {user.role === 'ADMIN' && (
+                <Link
+                  href="/admin/verifications"
+                  className="text-sm font-medium text-amber-700 hover:text-amber-900 transition-colors"
+                >
+                  Admin
+                </Link>
+              )}
+              <Link
                 href="/listings/new"
                 className="rounded-lg bg-blue-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-700"
               >

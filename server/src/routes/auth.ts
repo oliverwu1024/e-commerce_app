@@ -8,6 +8,7 @@ import { AUTH_CONFIG } from '../config/auth.js';
 import { EMAIL_CONFIG } from '../config/email.js';
 import { registerSchema, loginSchema } from '../schemas/auth.js';
 import { authenticate, JwtPayload } from '../middleware/auth.js';
+import { clearTokenCookie } from '../utils/cookies.js';
 import { generateVerificationToken, sendVerificationEmail } from '../utils/email.js';
 
 const router = Router();
@@ -27,8 +28,8 @@ const authLimiter = rateLimit({
 const DUMMY_PASSWORD_HASH =
   '$2b$10$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy';
 
-function signToken(userId: string): string {
-  return jwt.sign({ userId } satisfies JwtPayload, AUTH_CONFIG.jwtSecret, {
+function signToken(userId: string, tokenVersion: number): string {
+  return jwt.sign({ userId, tv: tokenVersion } satisfies JwtPayload, AUTH_CONFIG.jwtSecret, {
     expiresIn: AUTH_CONFIG.jwtExpiresIn,
   } as jwt.SignOptions);
 }
@@ -87,7 +88,7 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
       console.error('Failed to send verification email:', err);
     }
 
-    const token = signToken(user.id);
+    const token = signToken(user.id, user.tokenVersion);
     setTokenCookie(res, token);
 
     res.status(201).json({
@@ -136,7 +137,7 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
       return;
     }
 
-    const token = signToken(user.id);
+    const token = signToken(user.id, user.tokenVersion);
     setTokenCookie(res, token);
 
     res.json({
@@ -193,7 +194,7 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
 
 // POST /api/auth/logout
 router.post('/logout', (_req: Request, res: Response) => {
-  res.clearCookie(AUTH_CONFIG.cookie.name);
+  clearTokenCookie(res);
   res.json({ message: 'Logged out' });
 });
 

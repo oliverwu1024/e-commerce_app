@@ -67,12 +67,21 @@ model User {
   emailVerificationToken  String?   @unique
   emailVerificationExpires DateTime?
   phoneVerified           Boolean   @default(false)
+  phoneVerificationCode     String?   // bcrypt-hashed 6-digit OTP
+  phoneVerificationExpires  DateTime?
+  phoneVerificationAttempts Int       @default(0)
   sellerType     SellerType @default(PERSONAL)
   businessName   String?    // only for BUSINESS sellers
   abn            String?    // Australian Business Number — BUSINESS only
   abnVerified    Boolean    @default(false)
   idDocumentUrl  String?    // S3 URL — PERSONAL sellers only
   idVerification VerificationStatus @default(NOT_SUBMITTED)
+  idSubmittedAt  DateTime? // set when user POSTs /verify-id; admin queue orders by this (not updatedAt, which is bumped by unrelated profile edits)
+  idRejectionReason String? // set when admin rejects; cleared on re-submit
+  // Bumped on password change / logout-everywhere so JWTs issued before the
+  // bump fail authentication. Added via `db push` in Day 19 — migration
+  // history cleanup is a Day 21 item.
+  tokenVersion   Int        @default(0)
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 

@@ -189,6 +189,40 @@ router.get('/my', authenticate, async (req: Request, res: Response) => {
 // POST /api/listings — Create a new listing
 router.post('/', authenticate, createListingLimiter, async (req: Request, res: Response) => {
   try {
+    // Seller must be fully verified before listing. The check covers email +
+    // phone for everyone, and then sellerType-specific: PERSONAL=ID approved,
+    // BUSINESS=ABN verified. 403 with a `missing` array so the client can
+    // point the user to the right verification step.
+    const seller = await prisma.user.findUnique({
+      where: { id: req.userId! },
+      select: {
+        sellerType: true,
+        emailVerified: true,
+        phoneVerified: true,
+        abnVerified: true,
+        idVerification: true,
+      },
+    });
+    if (!seller) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    const missing: string[] = [];
+    if (!seller.emailVerified) missing.push('email');
+    if (!seller.phoneVerified) missing.push('phone');
+    if (seller.sellerType === 'PERSONAL') {
+      if (seller.idVerification !== 'APPROVED') missing.push('id');
+    } else if (!seller.abnVerified) {
+      missing.push('abn');
+    }
+    if (missing.length > 0) {
+      res.status(403).json({
+        error: 'Complete seller verification before listing.',
+        missing,
+      });
+      return;
+    }
+
     const parsed = createListingSchemaForUser(req.userId!).safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues[0].message });
