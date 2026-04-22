@@ -13,6 +13,8 @@ export type PaymentMethod =
   | 'SQUARE'
   | 'STRIPE';
 
+export type PaymentSessionState = 'NONE' | 'PENDING' | 'COMPLETED';
+
 export const ORDER_STATUS_STYLES: Record<
   OrderStatus,
   { label: string; bg: string }
@@ -56,6 +58,7 @@ export type Order = {
   amount: string;
   status: OrderStatus;
   paymentMethod: PaymentMethod | null;
+  paymentSessionState: PaymentSessionState;
   createdAt: string;
   updatedAt: string;
   listing: OrderListing;

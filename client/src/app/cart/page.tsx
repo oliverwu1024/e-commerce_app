@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import ProtectedRoute from '@/components/ProtectedRoute';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/auth';
 import { useCartStore } from '@/stores/cart';
 import { formatPrice, getConditionStyle } from '@/types/listings';
 import type { CartItem, Order } from '@/types/orders';
@@ -19,6 +20,7 @@ export default function CartPage() {
 
 function Cart() {
   const router = useRouter();
+  const user = useAuthStore((s) => s.user);
   const { cart, loaded, loading, error, fetchCart, remove } = useCartStore();
   const [checkoutError, setCheckoutError] = useState('');
   const [checkingOut, setCheckingOut] = useState(false);
@@ -29,7 +31,9 @@ function Cart() {
   }, [fetchCart]);
 
   const hasUnavailable = cart.items.some((i) => i.listing.status !== 'ACTIVE');
-  const canCheckout = cart.checkoutableCount > 0 && !hasUnavailable;
+  const emailUnverified = !!user && !user.emailVerified;
+  const canCheckout =
+    cart.checkoutableCount > 0 && !hasUnavailable && !emailUnverified;
 
   async function handleCheckout() {
     setCheckoutError('');
@@ -120,6 +124,18 @@ function Cart() {
               {hasUnavailable && (
                 <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
                   Some items are no longer available. Remove them before checking out.
+                </div>
+              )}
+
+              {emailUnverified && (
+                <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                  Please verify your email before checking out.{' '}
+                  <Link
+                    href="/verify-email"
+                    className="font-medium underline hover:text-amber-900"
+                  >
+                    Verify now
+                  </Link>
                 </div>
               )}
 

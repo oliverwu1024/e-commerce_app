@@ -82,6 +82,20 @@ function Dashboard() {
     if (!paymentStatus) return;
 
     if (paymentStatus === 'cancelled') {
+      // Release the server-side PENDING lock so Pay Now works again — the
+      // provider (Stripe / Square / PayPal cancel URL) has told us the user
+      // explicitly backed out, which means no capture is coming. Best-effort
+      // only: if it 409s we've hit a race (webhook already won) and the
+      // order is in the right state regardless.
+      if (paymentOrderId) {
+        api(`/api/orders/${paymentOrderId}/pay/abandon`, { method: 'POST' })
+          .catch((err) => {
+            console.warn('Payment abandon failed:', err);
+          })
+          .finally(() => {
+            setOrdersRefreshKey((k) => k + 1);
+          });
+      }
       setPaymentBanner({
         type: 'info',
         message: 'Payment was cancelled. You can try again at any time.',

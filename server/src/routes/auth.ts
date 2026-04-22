@@ -21,6 +21,17 @@ const authLimiter = rateLimit({
   legacyHeaders: false,
 });
 
+// Dev-only: expose the verification URL in API responses + stdout so a dev
+// can exercise the email-verification flow without real SMTP. Explicit
+// opt-in — negating NODE_ENV=production would leak tokens wherever NODE_ENV
+// is unset (staging, preview, self-hosted). Mirrors ENABLE_DEV_OTP.
+const DEV_EMAIL_ENABLED = process.env.ENABLE_DEV_EMAIL === '1';
+
+function buildVerificationUrl(token: string): string {
+  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  return `${clientUrl}/verify-email?token=${token}`;
+}
+
 // Fixed bcrypt hash used when a login attempt finds no user — ensures the
 // response time stays constant regardless of whether the email exists. Prevents
 // attackers from enumerating registered emails via timing side-channel.
@@ -88,6 +99,12 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
       console.error('Failed to send verification email:', err);
     }
 
+    if (DEV_EMAIL_ENABLED) {
+      console.log(
+        `[DEV] Email verification URL for ${email}: ${buildVerificationUrl(verificationToken)}`,
+      );
+    }
+
     const token = signToken(user.id, user.tokenVersion);
     setTokenCookie(res, token);
 
@@ -105,6 +122,9 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
         emailVerified: user.emailVerified,
       },
       verificationEmailSent,
+      devVerificationUrl: DEV_EMAIL_ENABLED
+        ? buildVerificationUrl(verificationToken)
+        : undefined,
     });
   } catch (err) {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
@@ -253,9 +273,29 @@ router.post('/resend-verification', authenticate, authLimiter, async (req: Reque
       },
     });
 
-    await sendVerificationEmail(user.email, verificationToken);
+    // Same pattern as register: don't hard-fail if SMTP is broken. The token
+    // has been rotated regardless, so the stdout log / dev URL still works.
+    let verificationEmailSent = true;
+    try {
+      await sendVerificationEmail(user.email, verificationToken);
+    } catch (err) {
+      verificationEmailSent = false;
+      console.error('Failed to send verification email:', err);
+    }
 
-    res.json({ message: 'Verification email sent' });
+    if (DEV_EMAIL_ENABLED) {
+      console.log(
+        `[DEV] Email verification URL for ${user.email}: ${buildVerificationUrl(verificationToken)}`,
+      );
+    }
+
+    res.json({
+      message: 'Verification email sent',
+      verificationEmailSent,
+      devVerificationUrl: DEV_EMAIL_ENABLED
+        ? buildVerificationUrl(verificationToken)
+        : undefined,
+    });
   } catch (err) {
     console.error('Resend verification error:', err);
     res.status(500).json({ error: 'Internal server error' });

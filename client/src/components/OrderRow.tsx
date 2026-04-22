@@ -80,6 +80,26 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
     }
   }
 
+  async function handleAbandon() {
+    if (
+      !confirm(
+        'Release the payment lock?\n\nOnly do this if you closed the payment tab without completing. If your payment actually went through, releasing the lock here will not refund it — contact support instead.',
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/api/orders/${order.id}/pay/abandon`, { method: 'POST' });
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to release lock');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // -----------------------------------------------------------------
   // Role + status → available actions
   // -----------------------------------------------------------------
@@ -112,30 +132,35 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
         </button>,
       );
     } else if (order.status === 'CONFIRMED') {
-      actions.push(
-        <button
-          key="complete"
-          onClick={() => setShowCompletePicker((v) => !v)}
-          disabled={busy}
-          className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-        >
-          Mark as Paid
-        </button>,
-        <button
-          key="cancel"
-          onClick={() =>
-            handleMutation(
-              `/api/orders/${order.id}/cancel`,
-              undefined,
-              'Cancel this order? The listing will go back on sale.',
-            )
-          }
-          disabled={busy}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
-        >
-          Cancel
-        </button>,
-      );
+      // Hide seller mutations during a live buyer payment session — the
+      // server will 409 them anyway. The payment-in-progress banner below
+      // explains the state.
+      if (order.paymentSessionState !== 'PENDING') {
+        actions.push(
+          <button
+            key="complete"
+            onClick={() => setShowCompletePicker((v) => !v)}
+            disabled={busy}
+            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          >
+            Mark as Paid
+          </button>,
+          <button
+            key="cancel"
+            onClick={() =>
+              handleMutation(
+                `/api/orders/${order.id}/cancel`,
+                undefined,
+                'Cancel this order? The listing will go back on sale.',
+              )
+            }
+            disabled={busy}
+            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+          >
+            Cancel
+          </button>,
+        );
+      }
     }
   } else {
     // buyer
@@ -157,30 +182,46 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
         </button>,
       );
     } else if (order.status === 'CONFIRMED') {
-      actions.push(
-        <button
-          key="pay"
-          onClick={() => setShowPayPicker((v) => !v)}
-          disabled={busy}
-          className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
-        >
-          Pay Now
-        </button>,
-        <button
-          key="cancel"
-          onClick={() =>
-            handleMutation(
-              `/api/orders/${order.id}/cancel`,
-              undefined,
-              'Cancel this order?',
-            )
-          }
-          disabled={busy}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
-        >
-          Cancel
-        </button>,
-      );
+      // When a provider payment session is live the server will 409 any
+      // Pay / Cancel — hide those and expose the release-lock escape hatch
+      // so a buyer who closed the provider tab isn't stuck.
+      if (order.paymentSessionState === 'PENDING') {
+        actions.push(
+          <button
+            key="release"
+            onClick={handleAbandon}
+            disabled={busy}
+            className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50 transition-colors"
+          >
+            Release lock
+          </button>,
+        );
+      } else {
+        actions.push(
+          <button
+            key="pay"
+            onClick={() => setShowPayPicker((v) => !v)}
+            disabled={busy}
+            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+          >
+            Pay Now
+          </button>,
+          <button
+            key="cancel"
+            onClick={() =>
+              handleMutation(
+                `/api/orders/${order.id}/cancel`,
+                undefined,
+                'Cancel this order?',
+              )
+            }
+            disabled={busy}
+            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+          >
+            Cancel
+          </button>,
+        );
+      }
     } else if (order.status === 'COMPLETED' && !order.review) {
       actions.push(
         <button
@@ -287,6 +328,28 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           {error}
         </div>
       )}
+
+      {/* Payment-in-progress notice — visible to whichever role is looking at
+          an order whose buyer has a live provider session. Explains why the
+          usual actions are gone and (for the buyer) how to recover. */}
+      {order.status === 'CONFIRMED' &&
+        order.paymentSessionState === 'PENDING' && (
+          <div className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+            {role === 'buyer' ? (
+              <>
+                Payment is in progress. If you closed the payment tab without
+                completing, click{' '}
+                <span className="font-medium">Release lock</span> to try again.
+              </>
+            ) : (
+              <>
+                The buyer has an online payment in progress. Mark Paid and
+                Cancel are disabled until the payment completes or is
+                released.
+              </>
+            )}
+          </div>
+        )}
 
       {/* Review form — buyer, completed, not yet reviewed */}
       {showReviewForm && role === 'buyer' && order.status === 'COMPLETED' && !order.review && (

@@ -18,6 +18,9 @@ function VerifyEmailContent() {
   const [message, setMessage] = useState('');
   const [resending, setResending] = useState(false);
   const [resendSuccess, setResendSuccess] = useState(false);
+  // Server includes this when ENABLE_DEV_EMAIL=1 so you can click through
+  // without real SMTP. Never populated in production.
+  const [devUrl, setDevUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!token) return;
@@ -42,9 +45,11 @@ function VerifyEmailContent() {
   const handleResend = async () => {
     setResending(true);
     setResendSuccess(false);
+    setDevUrl(null);
     try {
-      await resendVerification();
+      const result = await resendVerification();
       setResendSuccess(true);
+      if (result.devVerificationUrl) setDevUrl(result.devVerificationUrl);
     } catch {
       // error is set in the store
     } finally {
@@ -122,8 +127,22 @@ function VerifyEmailContent() {
                 >
                   {resending ? 'Sending...' : 'Resend Verification Email'}
                 </button>
-                {resendSuccess && (
+                {resendSuccess && !devUrl && (
                   <p className="mt-3 text-sm text-green-600">Verification email sent! Check your inbox.</p>
+                )}
+                {devUrl && (
+                  <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-left text-xs text-amber-900">
+                    <p className="font-semibold">Dev mode: click-through link</p>
+                    <p className="mt-1">
+                      <code className="break-all">ENABLE_DEV_EMAIL=1</code> is set on the server, so here&apos;s the verification URL directly (no inbox needed):
+                    </p>
+                    <a
+                      href={devUrl}
+                      className="mt-2 inline-block break-all text-blue-700 underline hover:text-blue-800"
+                    >
+                      {devUrl}
+                    </a>
+                  </div>
                 )}
               </>
             )}

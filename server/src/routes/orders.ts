@@ -65,6 +65,9 @@ const ORDER_SUMMARY_SELECT = {
   amount: true,
   status: true,
   paymentMethod: true,
+  // Exposed so the Purchases tab can surface the "Release payment lock"
+  // escape hatch when a provider tab was closed without cancelling.
+  paymentSessionState: true,
   createdAt: true,
   updatedAt: true,
   listing: {
@@ -101,6 +104,27 @@ const MESSAGE_SELECT = {
 // ---------------------------------------------------------------------------
 router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res: Response) => {
   try {
+    // Require a verified email before the buyer can commit to orders. A
+    // working inbox is the minimum recovery path for order updates / dispute
+    // correspondence, and keeps pure-bot accounts from creating orders.
+    // Sellers are already gated harder (email + phone + ID/ABN) at listing
+    // creation.
+    const buyer = await prisma.user.findUnique({
+      where: { id: req.userId! },
+      select: { emailVerified: true },
+    });
+    if (!buyer) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    if (!buyer.emailVerified) {
+      res.status(403).json({
+        error: 'Please verify your email before checking out.',
+        reason: 'email_unverified',
+      });
+      return;
+    }
+
     const cart = await prisma.cart.findUnique({
       where: { userId: req.userId! },
       select: {
@@ -874,6 +898,78 @@ router.post(
       res.status(400).json({ error: 'Unsupported payment method' });
     } catch (err) {
       console.error('Pay error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/orders/:id/pay/abandon — buyer releases the PENDING payment lock
+// without completing. Fires automatically from the client when the user
+// clicks Cancel in the provider's UI (Stripe / Square / PayPal cancel URL)
+// — at that point no capture will happen — and also via an explicit
+// "Release lock" button for the tab-close case.
+//
+// Safety: we flip PENDING→NONE with a conditional updateMany guarded by
+// buyerId + status=CONFIRMED + paymentSessionState=PENDING. If any of those
+// changed (webhook captured, admin intervened, different user) count=0 and
+// we return 409 without touching state.
+//
+// Residual risk: a user who approved at the provider then hits Cancel on
+// the provider's UI instead of waiting could theoretically create a window
+// where capture is mid-flight. Providers document that cancel means
+// "don't capture" so this is provider-side safety, not ours — and the
+// markOrderPaid amount guard + 30-min admin reconciliation remain as
+// belt-and-braces.
+// ---------------------------------------------------------------------------
+router.post(
+  '/:id/pay/abandon',
+  authenticate,
+  orderMutationLimiter,
+  async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const { id } = req.params;
+      if (!uuidSchema.safeParse(id).success) {
+        res.status(400).json({ error: 'Invalid order ID' });
+        return;
+      }
+
+      const { count } = await prisma.order.updateMany({
+        where: {
+          id,
+          buyerId: req.userId!,
+          status: 'CONFIRMED',
+          paymentSessionState: 'PENDING',
+        },
+        data: { paymentSessionState: 'NONE' },
+      });
+
+      if (count === 0) {
+        // Re-read to distinguish "not your order / nonexistent" (→ 404, hide
+        // existence) from "already off-PENDING" (→ 409, friendly message).
+        const existing = await prisma.order.findUnique({
+          where: { id },
+          select: { buyerId: true, paymentSessionState: true, status: true },
+        });
+        if (!existing || existing.buyerId !== req.userId) {
+          res.status(404).json({ error: 'Order not found' });
+          return;
+        }
+        if (existing.paymentSessionState === 'COMPLETED') {
+          res.status(409).json({
+            error: 'Payment has already completed — no lock to release.',
+          });
+          return;
+        }
+        res.status(409).json({
+          error: 'No active payment lock to release.',
+        });
+        return;
+      }
+
+      res.json({ message: 'Payment lock released.' });
+    } catch (err) {
+      console.error('Abandon payment error:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   },
