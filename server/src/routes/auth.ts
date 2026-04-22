@@ -116,6 +116,7 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
         name: user.name,
         location: user.location,
         bio: user.bio,
+        avatarUrl: user.avatarUrl,
         sellerType: user.sellerType,
         businessName: user.businessName,
         role: user.role,
@@ -152,7 +153,9 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
     // Always run bcrypt.compare — even on a missing user — so response time
     // doesn't reveal whether the email exists.
     const valid = await bcrypt.compare(password, user?.password ?? DUMMY_PASSWORD_HASH);
-    if (!user || !valid) {
+    // Deleted accounts use the generic "invalid" error so the caller can't
+    // probe for which addresses belong to deleted accounts.
+    if (!user || !valid || user.deletedAt) {
       res.status(401).json({ error: 'Invalid email or password' });
       return;
     }
@@ -168,6 +171,7 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
         name: user.name,
         location: user.location,
         bio: user.bio,
+        avatarUrl: user.avatarUrl,
         sellerType: user.sellerType,
         businessName: user.businessName,
         role: user.role,
@@ -192,6 +196,7 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
         name: true,
         location: true,
         bio: true,
+        avatarUrl: true,
         sellerType: true,
         businessName: true,
         role: true,
@@ -232,16 +237,53 @@ router.get('/verify-email/:token', authLimiter, async (req: Request<{ token: str
       return;
     }
 
-    await prisma.user.update({
-      where: { id: user.id },
-      data: {
-        emailVerified: true,
-        emailVerificationToken: null,
-        emailVerificationExpires: null,
-      },
-    });
-
-    res.json({ message: 'Email verified successfully' });
+    // Two flows converge here:
+    //   1. Initial verification — `pendingEmail` is null. We just flip
+    //      `emailVerified=true` on the existing address.
+    //   2. Email change — `pendingEmail` holds the new address. Swap
+    //      `email ← pendingEmail` (catch P2002 in case someone else
+    //      registered the address in the meantime) and clear pending.
+    try {
+      if (user.pendingEmail) {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            email: user.pendingEmail,
+            pendingEmail: null,
+            emailVerified: true,
+            emailVerificationToken: null,
+            emailVerificationExpires: null,
+          },
+        });
+        res.json({ message: 'Email updated successfully' });
+      } else {
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            emailVerified: true,
+            emailVerificationToken: null,
+            emailVerificationExpires: null,
+          },
+        });
+        res.json({ message: 'Email verified successfully' });
+      }
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        // Another account grabbed the email between email-change and verify.
+        // Clear pendingEmail so the user can try a different address.
+        await prisma.user.update({
+          where: { id: user.id },
+          data: {
+            pendingEmail: null,
+            emailVerificationToken: null,
+            emailVerificationExpires: null,
+          },
+        });
+        res.status(409).json({ error: 'That email is no longer available. Please try a different address.' });
+        return;
+      }
+      throw err;
+    }
   } catch (err) {
     console.error('Email verification error:', err);
     res.status(500).json({ error: 'Internal server error' });

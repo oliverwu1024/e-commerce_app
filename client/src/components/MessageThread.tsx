@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
+import Avatar from '@/components/Avatar';
 import type { OrderMessage } from '@/types/orders';
 
 type Props = {
@@ -128,7 +129,15 @@ export default function MessageThread({
         ) : (
           messages.map((msg, idx) => {
             const mine = msg.sender.id === currentUserId;
+            const prev = messages[idx - 1];
             const next = messages[idx + 1];
+            // Show the avatar only at the TOP of a run by the other party —
+            // repeating it on every message gets noisy fast.
+            const startsRun =
+              !prev ||
+              prev.sender.id !== msg.sender.id ||
+              new Date(msg.createdAt).getTime() - new Date(prev.createdAt).getTime() >=
+                GROUP_WINDOW_MS;
             const continuesRun =
               next &&
               next.sender.id === msg.sender.id &&
@@ -144,8 +153,19 @@ export default function MessageThread({
             return (
               <div
                 key={msg.id}
-                className={`flex ${mine ? 'justify-end' : 'justify-start'} ${continuesRun ? '' : 'pb-1'}`}
+                className={`flex items-end gap-2 ${mine ? 'justify-end' : 'justify-start'} ${continuesRun ? '' : 'pb-1'}`}
               >
+                {!mine && (
+                  <span className="w-6 flex-shrink-0">
+                    {startsRun && (
+                      <Avatar
+                        src={msg.sender.avatarUrl}
+                        username={msg.sender.username}
+                        size="xs"
+                      />
+                    )}
+                  </span>
+                )}
                 <div
                   className={`max-w-[75%] rounded-lg px-3 py-1.5 text-sm ${
                     mine

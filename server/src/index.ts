@@ -13,6 +13,8 @@ import orderRoutes from './routes/orders.js';
 import reviewRoutes from './routes/reviews.js';
 import userRoutes from './routes/users.js';
 import adminRoutes from './routes/admin.js';
+import notificationRoutes from './routes/notifications.js';
+import inboxRoutes from './routes/inbox.js';
 import webhookRoutes from './routes/webhooks.js';
 import { validateSquareWebhookConfig } from './config/square.js';
 
@@ -54,6 +56,8 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/reviews', reviewRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/notifications', notificationRoutes);
+app.use('/api/inbox', inboxRoutes);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);

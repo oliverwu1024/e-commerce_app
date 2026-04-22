@@ -1,6 +1,7 @@
 import prisma from '../lib/prisma.js';
 import { Prisma } from '../generated/prisma/client.js';
 import type { PaymentMethod } from '../generated/prisma/client.js';
+import { createNotification } from './notifications.js';
 
 export type PaidResult =
   | { status: 'completed' }
@@ -35,7 +36,7 @@ export async function markOrderPaid(
   paymentMethod: PaymentMethod,
   reported: { amountCents: string; currency: string },
 ): Promise<PaidResult> {
-  return prisma.$transaction(async (tx) => {
+  const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
       select: { status: true, listingId: true, amount: true },
@@ -80,4 +81,44 @@ export async function markOrderPaid(
 
     return { status: 'completed' } as const;
   });
+
+  // Notify both sides on a successful capture. Happens outside the tx so a
+  // notification failure can't roll back the payment. Only ORDER_PAID/
+  // ORDER_COMPLETED since amount_mismatch / already_completed don't warrant
+  // notifications (the user either sees an error or nothing changed).
+  if (result.status === 'completed') {
+    void (async () => {
+      const full = await prisma.order.findUnique({
+        where: { id: orderId },
+        select: {
+          buyerId: true,
+          sellerId: true,
+          listing: { select: { id: true, title: true } },
+          buyer: { select: { username: true } },
+          seller: { select: { username: true } },
+        },
+      });
+      if (!full) return;
+      void createNotification({
+        recipientId: full.sellerId,
+        type: 'ORDER_PAID',
+        title: 'Payment received',
+        body: `${full.buyer.username} paid for "${full.listing.title}" via ${paymentMethod.toLowerCase().replace('_', ' ')}.`,
+        actorId: full.buyerId,
+        orderId,
+        listingId: full.listing.id,
+      });
+      void createNotification({
+        recipientId: full.buyerId,
+        type: 'ORDER_COMPLETED',
+        title: 'Payment confirmed',
+        body: `Your payment for "${full.listing.title}" was received.`,
+        actorId: full.sellerId,
+        orderId,
+        listingId: full.listing.id,
+      });
+    })();
+  }
+
+  return result;
 }

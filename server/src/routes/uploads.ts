@@ -22,17 +22,22 @@ const ID_DOCUMENT_TYPES: Record<string, string> = {
   'application/pdf': 'pdf',
 };
 
+// Avatars are public-facing profile photos; same image set as listings,
+// no PDFs, tighter size cap since they're rendered at small dimensions.
+const AVATAR_TYPES: Record<string, string> = {
+  'image/jpeg': 'jpg',
+  'image/png': 'png',
+  'image/webp': 'webp',
+};
+
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
+const MAX_AVATAR_SIZE = 2 * 1024 * 1024; // 2 MB
 const PRESIGNED_URL_EXPIRY = 300; // 5 minutes
 
 const presignedUrlSchema = z.object({
   fileType: z.string(),
-  fileSize: z
-    .number()
-    .int()
-    .positive()
-    .max(MAX_FILE_SIZE, 'File size must be under 5 MB'),
-  purpose: z.enum(['listing', 'id-document']).optional().default('listing'),
+  fileSize: z.number().int().positive(),
+  purpose: z.enum(['listing', 'id-document', 'avatar']).optional().default('listing'),
 });
 
 const uploadLimiter = rateLimit({
@@ -64,7 +69,22 @@ router.post(
       }
 
       const { fileType, fileSize, purpose } = parsed.data;
-      const allowedTypes = purpose === 'id-document' ? ID_DOCUMENT_TYPES : LISTING_TYPES;
+
+      // Per-purpose type + size limits. Avatars use a smaller cap than
+      // listings because they're shown at thumbnail dimensions everywhere.
+      const allowedTypes =
+        purpose === 'id-document'
+          ? ID_DOCUMENT_TYPES
+          : purpose === 'avatar'
+          ? AVATAR_TYPES
+          : LISTING_TYPES;
+      const sizeCap = purpose === 'avatar' ? MAX_AVATAR_SIZE : MAX_FILE_SIZE;
+      if (fileSize > sizeCap) {
+        res.status(400).json({
+          error: `File size must be under ${Math.round(sizeCap / 1024 / 1024)} MB`,
+        });
+        return;
+      }
       if (!(fileType in allowedTypes)) {
         const allowedList =
           purpose === 'id-document'
@@ -74,8 +94,18 @@ router.post(
         return;
       }
       const ext = allowedTypes[fileType];
-      const prefix = purpose === 'id-document' ? 'id-documents' : 'listings';
-      const key = `${prefix}/${req.userId}/${crypto.randomUUID()}.${ext}`;
+      // Dev shortcut: avatars are stored under `listings/avatars/<userId>/`
+      // rather than the semantically-cleaner `avatars/<userId>/` so they
+      // piggy-back on the existing `listings/*` IAM PutObject + bucket
+      // public-read policy. Before prod: widen both policies to include
+      // `avatars/*` and flip this back to `avatars/${userId}`.
+      const prefix =
+        purpose === 'id-document'
+          ? `id-documents/${req.userId}`
+          : purpose === 'avatar'
+          ? `listings/avatars/${req.userId}`
+          : `listings/${req.userId}`;
+      const key = `${prefix}/${crypto.randomUUID()}.${ext}`;
 
       const command = new PutObjectCommand({
         Bucket: S3_BUCKET,

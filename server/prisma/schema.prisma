@@ -63,6 +63,18 @@ enum UserRole {
   ADMIN
 }
 
+enum NotificationType {
+  ORDER_PLACED       // seller: buyer checked out
+  ORDER_CONFIRMED    // buyer: seller accepted
+  ORDER_CANCELLED    // other party: cancelled
+  ORDER_COMPLETED    // buyer: seller marked paid / online capture landed
+  ORDER_PAID         // seller: online payment captured
+  NEW_MESSAGE        // receiver: counterparty sent a message
+  NEW_REVIEW         // seller: buyer left a review
+  ID_APPROVED        // user: admin approved ID
+  ID_REJECTED        // user: admin rejected ID
+}
+
 model User {
   id             String   @id @default(uuid())
   email          String   @unique
@@ -73,9 +85,17 @@ model User {
   location       String?
   bio            String?
   phone          String?
+  // Public profile picture. S3 URL under avatars/<userId>/. Public-read
+  // (same policy as listings/*). Null = render initial-letter fallback.
+  avatarUrl      String?
   emailVerified           Boolean   @default(false)
   emailVerificationToken  String?   @unique
   emailVerificationExpires DateTime?
+  // Two-phase email change: the new address sits here until the user clicks
+  // the verification link sent to it. On verify, email ← pendingEmail and
+  // pendingEmail is cleared. Keeps the old inbox live until the new one is
+  // proven controlled by the same person (blocks session-steal lockout).
+  pendingEmail             String?
   phoneVerified           Boolean   @default(false)
   phoneVerificationCode     String?   // bcrypt-hashed 6-digit OTP
   phoneVerificationExpires  DateTime?
@@ -92,6 +112,11 @@ model User {
   // bump fail authentication. Added via `db push` in Day 19 — migration
   // history cleanup is a Day 21 item.
   tokenVersion   Int        @default(0)
+  // Soft-delete marker. When set, the user can no longer log in or act,
+  // their PII has been anonymized, and `/api/users/:id` 404s. The row stays
+  // so foreign keys from orders / reviews / messages remain valid for the
+  // counterparties.
+  deletedAt      DateTime?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
@@ -104,6 +129,10 @@ model User {
   cart          Cart?
   sentMessages     Message[] @relation("sender")
   receivedMessages Message[] @relation("receiver")
+  notifications Notification[] @relation("recipient")
+  triggeredNotifications Notification[] @relation("actor")
+
+  @@index([deletedAt])
 }
 
 model Listing {
@@ -232,9 +261,12 @@ model SavedListing {
 }
 
 model Message {
-  id        String   @id @default(uuid())
+  id        String    @id @default(uuid())
   content   String
-  createdAt DateTime @default(now())
+  createdAt DateTime  @default(now())
+  // Set when the receiver fetches the thread. Lets the inbox show unread
+  // counts per thread + the Navbar envelope badge sum.
+  readAt    DateTime?
 
   order   Order  @relation(fields: [orderId], references: [id])
   orderId String
@@ -246,6 +278,37 @@ model Message {
   receiverId String
 
   @@index([orderId, createdAt])
+  // Backs GET /api/inbox/unread-count: "unread messages to me".
+  @@index([receiverId, readAt])
+}
+
+// User-facing inbox item. One row per event the user should know about
+// (order state changes, new messages, reviews, admin verification).
+// `readAt` = null means unread (shows in the Navbar bell badge).
+// `actor` is the user who triggered the event (counterparty / admin) —
+// nullable so system-initiated events can still emit notifications.
+model Notification {
+  id        String           @id @default(uuid())
+  type      NotificationType
+  title     String           // short summary rendered in the UI
+  body      String           // detail line under the title
+  readAt    DateTime?
+  createdAt DateTime         @default(now())
+
+  recipient   User   @relation("recipient", fields: [recipientId], references: [id])
+  recipientId String
+
+  actor   User?   @relation("actor", fields: [actorId], references: [id])
+  actorId String?
+
+  // Optional denormalized references. The UI uses these to build click
+  // targets (e.g., `/dashboard?tab=sales&order=<id>`). Strings — not FKs —
+  // so a notification survives the referenced row being deleted.
+  orderId    String?
+  listingId  String?
+
+  @@index([recipientId, readAt])
+  @@index([recipientId, createdAt])
 }
 
 // Replay-dedupe for webhook events. Unique (provider, eventId) is the

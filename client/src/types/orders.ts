@@ -40,6 +40,7 @@ type OrderParty = {
   id: string;
   username: string;
   location: string | null;
+  avatarUrl: string | null;
 };
 
 type OrderSeller = OrderParty & {
@@ -71,7 +72,7 @@ export type OrderMessage = {
   id: string;
   content: string;
   createdAt: string;
-  sender: { id: string; username: string };
+  sender: { id: string; username: string; avatarUrl: string | null };
 };
 
 export type OrderListResponse = {

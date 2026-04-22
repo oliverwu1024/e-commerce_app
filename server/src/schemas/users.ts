@@ -21,6 +21,26 @@ export const changePasswordSchema = z.object({
     .max(200, 'New password is too long'),
 });
 
+// Same format rules as register (kept in sync by copy — if either changes,
+// update both). Regex blocks punctuation / emoji so usernames remain URL-safe
+// and unambiguous in the /sellers/<uuid> → @username rendering.
+export const changeUsernameSchema = z.object({
+  username: z
+    .string()
+    .trim()
+    .min(3, 'Username must be at least 3 characters')
+    .max(30, 'Username must be at most 30 characters')
+    .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
+});
+
+export const changeEmailSchema = z.object({
+  email: z
+    .string()
+    .trim()
+    .email('Invalid email address')
+    .max(254, 'Email address is too long'),
+});
+
 // International phone format: optional leading +, then 8-15 digits.
 // E.164 minimum is 8 (country code + subscriber); max is 15.
 export const phoneSchema = z
@@ -71,4 +91,29 @@ export const adminReviewSchema = z.discriminatedUnion('action', [
 export const pendingVerificationsQuerySchema = z.object({
   page: z.coerce.number().int().positive().default(1),
   limit: z.coerce.number().int().positive().max(50).default(20),
+});
+
+export const updateAvatarSchema = z.object({
+  // The URL returned by the presigned-url endpoint for purpose=avatar.
+  // The route handler validates the prefix against the user's id so a
+  // user can't claim someone else's upload.
+  avatarUrl: z
+    .string()
+    .url('Invalid avatar URL')
+    .refine((v) => v.startsWith('https://'), 'Avatar URL must use https'),
+});
+
+// Exact phrase the user must type to confirm destructive account deletion.
+// Kept here so the client + server match — if either changes, update both.
+export const DELETE_ACCOUNT_PHRASE = 'I confirm the deletion of account';
+
+export const deleteAccountSchema = z.object({
+  currentPassword: z.string().min(1, 'Password is required'),
+  confirmation: z
+    .string()
+    .trim()
+    .refine(
+      (v) => v.toLowerCase() === DELETE_ACCOUNT_PHRASE.toLowerCase(),
+      { message: `Please type "${DELETE_ACCOUNT_PHRASE}" to confirm.` },
+    ),
 });

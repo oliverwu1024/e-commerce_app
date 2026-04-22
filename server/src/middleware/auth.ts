@@ -36,14 +36,22 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
 
   // tokenVersion check: if the user has bumped their tokenVersion (via password
   // change or explicit logout-everywhere), JWTs issued before the bump are
-  // invalid. Fetch role in the same query to save a round-trip on admin routes.
+  // invalid. Fetch role + deletedAt in the same query (one round-trip).
   const user = await prisma.user.findUnique({
     where: { id: decoded.userId },
-    select: { tokenVersion: true, role: true },
+    select: { tokenVersion: true, role: true, deletedAt: true },
   });
   if (!user || user.tokenVersion !== decoded.tv) {
     clearTokenCookie(res);
     res.status(401).json({ error: 'Session has been revoked. Please sign in again.' });
+    return;
+  }
+  // Account deletion also bumps tokenVersion, so in practice the check above
+  // already catches this. Belt-and-braces: refuse any request from a
+  // soft-deleted user even if someone managed to keep a matching JWT.
+  if (user.deletedAt) {
+    clearTokenCookie(res);
+    res.status(401).json({ error: 'This account has been deleted.' });
     return;
   }
 

@@ -9,6 +9,7 @@ import { type ListingDetail, formatPrice, getConditionStyle } from '@/types/list
 import SaveButton from '@/components/SaveButton';
 import AddToCartButton from '@/components/AddToCartButton';
 import Stars from '@/components/Stars';
+import Avatar from '@/components/Avatar';
 
 // ---------------------------------------------------------------------------
 // Image gallery
@@ -360,10 +361,12 @@ export default function ListingDetailClient() {
                 className="block rounded-xl border border-zinc-200 bg-white p-4 hover:border-blue-300 hover:shadow-sm transition-all"
               >
                 <div className="flex items-center gap-3">
-                  {/* Avatar placeholder */}
-                  <div className="flex h-10 w-10 items-center justify-center rounded-full bg-blue-100 text-blue-600 font-bold text-sm">
-                    {listing.seller.username.charAt(0).toUpperCase()}
-                  </div>
+                  <Avatar
+                    src={listing.seller.avatarUrl}
+                    username={listing.seller.username}
+                    size="md"
+                  />
+
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium text-zinc-900 hover:text-blue-600 transition-colors">
                       {listing.seller.username}

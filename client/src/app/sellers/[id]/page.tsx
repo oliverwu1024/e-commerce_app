@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
 import Stars from '@/components/Stars';
+import Avatar from '@/components/Avatar';
 import ListingCard from '@/components/ListingCard';
 import ListingCardSkeleton from '@/components/ListingCardSkeleton';
 import type { ListingSummary, Pagination } from '@/types/listings';
@@ -108,9 +109,8 @@ function SellerProfile({ id }: { id: string }) {
         {/* Header card */}
         <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm">
           <div className="flex items-start gap-4">
-            <div className="flex h-16 w-16 flex-shrink-0 items-center justify-center rounded-full bg-blue-100 text-xl font-bold text-blue-600">
-              {user.username.charAt(0).toUpperCase()}
-            </div>
+            <Avatar src={user.avatarUrl} username={user.username} size="xl" />
+
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2">
                 <h1 className="text-2xl font-bold text-zinc-900">{user.username}</h1>
@@ -404,6 +404,11 @@ function SellerReviewsTab({ sellerId }: { sellerId: string }) {
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
+                  <Avatar
+                    src={review.reviewer.avatarUrl}
+                    username={review.reviewer.username}
+                    size="sm"
+                  />
                   <Stars rating={review.rating} size="sm" />
                   <span className="text-sm font-medium text-zinc-700">
                     {review.reviewer.username}

@@ -14,6 +14,7 @@ export type ListingSummary = {
     id: string;
     username: string;
     location: string | null;
+    avatarUrl: string | null;
   };
   images: {
     id: string;
@@ -45,6 +46,7 @@ export type ListingDetail = {
     id: string;
     username: string;
     location: string | null;
+    avatarUrl: string | null;
     createdAt: string;
     avgRating: number | null;
     totalReviews: number;

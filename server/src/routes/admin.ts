@@ -11,6 +11,7 @@ import {
   pendingVerificationsQuerySchema,
 } from '../schemas/users.js';
 import { sendIdApprovedEmail, sendIdRejectedEmail } from '../utils/email.js';
+import { createNotification } from '../services/notifications.js';
 
 const router = Router();
 
@@ -152,6 +153,12 @@ router.put('/verifications/:userId', async (req: Request<{ userId: string }>, re
       sendIdApprovedEmail(target.email, target.username).catch((err) => {
         console.error('Failed to send ID-approved email:', err);
       });
+      void createNotification({
+        recipientId: userId,
+        type: 'ID_APPROVED',
+        title: 'ID verified',
+        body: 'Your ID has been approved. You can now create listings.',
+      });
       res.json({ message: 'ID approved.' });
     } else {
       const { count } = await prisma.user.updateMany({
@@ -173,6 +180,12 @@ router.put('/verifications/:userId', async (req: Request<{ userId: string }>, re
       }
       sendIdRejectedEmail(target.email, target.username, parsed.data.reason).catch((err) => {
         console.error('Failed to send ID-rejected email:', err);
+      });
+      void createNotification({
+        recipientId: userId,
+        type: 'ID_REJECTED',
+        title: 'ID rejected',
+        body: `Your ID was rejected: ${parsed.data.reason}`,
       });
       res.json({ message: 'ID rejected.' });
     }

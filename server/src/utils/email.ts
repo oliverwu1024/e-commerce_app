@@ -101,3 +101,74 @@ function escapeHtml(s: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
 }
+
+export async function sendOrderPlacedEmail(
+  sellerEmail: string,
+  sellerUsername: string,
+  listingTitle: string,
+  buyerUsername: string,
+  orderId: string,
+): Promise<void> {
+  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  const url = `${clientUrl}/dashboard?tab=sales&order=${orderId}`;
+
+  await transporter.sendMail({
+    from: EMAIL_CONFIG.from,
+    to: sellerEmail,
+    subject: `New order for "${listingTitle}"`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2>Hi ${escapeHtml(sellerUsername)},</h2>
+        <p>You have a new order from <strong>${escapeHtml(buyerUsername)}</strong> for <strong>${escapeHtml(listingTitle)}</strong>.</p>
+        <p>Confirm or decline from your Sales dashboard:</p>
+        <a href="${url}"
+           style="display: inline-block; background: #2563eb; color: #fff; padding: 12px 24px;
+                  border-radius: 8px; text-decoration: none; font-weight: 600;">
+          Open order
+        </a>
+      </div>
+    `,
+  });
+}
+
+export async function sendNewMessageEmail(
+  receiverEmail: string,
+  receiverUsername: string,
+  senderUsername: string,
+  listingTitle: string,
+  preview: string,
+  orderId: string,
+  role: 'buyer' | 'seller',
+): Promise<void> {
+  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  // Go to the inbox page since that's where threads live; fallback to the
+  // role-specific dashboard tab.
+  const url = `${clientUrl}/account/messages?order=${orderId}&tab=${
+    role === 'buyer' ? 'purchases' : 'sales'
+  }`;
+
+  // Keep the preview short — some clients clip at the subject line anyway,
+  // and we don't want to send an entire screed via email for what's meant
+  // to be a "there's a new message, come read it" nudge.
+  const shortPreview = preview.length > 140 ? preview.slice(0, 140) + '…' : preview;
+
+  await transporter.sendMail({
+    from: EMAIL_CONFIG.from,
+    to: receiverEmail,
+    subject: `${senderUsername} sent you a message about "${listingTitle}"`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2>Hi ${escapeHtml(receiverUsername)},</h2>
+        <p><strong>${escapeHtml(senderUsername)}</strong> sent you a message about <strong>${escapeHtml(listingTitle)}</strong>:</p>
+        <blockquote style="border-left: 3px solid #2563eb; padding: 8px 12px; margin: 16px 0; color: #1e40af; background: #eff6ff;">
+          ${escapeHtml(shortPreview)}
+        </blockquote>
+        <a href="${url}"
+           style="display: inline-block; background: #2563eb; color: #fff; padding: 12px 24px;
+                  border-radius: 8px; text-decoration: none; font-weight: 600;">
+          Open conversation
+        </a>
+      </div>
+    `,
+  });
+}

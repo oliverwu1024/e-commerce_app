@@ -99,6 +99,7 @@ router.get('/', async (req: Request, res: Response) => {
               id: true,
               username: true,
               location: true,
+              avatarUrl: true,
             },
           },
           images: {
@@ -424,6 +425,7 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
             id: true,
             username: true,
             location: true,
+            avatarUrl: true,
             createdAt: true,
           },
         },

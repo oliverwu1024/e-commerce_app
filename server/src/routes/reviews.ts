@@ -8,6 +8,7 @@ import {
   createReviewSchema,
   sellerReviewQuerySchema,
 } from '../schemas/reviews.js';
+import { createNotification } from '../services/notifications.js';
 
 const router = Router();
 
@@ -24,8 +25,8 @@ const REVIEW_SELECT = {
   rating: true,
   comment: true,
   createdAt: true,
-  reviewer: { select: { id: true, username: true } },
-  seller: { select: { id: true, username: true } },
+  reviewer: { select: { id: true, username: true, avatarUrl: true } },
+  seller: { select: { id: true, username: true, avatarUrl: true } },
 } satisfies Prisma.ReviewSelect;
 
 // ---------------------------------------------------------------------------
@@ -81,6 +82,14 @@ router.post('/', authenticate, reviewWriteLimiter, async (req: Request, res: Res
           comment: comment ?? null,
         },
         select: REVIEW_SELECT,
+      });
+      void createNotification({
+        recipientId: order.sellerId,
+        type: 'NEW_REVIEW',
+        title: 'New review',
+        body: `${review.reviewer.username} left you a ${review.rating}-star review.`,
+        actorId: req.userId,
+        orderId,
       });
       res.status(201).json({ review });
     } catch (err) {

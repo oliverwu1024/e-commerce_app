@@ -15,7 +15,12 @@ export type SelfProfile = {
   location: string | null;
   bio: string | null;
   phone: string | null;
+  avatarUrl: string | null;
   emailVerified: boolean;
+  // Set when the user has submitted an email change but hasn't clicked the
+  // verification link sent to the new address yet. While non-null, `email`
+  // is still the live login / notification address.
+  pendingEmail: string | null;
   phoneVerified: boolean;
   sellerType: SellerType;
   businessName: string | null;
@@ -50,6 +55,7 @@ export type PublicUser = {
   username: string;
   bio: string | null;
   location: string | null;
+  avatarUrl: string | null;
   sellerType: SellerType;
   businessName: string | null;
   createdAt: string;
@@ -63,8 +69,8 @@ export type Review = {
   rating: number;
   comment: string | null;
   createdAt: string;
-  reviewer: { id: string; username: string };
-  seller: { id: string; username: string };
+  reviewer: { id: string; username: string; avatarUrl: string | null };
+  seller: { id: string; username: string; avatarUrl: string | null };
 };
 
 export type SellerReviewsResponse = {

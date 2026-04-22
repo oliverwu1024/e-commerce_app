@@ -8,6 +8,7 @@ export type User = {
   name: string;
   location: string | null;
   bio: string | null;
+  avatarUrl: string | null;
   sellerType: 'PERSONAL' | 'BUSINESS';
   businessName: string | null;
   role: 'USER' | 'ADMIN';

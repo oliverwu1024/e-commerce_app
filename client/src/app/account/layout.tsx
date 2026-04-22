@@ -7,6 +7,8 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 const NAV_ITEMS = [
   { href: '/account/settings', label: 'Settings' },
   { href: '/account/verification', label: 'Verification' },
+  { href: '/account/notifications', label: 'Notifications' },
+  { href: '/account/messages', label: 'Messages' },
 ];
 
 export default function AccountLayout({ children }: { children: React.ReactNode }) {

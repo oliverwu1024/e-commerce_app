@@ -4,7 +4,9 @@ import crypto from 'crypto';
 import rateLimit from 'express-rate-limit';
 import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import prisma from '../lib/prisma.js';
+import { Prisma } from '../generated/prisma/client.js';
 import { AUTH_CONFIG } from '../config/auth.js';
+import { EMAIL_CONFIG } from '../config/email.js';
 import { clearTokenCookie } from '../utils/cookies.js';
 import { s3, S3_BUCKET, S3_REGION } from '../config/s3.js';
 import { authenticate } from '../middleware/auth.js';
@@ -12,12 +14,24 @@ import { uuidSchema } from '../schemas/common.js';
 import {
   updateProfileSchema,
   changePasswordSchema,
+  changeUsernameSchema,
+  changeEmailSchema,
   startPhoneVerificationSchema,
   confirmPhoneVerificationSchema,
   verifyIdSchema,
   verifyAbnSchema,
+  deleteAccountSchema,
+  updateAvatarSchema,
 } from '../schemas/users.js';
 import { getSellerStats } from '../services/sellerStats.js';
+import { generateVerificationToken, sendVerificationEmail } from '../utils/email.js';
+
+const DEV_EMAIL_ENABLED = process.env.ENABLE_DEV_EMAIL === '1';
+
+function buildVerificationUrl(token: string): string {
+  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  return `${clientUrl}/verify-email?token=${token}`;
+}
 
 const router = Router();
 
@@ -75,7 +89,9 @@ const PROFILE_SELECT = {
   location: true,
   bio: true,
   phone: true,
+  avatarUrl: true,
   emailVerified: true,
+  pendingEmail: true,
   phoneVerified: true,
   sellerType: true,
   businessName: true,
@@ -520,6 +536,340 @@ router.post('/verify-abn', authenticate, profileLimiter, async (req: Request, re
 });
 
 // ---------------------------------------------------------------------------
+// PUT /api/users/username — change username
+// Format matches register. Uniqueness enforced by @unique + P2002 catch.
+// No reverify needed — username is a display label, not a credential.
+// ---------------------------------------------------------------------------
+router.put('/username', authenticate, profileLimiter, async (req: Request, res: Response) => {
+  try {
+    const parsed = changeUsernameSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+    const username = parsed.data.username.toLowerCase();
+
+    const current = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { username: true },
+    });
+    if (!current) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    if (current.username === username) {
+      res.status(400).json({ error: 'This is already your username.' });
+      return;
+    }
+
+    try {
+      const user = await prisma.user.update({
+        where: { id: req.userId },
+        data: { username },
+        select: PROFILE_SELECT,
+      });
+      res.json({ user, ...computeCanSell(user) });
+    } catch (err) {
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        res.status(409).json({ error: 'Username is already taken.' });
+        return;
+      }
+      throw err;
+    }
+  } catch (err) {
+    console.error('Change username error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/users/email-change — request an email change
+//
+// Two-phase: stores the new address in pendingEmail, sends verification to
+// the new address, and only swaps email ← pendingEmail after the user clicks
+// the link (handled in routes/auth.ts verify-email). Old email stays live
+// until then — so a mistyped new address doesn't lock the user out, and a
+// stolen session can't swap the email without also controlling the new inbox.
+// ---------------------------------------------------------------------------
+router.post('/email-change', authenticate, profileLimiter, async (req: Request, res: Response) => {
+  try {
+    const parsed = changeEmailSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+    const newEmail = parsed.data.email.toLowerCase();
+
+    const current = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { email: true },
+    });
+    if (!current) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+    if (current.email === newEmail) {
+      res.status(400).json({ error: 'This is already your email.' });
+      return;
+    }
+
+    // Collision check against other users' active emails. Pending-vs-pending
+    // collisions between two different users are OK — first to verify wins;
+    // the loser hits P2002 at swap time in the verify-email handler.
+    const clash = await prisma.user.findFirst({
+      where: { email: newEmail, id: { not: req.userId! } },
+      select: { id: true },
+    });
+    if (clash) {
+      res.status(409).json({ error: 'That email is already in use.' });
+      return;
+    }
+
+    const token = generateVerificationToken();
+
+    try {
+      await prisma.user.update({
+        where: { id: req.userId },
+        data: {
+          pendingEmail: newEmail,
+          emailVerificationToken: token,
+          emailVerificationExpires: new Date(Date.now() + EMAIL_CONFIG.verificationTokenExpires),
+        },
+      });
+    } catch (err) {
+      // `emailVerificationToken` is @unique — unlikely but possible collision.
+      if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+        res.status(500).json({ error: 'Internal server error' });
+        return;
+      }
+      throw err;
+    }
+
+    let verificationEmailSent = true;
+    try {
+      await sendVerificationEmail(newEmail, token);
+    } catch (err) {
+      verificationEmailSent = false;
+      console.error('Failed to send email-change verification:', err);
+    }
+
+    if (DEV_EMAIL_ENABLED) {
+      console.log(
+        `[DEV] Email-change verification URL for ${newEmail}: ${buildVerificationUrl(token)}`,
+      );
+    }
+
+    res.json({
+      message: 'Verification email sent to the new address.',
+      pendingEmail: newEmail,
+      verificationEmailSent,
+      devVerificationUrl: DEV_EMAIL_ENABLED ? buildVerificationUrl(token) : undefined,
+    });
+  } catch (err) {
+    console.error('Email change error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// PUT /api/users/avatar — set or replace the user's profile picture
+//
+// Accepts an S3 URL returned by the presigned-url endpoint with
+// purpose=avatar. Validates that the URL lives under this user's avatar
+// prefix so a user can't claim another user's upload. HEADs the object
+// before storing (catches "URL posted without upload" / expired presign).
+// ---------------------------------------------------------------------------
+router.put('/avatar', authenticate, profileLimiter, async (req: Request, res: Response) => {
+  try {
+    const parsed = updateAvatarSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+    const { avatarUrl } = parsed.data;
+
+    if (!S3_BUCKET) {
+      res.status(503).json({ error: 'Avatar uploads are not configured.' });
+      return;
+    }
+    const bucketRoot = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/`;
+    // Matches the dev-shortcut prefix in `routes/uploads.ts` (avatars stored
+    // under `listings/avatars/<userId>/` for now). Flip to `avatars/<userId>/`
+    // when the IAM + bucket policy are widened for prod.
+    const expectedPrefix = `${bucketRoot}listings/avatars/${req.userId}/`;
+    if (!avatarUrl.startsWith(expectedPrefix)) {
+      res.status(400).json({ error: 'Avatar URL does not match your upload prefix.' });
+      return;
+    }
+
+    const key = avatarUrl.slice(bucketRoot.length);
+    try {
+      await s3.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+    } catch (err) {
+      const status = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+      if (status === 404 || status === 403) {
+        res.status(400).json({ error: 'Upload not found. Please try uploading again.' });
+        return;
+      }
+      throw err;
+    }
+
+    const user = await prisma.user.update({
+      where: { id: req.userId },
+      data: { avatarUrl },
+      select: PROFILE_SELECT,
+    });
+    res.json({ user, ...computeCanSell(user) });
+  } catch (err) {
+    console.error('Update avatar error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/users/avatar — clear the user's profile picture
+// We don't delete the S3 object itself — cheap to leave, and it makes undo
+// flows (re-use recent uploads) trivial later. A garbage-collection job
+// for orphaned avatars is a Day-21+ concern.
+// ---------------------------------------------------------------------------
+router.delete('/avatar', authenticate, profileLimiter, async (req: Request, res: Response) => {
+  try {
+    const user = await prisma.user.update({
+      where: { id: req.userId },
+      data: { avatarUrl: null },
+      select: PROFILE_SELECT,
+    });
+    res.json({ user, ...computeCanSell(user) });
+  } catch (err) {
+    console.error('Delete avatar error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// DELETE /api/users/me — soft-delete the authenticated user's account
+//
+// Requires currentPassword + exact confirmation phrase. Refuses when the
+// user has in-flight orders (PENDING_CONFIRMATION or CONFIRMED as either
+// buyer or seller) — those involve a counterparty who would otherwise be
+// stranded. The user must resolve them (confirm / cancel / complete) first.
+//
+// On success: anonymizes PII (name, email, username, bio, location, phone,
+// idDocumentUrl, abn, businessName, emailVerificationToken, etc.), sets
+// deletedAt, bumps tokenVersion so any outstanding JWTs fail, flips all
+// ACTIVE/ON_HOLD listings to REMOVED, and purges cart + saved items. The
+// User row stays in place so FKs from orders / reviews / messages remain
+// valid for counterparties. Login, authenticate middleware, and public
+// profile lookups all reject users with deletedAt set.
+// ---------------------------------------------------------------------------
+router.delete('/me', authenticate, passwordChangeLimiter, async (req: Request, res: Response) => {
+  try {
+    const parsed = deleteAccountSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { id: true, password: true, deletedAt: true },
+    });
+    if (!user || user.deletedAt) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
+
+    const valid = await bcrypt.compare(parsed.data.currentPassword, user.password);
+    if (!valid) {
+      res.status(401).json({ error: 'Password is incorrect' });
+      return;
+    }
+
+    // Counterparty-safety check: deletion would leave the other side stuck
+    // waiting for confirm / pay / complete. Make the user resolve these
+    // first. SOLD / CANCELLED / COMPLETED / REMOVED states are fine — the
+    // business is settled.
+    const inFlight = await prisma.order.findMany({
+      where: {
+        OR: [{ buyerId: user.id }, { sellerId: user.id }],
+        status: { in: ['PENDING_CONFIRMATION', 'CONFIRMED'] },
+      },
+      select: { id: true, status: true, buyerId: true },
+      take: 5,
+    });
+    if (inFlight.length > 0) {
+      res.status(409).json({
+        error:
+          'Resolve your open orders before deleting your account. Confirm / cancel pending orders as the seller, or pay / cancel confirmed orders as the buyer.',
+        inFlightOrderIds: inFlight.map((o) => o.id),
+      });
+      return;
+    }
+
+    // Anonymize + mark deleted in a single transaction so the user row is
+    // either fully neutralized or untouched — no half-states where email is
+    // scrubbed but deletedAt isn't set (still "live" but PII-less).
+    const nowIso = new Date();
+    const anonEmail = `deleted-${user.id}@deleted.local`;
+    const anonUsername = `deleted_${user.id.replace(/-/g, '').slice(0, 24)}`;
+
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          deletedAt: nowIso,
+          // Bump so any outstanding JWT on another device fails auth.
+          tokenVersion: { increment: 1 },
+          // Anonymize PII. Email + username must stay unique-violation-free
+          // so we derive them from the UUID.
+          email: anonEmail,
+          username: anonUsername,
+          name: 'Deleted user',
+          location: null,
+          bio: null,
+          phone: null,
+          avatarUrl: null,
+          businessName: null,
+          abn: null,
+          abnVerified: false,
+          idDocumentUrl: null,
+          idSubmittedAt: null,
+          idRejectionReason: null,
+          idVerification: 'NOT_SUBMITTED',
+          emailVerified: false,
+          emailVerificationToken: null,
+          emailVerificationExpires: null,
+          pendingEmail: null,
+          phoneVerified: false,
+          phoneVerificationCode: null,
+          phoneVerificationExpires: null,
+          phoneVerificationAttempts: 0,
+        },
+      }),
+      // Active listings go off the marketplace. SOLD stays SOLD (order
+      // history intact for the buyer); ON_HOLD flips too since the seller
+      // is gone — but we already blocked in-flight orders above, so any
+      // ON_HOLD here must be an orphan from a CANCELLED order that didn't
+      // cleanly restore ACTIVE. Belt and braces.
+      prisma.listing.updateMany({
+        where: { sellerId: user.id, status: { in: ['ACTIVE', 'ON_HOLD'] } },
+        data: { status: 'REMOVED' },
+      }),
+      // Personal-only data — no counterparty depends on these.
+      prisma.savedListing.deleteMany({ where: { userId: user.id } }),
+      prisma.cartItem.deleteMany({ where: { cart: { userId: user.id } } }),
+      prisma.cart.deleteMany({ where: { userId: user.id } }),
+    ]);
+
+    clearTokenCookie(res);
+    res.json({ message: 'Account deleted.' });
+  } catch (err) {
+    console.error('Delete account error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
 // GET /api/users/:id — public seller profile
 // Returns only fields safe for public display. Email, phone, role,
 // verification status, idDocumentUrl, etc. are deliberately excluded.
@@ -540,12 +890,14 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
         username: true,
         bio: true,
         location: true,
+        avatarUrl: true,
         sellerType: true,
         businessName: true,
         createdAt: true,
+        deletedAt: true,
       },
     });
-    if (!user) {
+    if (!user || user.deletedAt) {
       res.status(404).json({ error: 'User not found' });
       return;
     }
@@ -560,9 +912,11 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
       return;
     }
 
+    const { deletedAt: _deletedAt, ...publicUser } = user;
+    void _deletedAt;
     res.json({
       user: {
-        ...user,
+        ...publicUser,
         avgRating: stats.avgRating,
         totalReviews: stats.totalReviews,
         totalSales: stats.totalSales,

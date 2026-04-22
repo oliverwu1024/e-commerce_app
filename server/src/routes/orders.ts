@@ -30,6 +30,8 @@ import {
   isPaypalConfigured,
 } from '../config/paypal.js';
 import { markOrderPaid } from '../services/orderPayments.js';
+import { createNotification } from '../services/notifications.js';
+import { sendOrderPlacedEmail, sendNewMessageEmail } from '../utils/email.js';
 
 const router = Router();
 
@@ -82,9 +84,9 @@ const ORDER_SUMMARY_SELECT = {
       },
     },
   },
-  buyer: { select: { id: true, username: true, location: true } },
+  buyer: { select: { id: true, username: true, location: true, avatarUrl: true } },
   seller: {
-    select: { id: true, username: true, location: true, sellerType: true },
+    select: { id: true, username: true, location: true, avatarUrl: true, sellerType: true },
   },
   review: { select: { id: true, rating: true } },
 } satisfies Prisma.OrderSelect;
@@ -93,7 +95,7 @@ const MESSAGE_SELECT = {
   id: true,
   content: true,
   createdAt: true,
-  sender: { select: { id: true, username: true } },
+  sender: { select: { id: true, username: true, avatarUrl: true } },
 } satisfies Prisma.MessageSelect;
 
 // ---------------------------------------------------------------------------
@@ -207,6 +209,47 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
         { timeout: 15000 },
       );
 
+      // Notify each seller + email them so they can confirm. Fire-and-log:
+      // notification/email failure mustn't rollback the checkout.
+      for (const order of orders) {
+        void createNotification({
+          recipientId: order.seller.id,
+          type: 'ORDER_PLACED',
+          title: 'New order',
+          body: `${order.buyer.username} wants to buy "${order.listing.title}"`,
+          actorId: order.buyer.id,
+          orderId: order.id,
+          listingId: order.listing.id,
+        });
+      }
+      // Pull seller emails in one query so we can fire emails outside the
+      // tx without N round-trips.
+      const sellerIds = Array.from(new Set(orders.map((o) => o.seller.id)));
+      prisma.user
+        .findMany({
+          where: { id: { in: sellerIds } },
+          select: { id: true, email: true, username: true },
+        })
+        .then((sellers) => {
+          const byId = new Map(sellers.map((s) => [s.id, s]));
+          for (const order of orders) {
+            const seller = byId.get(order.seller.id);
+            if (!seller) continue;
+            sendOrderPlacedEmail(
+              seller.email,
+              seller.username,
+              order.listing.title,
+              order.buyer.username,
+              order.id,
+            ).catch((err) => {
+              console.error('Failed to send order-placed email:', err);
+            });
+          }
+        })
+        .catch((err) => {
+          console.error('Failed to fetch seller emails for notifications:', err);
+        });
+
       res.status(201).json({ orders });
     } catch (err) {
       if (err instanceof CheckoutConflict) {
@@ -311,6 +354,17 @@ router.get(
         select: MESSAGE_SELECT,
       });
 
+      // Mark all messages where THIS user is the receiver as read. Drives
+      // the Navbar envelope badge + per-thread unread count in the inbox.
+      void prisma.message
+        .updateMany({
+          where: { orderId: id, receiverId: req.userId!, readAt: null },
+          data: { readAt: new Date() },
+        })
+        .catch((err) => {
+          console.error('Failed to mark messages read:', err);
+        });
+
       res.json({ messages });
     } catch (err) {
       console.error('Get messages error:', err);
@@ -359,6 +413,54 @@ router.post(
         },
         select: MESSAGE_SELECT,
       });
+
+      // Notification + email for the receiver. One round-trip for the
+      // receiver identity + listing title, then fire-and-log both.
+      void (async () => {
+        try {
+          const [receiver, orderDetail] = await Promise.all([
+            prisma.user.findUnique({
+              where: { id: receiverId },
+              select: { email: true, username: true },
+            }),
+            prisma.order.findUnique({
+              where: { id },
+              select: {
+                listing: { select: { id: true, title: true } },
+                buyerId: true,
+              },
+            }),
+          ]);
+          if (!receiver || !orderDetail) return;
+
+          void createNotification({
+            recipientId: receiverId,
+            type: 'NEW_MESSAGE',
+            title: 'New message',
+            body: `${message.sender.username}: ${
+              message.content.length > 100
+                ? message.content.slice(0, 100) + '…'
+                : message.content
+            }`,
+            actorId: req.userId,
+            orderId: id,
+            listingId: orderDetail.listing.id,
+          });
+
+          const receiverRole = orderDetail.buyerId === receiverId ? 'buyer' : 'seller';
+          await sendNewMessageEmail(
+            receiver.email,
+            receiver.username,
+            message.sender.username,
+            orderDetail.listing.title,
+            message.content,
+            id,
+            receiverRole,
+          );
+        } catch (err) {
+          console.error('Failed to notify/email receiver of message:', err);
+        }
+      })();
 
       res.status(201).json({ message });
     } catch (err) {
@@ -419,6 +521,17 @@ router.put(
         where: { id },
         select: ORDER_SUMMARY_SELECT,
       });
+      if (updated) {
+        void createNotification({
+          recipientId: updated.buyer.id,
+          type: 'ORDER_CONFIRMED',
+          title: 'Order confirmed',
+          body: `${updated.seller.username} confirmed your order for "${updated.listing.title}"`,
+          actorId: updated.seller.id,
+          orderId: updated.id,
+          listingId: updated.listing.id,
+        });
+      }
       res.json({ order: updated });
     } catch (err) {
       console.error('Confirm order error:', err);
@@ -516,6 +629,23 @@ router.put(
         where: { id },
         select: ORDER_SUMMARY_SELECT,
       });
+      if (updated) {
+        // Notify the other party — the canceller already knows.
+        const cancelledByBuyer = existing.buyerId === req.userId;
+        const recipientId = cancelledByBuyer ? updated.seller.id : updated.buyer.id;
+        const cancellerName = cancelledByBuyer
+          ? updated.buyer.username
+          : updated.seller.username;
+        void createNotification({
+          recipientId,
+          type: 'ORDER_CANCELLED',
+          title: 'Order cancelled',
+          body: `${cancellerName} cancelled the order for "${updated.listing.title}"`,
+          actorId: req.userId,
+          orderId: updated.id,
+          listingId: updated.listing.id,
+        });
+      }
       res.json({ order: updated });
     } catch (err) {
       console.error('Cancel order error:', err);
@@ -627,6 +757,17 @@ router.put(
         where: { id },
         select: ORDER_SUMMARY_SELECT,
       });
+      if (updated) {
+        void createNotification({
+          recipientId: updated.buyer.id,
+          type: 'ORDER_COMPLETED',
+          title: 'Order completed',
+          body: `${updated.seller.username} marked your order for "${updated.listing.title}" as paid.`,
+          actorId: updated.seller.id,
+          orderId: updated.id,
+          listingId: updated.listing.id,
+        });
+      }
       res.json({ order: updated });
     } catch (err) {
       console.error('Complete order error:', err);
