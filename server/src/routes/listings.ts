@@ -5,6 +5,7 @@ import { Prisma } from '../generated/prisma/client.js';
 import { listingQuerySchema, createListingSchemaForUser, updateListingSchemaForUser, paginationSchema } from '../schemas/listings.js';
 import { uuidSchema } from '../schemas/common.js';
 import { authenticate } from '../middleware/auth.js';
+import { getSellerStats } from '../services/sellerStats.js';
 
 const router = Router();
 
@@ -442,26 +443,16 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
       return;
     }
 
-    // Compute seller's avg rating and total completed sales
-    const [ratingResult, totalSales] = await Promise.all([
-      prisma.review.aggregate({
-        where: { sellerId: listing.seller.id },
-        _avg: { rating: true },
-        _count: { rating: true },
-      }),
-      prisma.order.count({
-        where: { sellerId: listing.seller.id, status: 'COMPLETED' },
-      }),
-    ]);
+    const stats = await getSellerStats(listing.seller.id);
 
     res.json({
       listing: {
         ...listing,
         seller: {
           ...listing.seller,
-          avgRating: ratingResult._avg.rating,
-          totalReviews: ratingResult._count.rating,
-          totalSales,
+          avgRating: stats.avgRating,
+          totalReviews: stats.totalReviews,
+          totalSales: stats.totalSales,
         },
       },
     });

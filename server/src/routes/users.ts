@@ -17,6 +17,7 @@ import {
   verifyIdSchema,
   verifyAbnSchema,
 } from '../schemas/users.js';
+import { getSellerStats } from '../services/sellerStats.js';
 
 const router = Router();
 
@@ -549,23 +550,22 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
       return;
     }
 
-    const [ratingResult, totalSales] = await Promise.all([
-      prisma.review.aggregate({
-        where: { sellerId: id },
-        _avg: { rating: true },
-        _count: { rating: true },
-      }),
-      prisma.order.count({
-        where: { sellerId: id, status: 'COMPLETED' },
-      }),
-    ]);
+    const stats = await getSellerStats(id);
+
+    // Public profile is "seller-shaped" — hide pure-buyer accounts behind 404
+    // so /sellers/<any-uuid> can't surface an empty profile via URL scraping.
+    // Anyone who has ever listed, sold, or been reviewed shows up.
+    if (stats.listingsCount === 0 && stats.totalSales === 0 && stats.totalReviews === 0) {
+      res.status(404).json({ error: 'User not found' });
+      return;
+    }
 
     res.json({
       user: {
         ...user,
-        avgRating: ratingResult._avg.rating,
-        totalReviews: ratingResult._count.rating,
-        totalSales,
+        avgRating: stats.avgRating,
+        totalReviews: stats.totalReviews,
+        totalSales: stats.totalSales,
       },
     });
   } catch (err) {

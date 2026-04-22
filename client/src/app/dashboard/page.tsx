@@ -152,6 +152,19 @@ function Dashboard() {
     { key: 'sales', label: 'My Sales' },
   ];
 
+  // Arrow-key navigation between tabs — completes the ARIA tablist pattern
+  // (keyboard users expect Left/Right to cycle). Selecting moves focus too
+  // because the new tab gets tabIndex=0 on re-render.
+  function handleTabsKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const currentIdx = tabs.findIndex((t) => t.key === activeTab);
+    const delta = e.key === 'ArrowRight' ? 1 : -1;
+    const next = tabs[(currentIdx + delta + tabs.length) % tabs.length];
+    selectTab(next.key);
+    document.getElementById(`dashboard-tab-${next.key}`)?.focus();
+  }
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
       <h1 className="text-2xl font-bold text-zinc-900">Dashboard</h1>
@@ -188,25 +201,44 @@ function Dashboard() {
 
       {/* Tabs */}
       <div className="mt-6 border-b border-zinc-200">
-        <nav className="flex gap-6" aria-label="Dashboard tabs">
-          {tabs.map((tab) => (
-            <button
-              key={tab.key}
-              onClick={() => selectTab(tab.key)}
-              className={`pb-3 text-sm font-medium transition-colors ${
-                activeTab === tab.key
-                  ? 'border-b-2 border-blue-600 text-blue-600'
-                  : 'text-zinc-500 hover:text-zinc-700'
-              }`}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </nav>
+        <div
+          role="tablist"
+          aria-label="Dashboard tabs"
+          onKeyDown={handleTabsKeyDown}
+          className="flex gap-6"
+        >
+          {tabs.map((tab) => {
+            const selected = activeTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                role="tab"
+                id={`dashboard-tab-${tab.key}`}
+                aria-selected={selected}
+                aria-controls={`dashboard-panel-${tab.key}`}
+                tabIndex={selected ? 0 : -1}
+                onClick={() => selectTab(tab.key)}
+                className={`pb-3 text-sm font-medium transition-colors ${
+                  selected
+                    ? 'border-b-2 border-blue-600 text-blue-600'
+                    : 'text-zinc-500 hover:text-zinc-700'
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
       </div>
 
       {/* Tab content */}
-      <div className="mt-6">
+      <div
+        role="tabpanel"
+        id={`dashboard-panel-${activeTab}`}
+        aria-labelledby={`dashboard-tab-${activeTab}`}
+        className="mt-6"
+      >
         {activeTab === 'listings' && <MyListingsTab />}
         {activeTab === 'saved' && <SavedListingsTab />}
         {activeTab === 'purchases' && <PurchasesTab refreshKey={ordersRefreshKey} />}

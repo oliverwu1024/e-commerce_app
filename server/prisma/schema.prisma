@@ -36,6 +36,16 @@ enum PaymentMethod {
   STRIPE        // Stripe — business sellers only
 }
 
+// Tracks an online payment session in flight, independent of the order's
+// lifecycle status. `/pay` flips NONE → PENDING; webhooks / capture flip
+// PENDING → COMPLETED. Cancel is refused while PENDING so the buyer can't
+// cancel mid-charge and strand money at the provider.
+enum PaymentSessionState {
+  NONE
+  PENDING
+  COMPLETED
+}
+
 enum SellerType {
   PERSONAL
   BUSINESS
@@ -164,6 +174,10 @@ model Order {
   amount        Decimal @db.Decimal(10, 2)
   status        OrderStatus   @default(PENDING_CONFIRMATION)
   paymentMethod PaymentMethod?
+  // Online-payment session tracking. Independent of `status`. Gates cancel
+  // during a live charge. Manual completions (CASH/BANK_TRANSFER) leave this
+  // at NONE and jump straight from status=CONFIRMED to status=COMPLETED.
+  paymentSessionState PaymentSessionState @default(NONE)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -182,6 +196,8 @@ model Order {
   @@index([sellerId, createdAt])
   @@index([buyerId, createdAt])
   @@index([listingId])
+  // Used by the admin "stuck payments" view: PENDING sessions older than N min.
+  @@index([paymentSessionState, updatedAt])
 }
 
 model Review {

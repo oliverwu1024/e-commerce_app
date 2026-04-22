@@ -158,10 +158,41 @@ function BrowseContent() {
     updateParams({ search: searchInput.trim() });
   }
 
+  // `priceError` also carries per-input flags so aria-invalid + red border
+  // only apply to the input(s) actually at fault (min>max flags both).
+  type PriceErr = { message: string; min: boolean; max: boolean };
+  const [priceError, setPriceError] = useState<PriceErr | null>(null);
+
   function applyTextFilters() {
     const newBrand = brandInput.trim();
     const newMin = minPriceInput.trim();
     const newMax = maxPriceInput.trim();
+
+    // Validate price range before committing to URL. Empty is fine (no bound).
+    const minNum = newMin === '' ? null : Number(newMin);
+    const maxNum = newMax === '' ? null : Number(newMax);
+    if (minNum !== null && !Number.isFinite(minNum)) {
+      setPriceError({ message: 'Min price must be a number', min: true, max: false });
+      return;
+    }
+    if (maxNum !== null && !Number.isFinite(maxNum)) {
+      setPriceError({ message: 'Max price must be a number', min: false, max: true });
+      return;
+    }
+    if (minNum !== null && minNum < 0) {
+      setPriceError({ message: 'Min price cannot be negative', min: true, max: false });
+      return;
+    }
+    if (maxNum !== null && maxNum < 0) {
+      setPriceError({ message: 'Max price cannot be negative', min: false, max: true });
+      return;
+    }
+    if (minNum !== null && maxNum !== null && minNum > maxNum) {
+      setPriceError({ message: 'Min price must be less than max', min: true, max: true });
+      return;
+    }
+    setPriceError(null);
+
     if (newBrand === activeBrand && newMin === activeMinPrice && newMax === activeMaxPrice) return;
     updateParams({ brand: newBrand, minPrice: newMin, maxPrice: newMax });
   }
@@ -321,7 +352,12 @@ function BrowseContent() {
                     onKeyDown={handleTextFilterKeyDown}
                     onBlur={applyTextFilters}
                     aria-label="Minimum price"
-                    className="w-full rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    aria-invalid={priceError?.min ?? false}
+                    className={`w-full rounded-lg border px-2.5 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:outline-none focus:ring-1 ${
+                      priceError?.min
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
+                        : 'border-zinc-300 focus:border-blue-500 focus:ring-blue-500'
+                    }`}
                   />
                   <span className="self-center text-zinc-400 text-sm">&ndash;</span>
                   <input
@@ -333,9 +369,19 @@ function BrowseContent() {
                     onKeyDown={handleTextFilterKeyDown}
                     onBlur={applyTextFilters}
                     aria-label="Maximum price"
-                    className="w-full rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    aria-invalid={priceError?.max ?? false}
+                    className={`w-full rounded-lg border px-2.5 py-1.5 text-sm text-zinc-900 placeholder-zinc-400 focus:outline-none focus:ring-1 ${
+                      priceError?.max
+                        ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
+                        : 'border-zinc-300 focus:border-blue-500 focus:ring-blue-500'
+                    }`}
                   />
                 </div>
+                {priceError && (
+                  <p className="mt-1 text-xs text-red-600" role="alert">
+                    {priceError.message}
+                  </p>
+                )}
               </div>
 
               {/* Brand */}

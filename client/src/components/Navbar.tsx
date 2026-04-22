@@ -68,7 +68,7 @@ export default function Navbar() {
               </Link>
               {user.role === 'ADMIN' && (
                 <Link
-                  href="/admin/verifications"
+                  href="/admin"
                   className="text-sm font-medium text-amber-700 hover:text-amber-900 transition-colors"
                 >
                   Admin

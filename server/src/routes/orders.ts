@@ -423,7 +423,13 @@ router.put(
 
       const existing = await prisma.order.findUnique({
         where: { id },
-        select: { buyerId: true, sellerId: true, status: true, listingId: true },
+        select: {
+          buyerId: true,
+          sellerId: true,
+          status: true,
+          listingId: true,
+          paymentSessionState: true,
+        },
       });
 
       if (!existing) {
@@ -441,11 +447,27 @@ router.put(
         return;
       }
 
+      // Refuse cancel during an active online payment. Without this, the
+      // seller could cancel between the buyer's Stripe approval and the
+      // webhook arrival — the provider captures the charge, our order shows
+      // CANCELLED, and money is stranded at the provider with no UI path to
+      // reconciliation.
+      if (existing.paymentSessionState === 'PENDING') {
+        res.status(409).json({
+          error:
+            'Payment is in progress. Please wait a few minutes for it to finish, or contact support if it has been longer than 30 minutes.',
+        });
+        return;
+      }
+
       const result = await prisma.$transaction(async (tx) => {
         const { count } = await tx.order.updateMany({
           where: {
             id,
             status: { in: ['PENDING_CONFIRMATION', 'CONFIRMED'] },
+            // Re-check inside the tx to catch the race where /pay flipped
+            // us to PENDING between the pre-read and here.
+            paymentSessionState: { not: 'PENDING' },
           },
           data: { status: 'CANCELLED' },
         });
@@ -505,7 +527,12 @@ router.put(
 
       const existing = await prisma.order.findUnique({
         where: { id },
-        select: { sellerId: true, status: true, listingId: true },
+        select: {
+          sellerId: true,
+          status: true,
+          listingId: true,
+          paymentSessionState: true,
+        },
       });
 
       if (!existing) {
@@ -523,10 +550,37 @@ router.put(
         return;
       }
 
+      // Symmetric to the /cancel guard: refuse manual CASH / BANK_TRANSFER
+      // completion while a buyer's online payment session is live. Without
+      // this, seller can flip COMPLETED while Stripe is still capturing and
+      // the buyer ends up paying both CASH and the provider (the webhook's
+      // already_completed no-op hides the double-charge).
+      if (existing.paymentSessionState === 'PENDING') {
+        res.status(409).json({
+          error:
+            'Payment is in progress. Please wait a few minutes for it to finish, or contact support if it has been longer than 30 minutes.',
+        });
+        return;
+      }
+
       const result = await prisma.$transaction(async (tx) => {
         const { count } = await tx.order.updateMany({
-          where: { id, status: 'CONFIRMED', sellerId: req.userId },
-          data: { status: 'COMPLETED', paymentMethod },
+          where: {
+            id,
+            status: 'CONFIRMED',
+            sellerId: req.userId,
+            // Defence-in-depth: if /pay races in between the pre-read above
+            // and this updateMany, count goes to 0 and we return 409.
+            paymentSessionState: 'NONE',
+          },
+          data: {
+            status: 'COMPLETED',
+            paymentMethod,
+            // Keeps paymentSessionState in lockstep with order.status for the
+            // admin stuck-orders query. Manual completions skip /pay so
+            // session state was NONE here; set COMPLETED anyway.
+            paymentSessionState: 'COMPLETED',
+          },
         });
         if (count === 0) return { ok: false as const };
 
@@ -627,29 +681,94 @@ router.post(
       const successUrl = `${clientUrl}/dashboard?tab=purchases&payment=success&order=${order.id}`;
       const cancelUrl = `${clientUrl}/dashboard?tab=purchases&payment=cancelled&order=${order.id}`;
 
+      // Mark the order as in-flight BEFORE calling the provider. Two jobs:
+      //  (a) Block seller cancel / manual-complete during the window where
+      //      the provider session exists but the buyer hasn't completed yet —
+      //      without this, a cancel that wins the race strands the buyer's
+      //      charge at the provider.
+      //  (b) Block a concurrent second /pay call. Without the NONE guard the
+      //      second call's updateMany would count=1 (PENDING→PENDING no-op);
+      //      if its provider call then failed, revertSessionPending would
+      //      clear the first call's in-flight marker and re-open the cancel
+      //      door for a live session.
+      //
+      // Returns an error descriptor on failure so the caller can surface
+      // "already in progress" vs "status changed" with distinct 409 bodies.
+      const orderId = order.id;
+      type PendingFailure = { status: number; error: string };
+      async function markSessionPending(): Promise<PendingFailure | null> {
+        const { count } = await prisma.order.updateMany({
+          where: {
+            id: orderId,
+            status: 'CONFIRMED',
+            paymentSessionState: 'NONE',
+          },
+          data: { paymentSessionState: 'PENDING' },
+        });
+        if (count > 0) return null;
+        // Distinguish "concurrent payment already running" from "order state
+        // changed under us" so the UI can message accordingly.
+        const current = await prisma.order.findUnique({
+          where: { id: orderId },
+          select: { paymentSessionState: true, status: true },
+        });
+        if (current?.paymentSessionState === 'PENDING') {
+          return { status: 409, error: 'A payment is already in progress for this order' };
+        }
+        if (current?.paymentSessionState === 'COMPLETED') {
+          return { status: 409, error: 'This order is already paid' };
+        }
+        return { status: 409, error: 'Order status changed; please refresh and try again' };
+      }
+      // Best-effort revert if the provider call fails — otherwise the order is
+      // stuck in PENDING with no actual session at the provider. Safe to call
+      // even when no PENDING flip landed (the where clause is a no-op then).
+      async function revertSessionPending(): Promise<void> {
+        try {
+          await prisma.order.updateMany({
+            where: { id: orderId, paymentSessionState: 'PENDING', status: 'CONFIRMED' },
+            data: { paymentSessionState: 'NONE' },
+          });
+        } catch (err) {
+          console.error('[pay] revertSessionPending failed:', err);
+        }
+      }
+
       if (paymentMethod === 'STRIPE') {
         if (!isStripeConfigured()) {
           res.status(503).json({ error: 'Stripe is not configured on this server' });
           return;
         }
-        const session = await getStripeClient().checkout.sessions.create({
-          mode: 'payment',
-          line_items: [
-            {
-              price_data: {
-                currency: 'aud',
-                product_data: { name: order.listing.title },
-                unit_amount: amountCents,
+        {
+          const failure = await markSessionPending();
+          if (failure) {
+            res.status(failure.status).json({ error: failure.error });
+            return;
+          }
+        }
+        try {
+          const session = await getStripeClient().checkout.sessions.create({
+            mode: 'payment',
+            line_items: [
+              {
+                price_data: {
+                  currency: 'aud',
+                  product_data: { name: order.listing.title },
+                  unit_amount: amountCents,
+                },
+                quantity: 1,
               },
-              quantity: 1,
-            },
-          ],
-          client_reference_id: order.id,
-          metadata: { orderId: order.id },
-          success_url: successUrl,
-          cancel_url: cancelUrl,
-        });
-        res.json({ provider: 'STRIPE', url: session.url, sessionId: session.id });
+            ],
+            client_reference_id: order.id,
+            metadata: { orderId: order.id },
+            success_url: successUrl,
+            cancel_url: cancelUrl,
+          });
+          res.json({ provider: 'STRIPE', url: session.url, sessionId: session.id });
+        } catch (err) {
+          await revertSessionPending();
+          throw err;
+        }
         return;
       }
 
@@ -658,33 +777,46 @@ router.post(
           res.status(503).json({ error: 'Square is not configured on this server' });
           return;
         }
-        // Use the `order` shape (not quickPay) so we can pass referenceId;
-        // referenceId becomes our correlation key on the payment webhook.
-        const resp = await getSquareClient().checkout.paymentLinks.create({
-          idempotencyKey: randomUUID(),
-          order: {
-            locationId: getSquareLocationId(),
-            referenceId: order.id,
-            lineItems: [
-              {
-                name: order.listing.title,
-                quantity: '1',
-                basePriceMoney: { amount: BigInt(amountCents), currency: 'AUD' },
-              },
-            ],
-          },
-          checkoutOptions: { redirectUrl: successUrl },
-        });
-        const paymentLink = resp.paymentLink;
-        if (!paymentLink?.url) {
-          res.status(502).json({ error: 'Square did not return a payment URL' });
-          return;
+        {
+          const failure = await markSessionPending();
+          if (failure) {
+            res.status(failure.status).json({ error: failure.error });
+            return;
+          }
         }
-        res.json({
-          provider: 'SQUARE',
-          url: paymentLink.url,
-          paymentLinkId: paymentLink.id,
-        });
+        try {
+          // Use the `order` shape (not quickPay) so we can pass referenceId;
+          // referenceId becomes our correlation key on the payment webhook.
+          const resp = await getSquareClient().checkout.paymentLinks.create({
+            idempotencyKey: randomUUID(),
+            order: {
+              locationId: getSquareLocationId(),
+              referenceId: order.id,
+              lineItems: [
+                {
+                  name: order.listing.title,
+                  quantity: '1',
+                  basePriceMoney: { amount: BigInt(amountCents), currency: 'AUD' },
+                },
+              ],
+            },
+            checkoutOptions: { redirectUrl: successUrl },
+          });
+          const paymentLink = resp.paymentLink;
+          if (!paymentLink?.url) {
+            await revertSessionPending();
+            res.status(502).json({ error: 'Square did not return a payment URL' });
+            return;
+          }
+          res.json({
+            provider: 'SQUARE',
+            url: paymentLink.url,
+            paymentLinkId: paymentLink.id,
+          });
+        } catch (err) {
+          await revertSessionPending();
+          throw err;
+        }
         return;
       }
 
@@ -693,35 +825,48 @@ router.post(
           res.status(503).json({ error: 'PayPal is not configured on this server' });
           return;
         }
-        const ordersController = new OrdersController(getPaypalClient());
-        const paypalResp = await ordersController.createOrder({
-          body: {
-            intent: CheckoutPaymentIntent.Capture,
-            purchaseUnits: [
-              {
-                amount: { currencyCode: 'AUD', value: amountAud.toFixed(2) },
-                customId: order.id,
-                description: order.listing.title.slice(0, 127),
-              },
-            ],
-            applicationContext: {
-              returnUrl: successUrl,
-              cancelUrl: cancelUrl,
-            },
-          },
-          prefer: 'return=representation',
-        });
-        const paypalOrder = paypalResp.result;
-        const approveLink = paypalOrder.links?.find((l) => l.rel === 'approve');
-        if (!paypalOrder.id || !approveLink?.href) {
-          res.status(502).json({ error: 'PayPal did not return an approval URL' });
-          return;
+        {
+          const failure = await markSessionPending();
+          if (failure) {
+            res.status(failure.status).json({ error: failure.error });
+            return;
+          }
         }
-        res.json({
-          provider: 'PAYPAL',
-          url: approveLink.href,
-          paypalOrderId: paypalOrder.id,
-        });
+        try {
+          const ordersController = new OrdersController(getPaypalClient());
+          const paypalResp = await ordersController.createOrder({
+            body: {
+              intent: CheckoutPaymentIntent.Capture,
+              purchaseUnits: [
+                {
+                  amount: { currencyCode: 'AUD', value: amountAud.toFixed(2) },
+                  customId: order.id,
+                  description: order.listing.title.slice(0, 127),
+                },
+              ],
+              applicationContext: {
+                returnUrl: successUrl,
+                cancelUrl: cancelUrl,
+              },
+            },
+            prefer: 'return=representation',
+          });
+          const paypalOrder = paypalResp.result;
+          const approveLink = paypalOrder.links?.find((l) => l.rel === 'approve');
+          if (!paypalOrder.id || !approveLink?.href) {
+            await revertSessionPending();
+            res.status(502).json({ error: 'PayPal did not return an approval URL' });
+            return;
+          }
+          res.json({
+            provider: 'PAYPAL',
+            url: approveLink.href,
+            paypalOrderId: paypalOrder.id,
+          });
+        } catch (err) {
+          await revertSessionPending();
+          throw err;
+        }
         return;
       }
 

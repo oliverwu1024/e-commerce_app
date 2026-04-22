@@ -68,6 +68,16 @@ function SellerProfile({ id }: { id: string }) {
     router.replace(`/sellers/${id}${params.size > 0 ? `?${params.toString()}` : ''}`);
   }
 
+  function handleTabsKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+    e.preventDefault();
+    const currentIdx = VALID_TABS.indexOf(activeTab);
+    const delta = e.key === 'ArrowRight' ? 1 : -1;
+    const next = VALID_TABS[(currentIdx + delta + VALID_TABS.length) % VALID_TABS.length];
+    selectTab(next);
+    document.getElementById(`seller-tab-${next}`)?.focus();
+  }
+
   if (loading) return <ProfileSkeleton />;
 
   if (error || !user) {
@@ -150,29 +160,48 @@ function SellerProfile({ id }: { id: string }) {
 
         {/* Tabs */}
         <div className="mt-6 border-b border-zinc-200">
-          <nav className="flex gap-6" aria-label="Seller profile tabs">
+          <div
+            role="tablist"
+            aria-label="Seller profile tabs"
+            onKeyDown={handleTabsKeyDown}
+            className="flex gap-6"
+          >
             {(
               [
                 { key: 'listings', label: 'Active Listings' },
                 { key: 'reviews', label: `Reviews${user.totalReviews > 0 ? ` (${user.totalReviews})` : ''}` },
               ] as { key: Tab; label: string }[]
-            ).map((tab) => (
-              <button
-                key={tab.key}
-                onClick={() => selectTab(tab.key)}
-                className={`pb-3 text-sm font-medium transition-colors ${
-                  activeTab === tab.key
-                    ? 'border-b-2 border-blue-600 text-blue-600'
-                    : 'text-zinc-500 hover:text-zinc-700'
-                }`}
-              >
-                {tab.label}
-              </button>
-            ))}
-          </nav>
+            ).map((tab) => {
+              const selected = activeTab === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  type="button"
+                  role="tab"
+                  id={`seller-tab-${tab.key}`}
+                  aria-selected={selected}
+                  aria-controls={`seller-panel-${tab.key}`}
+                  tabIndex={selected ? 0 : -1}
+                  onClick={() => selectTab(tab.key)}
+                  className={`pb-3 text-sm font-medium transition-colors ${
+                    selected
+                      ? 'border-b-2 border-blue-600 text-blue-600'
+                      : 'text-zinc-500 hover:text-zinc-700'
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="mt-6">
+        <div
+          role="tabpanel"
+          id={`seller-panel-${activeTab}`}
+          aria-labelledby={`seller-tab-${activeTab}`}
+          className="mt-6"
+        >
           {activeTab === 'listings' && <SellerListingsTab sellerId={id} />}
           {activeTab === 'reviews' && <SellerReviewsTab sellerId={id} />}
         </div>

@@ -31,3 +31,73 @@ export async function sendVerificationEmail(email: string, token: string): Promi
     `,
   });
 }
+
+export async function sendIdApprovedEmail(email: string, username: string): Promise<void> {
+  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  const listingsUrl = `${clientUrl}/listings/new`;
+
+  await transporter.sendMail({
+    from: EMAIL_CONFIG.from,
+    to: email,
+    subject: 'Your ID has been approved',
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2>Hi ${escapeHtml(username)},</h2>
+        <p>Your ID has been approved by our review team. You can now create listings and start selling on ElectroMarket.</p>
+        <a href="${listingsUrl}"
+           style="display: inline-block; background: #059669; color: #fff; padding: 12px 24px;
+                  border-radius: 8px; text-decoration: none; font-weight: 600;">
+          Create your first listing
+        </a>
+        <p style="margin-top: 16px; color: #666; font-size: 14px;">
+          If you have any questions, just reply to this email.
+        </p>
+      </div>
+    `,
+  });
+}
+
+export async function sendIdRejectedEmail(
+  email: string,
+  username: string,
+  reason: string,
+): Promise<void> {
+  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  const resubmitUrl = `${clientUrl}/account/verification`;
+
+  await transporter.sendMail({
+    from: EMAIL_CONFIG.from,
+    to: email,
+    subject: 'Your ID submission needs attention',
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2>Hi ${escapeHtml(username)},</h2>
+        <p>We weren't able to approve your ID submission. Here's the reason:</p>
+        <blockquote style="border-left: 3px solid #dc2626; padding: 8px 12px; margin: 16px 0; color: #7f1d1d; background: #fef2f2;">
+          ${escapeHtml(reason)}
+        </blockquote>
+        <p>You can upload a new document at any time:</p>
+        <a href="${resubmitUrl}"
+           style="display: inline-block; background: #2563eb; color: #fff; padding: 12px 24px;
+                  border-radius: 8px; text-decoration: none; font-weight: 600;">
+          Resubmit ID
+        </a>
+        <p style="margin-top: 16px; color: #666; font-size: 14px;">
+          Common reasons for rejection: blurry image, expired document, name mismatch, missing photo.
+        </p>
+      </div>
+    `,
+  });
+}
+
+// Reason strings are admin-supplied free text; username is user-supplied.
+// Keep this local to the email path since that's the only untrusted surface
+// that interpolates into HTML.
+function escapeHtml(s: string): string {
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}

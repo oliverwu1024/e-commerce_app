@@ -1,3 +1,6 @@
+'use client';
+
+import { useState } from 'react';
 import Link from 'next/link';
 import { type ListingSummary, formatPrice, getConditionStyle } from '@/types/listings';
 import SaveButton from '@/components/SaveButton';
@@ -10,6 +13,8 @@ type Props = {
 export default function ListingCard({ listing }: Props) {
   const imageUrl = listing.images[0]?.url;
   const condition = getConditionStyle(listing.condition);
+  const [imageFailed, setImageFailed] = useState(false);
+  const showPlaceholder = !imageUrl || imageFailed;
 
   return (
     <Link
@@ -17,11 +22,12 @@ export default function ListingCard({ listing }: Props) {
       className="group block rounded-xl border border-zinc-200 bg-white shadow-sm overflow-hidden hover:shadow-md transition-shadow"
     >
       <div className="aspect-[4/3] bg-zinc-100 relative overflow-hidden">
-        {imageUrl ? (
+        {!showPlaceholder ? (
           <img
             src={imageUrl}
             alt={listing.title}
             loading="lazy"
+            onError={() => setImageFailed(true)}
             className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
           />
         ) : (

@@ -61,7 +61,15 @@ export async function markOrderPaid(
 
     const { count } = await tx.order.updateMany({
       where: { id: orderId, status: 'CONFIRMED' },
-      data: { status: 'COMPLETED', paymentMethod },
+      data: {
+        status: 'COMPLETED',
+        paymentMethod,
+        // Close the payment session so cancel is no longer blocked (harmless
+        // at this point since the order itself is COMPLETED, but keeps the
+        // invariant "status=COMPLETED ⇒ paymentSessionState=COMPLETED" clean
+        // for the admin stuck-orders query).
+        paymentSessionState: 'COMPLETED',
+      },
     });
     if (count === 0) return { status: 'not_confirmed' } as const;
 
