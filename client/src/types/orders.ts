@@ -3,8 +3,20 @@ import type { Condition, ListingStatus } from '@/types/listings';
 export type OrderStatus =
   | 'PENDING_CONFIRMATION'
   | 'CONFIRMED'
+  | 'PAID'
+  | 'SHIPPED'
   | 'COMPLETED'
   | 'CANCELLED';
+
+// In-progress = anything not yet finalised. Used by the dashboard filter.
+export const IN_PROGRESS_STATUSES: OrderStatus[] = [
+  'PENDING_CONFIRMATION',
+  'CONFIRMED',
+  'PAID',
+  'SHIPPED',
+];
+
+export const PAST_STATUSES: OrderStatus[] = ['COMPLETED', 'CANCELLED'];
 
 export type PaymentMethod =
   | 'CASH'
@@ -20,12 +32,29 @@ export const ORDER_STATUS_STYLES: Record<
   { label: string; bg: string }
 > = {
   PENDING_CONFIRMATION: {
-    label: 'Pending',
+    label: 'Awaiting confirmation',
     bg: 'bg-[var(--tint-amber)] text-[var(--neon-amber)] border border-[var(--neon-amber)]/40',
   },
-  CONFIRMED: { label: 'Confirmed', bg: 'bg-[var(--tint-cyan)] text-[var(--neon-cyan)] border border-[var(--neon-cyan)]/40' },
-  COMPLETED: { label: 'Completed', bg: 'bg-[var(--tint-green)] text-[var(--neon-green)] border border-[var(--neon-green)]/40' },
-  CANCELLED: { label: 'Cancelled', bg: 'bg-[var(--bg-panel-hi)] text-[var(--text-dim)] border border-[var(--border-subtle)]' },
+  CONFIRMED: {
+    label: 'Awaiting payment',
+    bg: 'bg-[var(--tint-cyan)] text-[var(--neon-cyan)] border border-[var(--neon-cyan)]/40',
+  },
+  PAID: {
+    label: 'Awaiting shipment',
+    bg: 'bg-[var(--tint-magenta)] text-[var(--neon-magenta)] border border-[var(--neon-magenta)]/40',
+  },
+  SHIPPED: {
+    label: 'In transit',
+    bg: 'bg-[var(--tint-cyan)] text-[var(--neon-cyan)] border border-[var(--neon-cyan)]/40',
+  },
+  COMPLETED: {
+    label: 'Completed',
+    bg: 'bg-[var(--tint-green)] text-[var(--neon-green)] border border-[var(--neon-green)]/40',
+  },
+  CANCELLED: {
+    label: 'Cancelled',
+    bg: 'bg-[var(--bg-panel-hi)] text-[var(--text-dim)] border border-[var(--border-subtle)]',
+  },
 };
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
@@ -60,6 +89,9 @@ export type Order = {
   status: OrderStatus;
   paymentMethod: PaymentMethod | null;
   paymentSessionState: PaymentSessionState;
+  trackingNumber: string | null;
+  shippedAt: string | null;
+  deliveredAt: string | null;
   createdAt: string;
   updatedAt: string;
   listing: OrderListing;

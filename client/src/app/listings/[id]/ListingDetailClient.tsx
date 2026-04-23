@@ -278,6 +278,17 @@ export default function ListingDetailClient() {
               )}
             </div>
 
+            {/* Pre-purchase inquiry — visible to logged-in non-owners on
+                listings still accepting questions. Anonymous users see a
+                prompt to sign in. */}
+            {!isOwner && (listing.status === 'ACTIVE' || listing.status === 'ON_HOLD') && (
+              <AskSellerBlock
+                listingId={listing.id}
+                sellerUsername={listing.seller.username}
+                isLoggedIn={!!user}
+              />
+            )}
+
             {/* Remove confirmation */}
             {showRemoveConfirm && (
               <div role="alertdialog" aria-labelledby="remove-title" className="mt-3 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-4">
@@ -416,5 +427,166 @@ export default function ListingDetailClient() {
         </div>
       </div>
     </main>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Ask Seller block — collapsible CTA + composer that opens an inquiry
+// ---------------------------------------------------------------------------
+
+function AskSellerBlock({
+  listingId,
+  sellerUsername,
+  isLoggedIn,
+}: {
+  listingId: string;
+  sellerUsername: string;
+  isLoggedIn: boolean;
+}) {
+  const router = useRouter();
+  const [open, setOpen] = useState(false);
+  const [content, setContent] = useState('');
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState('');
+  const [sentInquiryId, setSentInquiryId] = useState<string | null>(null);
+
+  async function handleSend(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = content.trim();
+    if (!trimmed || sending) return;
+
+    setSending(true);
+    setError('');
+    try {
+      const res = await api<{ inquiry: { id: string } }>('/api/inquiries', {
+        method: 'POST',
+        body: JSON.stringify({ listingId, content: trimmed }),
+      });
+      setSentInquiryId(res.inquiry.id);
+      setContent('');
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to send your question');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (!isLoggedIn) {
+    return (
+      <div className="mt-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+            <svg className="h-4 w-4 text-[var(--neon-cyan)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <span>Have a question about this listing?</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => router.push(`/login?returnTo=/listings/${listingId}`)}
+            className="btn-cyber-outline text-xs"
+          >
+            Sign in to ask
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (sentInquiryId) {
+    return (
+      <div className="mt-4 rounded-lg border border-[var(--neon-green)]/40 bg-[var(--tint-green)] p-4">
+        <p className="text-sm font-medium text-[var(--neon-green)]">
+          Question sent to {sellerUsername}.
+        </p>
+        <p className="mt-1 text-xs text-[var(--neon-green)]/80">
+          You&apos;ll get a notification when they reply. Continue the conversation any time
+          from your inbox.
+        </p>
+        <div className="mt-3 flex gap-2">
+          <Link href="/account/messages?tab=inquiries" className="btn-cyber-outline text-xs">
+            Open inbox
+          </Link>
+          <button
+            type="button"
+            onClick={() => setSentInquiryId(null)}
+            className="btn-cyber-ghost text-xs"
+          >
+            Ask another
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4">
+      {!open ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2 text-sm text-[var(--text-muted)]">
+            <svg className="h-4 w-4 text-[var(--neon-cyan)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <span>
+              Have a question? Send <span className="font-semibold text-[var(--text-primary)]">{sellerUsername}</span> a private message.
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setOpen(true)}
+            className="btn-cyber-primary text-xs"
+          >
+            Ask a question
+          </button>
+        </div>
+      ) : (
+        <form onSubmit={handleSend} className="space-y-2">
+          <label htmlFor="inquiry-content" className="block text-xs font-semibold text-[var(--text-primary)]">
+            Your question for {sellerUsername}
+          </label>
+          <textarea
+            id="inquiry-content"
+            value={content}
+            onChange={(e) => setContent(e.target.value)}
+            maxLength={2000}
+            rows={4}
+            disabled={sending}
+            placeholder="e.g. Is this still available? Any scratches on the screen? Can you ship to Adelaide?"
+            className="input-cyber w-full resize-none px-3 py-2 text-sm disabled:opacity-60"
+            autoFocus
+          />
+          <div className="flex items-center justify-between gap-2 text-xs text-[var(--text-dim)]">
+            <span>{content.length}/2000</span>
+            <span>Private — only the seller will see this.</span>
+          </div>
+          {error && (
+            <p className="text-xs text-[var(--neon-danger)]" role="alert">
+              {error}
+            </p>
+          )}
+          <div className="flex justify-end gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setOpen(false);
+                setContent('');
+                setError('');
+              }}
+              disabled={sending}
+              className="btn-cyber-ghost text-xs"
+            >
+              Cancel
+            </button>
+            <button
+              type="submit"
+              disabled={sending || !content.trim()}
+              className="btn-cyber-primary text-xs"
+            >
+              {sending ? 'Sending…' : 'Send question'}
+            </button>
+          </div>
+        </form>
+      )}
+    </div>
   );
 }

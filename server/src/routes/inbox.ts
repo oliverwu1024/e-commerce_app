@@ -19,15 +19,27 @@ const inboxLimiter = rateLimit({
 // ---------------------------------------------------------------------------
 router.get('/unread-count', authenticate, inboxLimiter, async (req: Request, res: Response) => {
   try {
-    const [notifications, messages] = await Promise.all([
+    const [notifications, orderMessages, inquiryMessages] = await Promise.all([
       prisma.notification.count({
         where: { recipientId: req.userId!, readAt: null },
       }),
       prisma.message.count({
         where: { receiverId: req.userId!, readAt: null },
       }),
+      prisma.inquiryMessage.count({
+        where: { receiverId: req.userId!, readAt: null },
+      }),
     ]);
-    res.json({ notifications, messages });
+    // `messages` exposed here is the SUM of order-thread + inquiry-thread
+    // unread counts — the navbar envelope shows a single badge regardless of
+    // which kind of conversation drove it. The inbox page splits them across
+    // tabs at render time using the per-bucket fields below.
+    res.json({
+      notifications,
+      messages: orderMessages + inquiryMessages,
+      orderMessages,
+      inquiryMessages,
+    });
   } catch (err) {
     console.error('Unread count error:', err);
     res.status(500).json({ error: 'Internal server error' });

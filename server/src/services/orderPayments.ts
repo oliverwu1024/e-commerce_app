@@ -57,23 +57,30 @@ export async function markOrderPaid(
       };
     }
 
-    if (order.status === 'COMPLETED') return { status: 'already_completed' } as const;
+    // Treat any post-payment status as already-paid (idempotent)
+    if (order.status === 'PAID' || order.status === 'SHIPPED' || order.status === 'COMPLETED') {
+      return { status: 'already_completed' } as const;
+    }
     if (order.status !== 'CONFIRMED') return { status: 'not_confirmed' } as const;
 
     const { count } = await tx.order.updateMany({
       where: { id: orderId, status: 'CONFIRMED' },
       data: {
-        status: 'COMPLETED',
+        // PAID = money captured, listing off-market, awaiting shipment.
+        // The order won't reach COMPLETED until the buyer marks received
+        // (or auto-flip after N days; not yet implemented).
+        status: 'PAID',
         paymentMethod,
-        // Close the payment session so cancel is no longer blocked (harmless
-        // at this point since the order itself is COMPLETED, but keeps the
-        // invariant "status=COMPLETED ⇒ paymentSessionState=COMPLETED" clean
-        // for the admin stuck-orders query).
+        // Close the payment session so cancel is no longer blocked. Keeps the
+        // invariant "post-payment ⇒ paymentSessionState=COMPLETED" for the
+        // admin stuck-orders query.
         paymentSessionState: 'COMPLETED',
       },
     });
     if (count === 0) return { status: 'not_confirmed' } as const;
 
+    // Listing flips to SOLD on PAID — item is off-market the moment the
+    // seller has the money, regardless of when fulfilment completes.
     await tx.listing.updateMany({
       where: { id: order.listingId, status: 'ON_HOLD' },
       data: { status: 'SOLD' },

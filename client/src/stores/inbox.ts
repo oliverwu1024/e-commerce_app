@@ -29,7 +29,7 @@ function attachFocusListener(fn: () => void) {
 let detachFocus: (() => void) | null = null;
 
 export const useInboxStore = create<InboxState>((set, get) => ({
-  counts: { notifications: 0, messages: 0 },
+  counts: { notifications: 0, messages: 0, orderMessages: 0, inquiryMessages: 0 },
   loaded: false,
   pollingStarted: false,
 

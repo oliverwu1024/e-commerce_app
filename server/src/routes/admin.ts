@@ -222,9 +222,12 @@ router.get('/stats', async (_req: Request, res: Response) => {
         by: ['status'],
         _count: { _all: true },
       }),
-      // Revenue = sum of amounts on COMPLETED orders.
+      // Revenue = sum of amounts on any post-payment order (PAID/SHIPPED/COMPLETED).
+      // Money has already moved at PAID; gating on COMPLETED-only would
+      // under-report revenue while orders sit in SHIPPED awaiting buyer
+      // confirmation.
       prisma.order.aggregate({
-        where: { status: 'COMPLETED' },
+        where: { status: { in: ['PAID', 'SHIPPED', 'COMPLETED'] } },
         _sum: { amount: true },
       }),
       prisma.order.count({
@@ -241,6 +244,8 @@ router.get('/stats', async (_req: Request, res: Response) => {
     const orders = {
       PENDING_CONFIRMATION: 0,
       CONFIRMED: 0,
+      PAID: 0,
+      SHIPPED: 0,
       COMPLETED: 0,
       CANCELLED: 0,
     };

@@ -24,11 +24,25 @@ export const orderListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(50).optional().default(20),
   status: z
-    .enum(['PENDING_CONFIRMATION', 'CONFIRMED', 'COMPLETED', 'CANCELLED'])
+    .enum(['PENDING_CONFIRMATION', 'CONFIRMED', 'PAID', 'SHIPPED', 'COMPLETED', 'CANCELLED'])
     .optional(),
+  // Convenience filter for the dashboard's "In Progress" vs "Past" tabs.
+  // 'in_progress' = anything that's not COMPLETED or CANCELLED.
+  // 'past'        = COMPLETED or CANCELLED.
+  bucket: z.enum(['in_progress', 'past']).optional(),
 });
 
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
+
+export const shipSchema = z.object({
+  trackingNumber: z
+    .string()
+    .trim()
+    .max(100, 'Tracking number must be 100 characters or fewer')
+    .optional(),
+});
+
+export type ShipInput = z.infer<typeof shipSchema>;
 
 // Day 16(b) — buyer-initiated online payment. Seller-type gating is enforced
 // in the route handler (PERSONAL sellers are restricted to PAYPAL only).

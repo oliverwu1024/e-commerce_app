@@ -19,15 +19,58 @@ import {
 } from '@/types/listings';
 import {
   type Order,
-  type OrderStatus,
   type OrderListResponse,
 } from '@/types/orders';
 
 type StatusCounts = Record<ListingStatus, number>;
 
-type Tab = 'listings' | 'saved' | 'purchases' | 'sales';
+type Tab =
+  | 'active'          // Selling / Active listings
+  | 'in_sales'        // Selling / In progress sales
+  | 'past_sales'      // Selling / Past sales
+  | 'saved'           // Buying / Saved
+  | 'in_purchases'    // Buying / In progress purchases
+  | 'past_purchases'; // Buying / Past purchases
 
-const VALID_TABS: Tab[] = ['listings', 'saved', 'purchases', 'sales'];
+const VALID_TABS: Tab[] = [
+  'active',
+  'in_sales',
+  'past_sales',
+  'saved',
+  'in_purchases',
+  'past_purchases',
+];
+
+// Back-compat for old URL params (?tab=listings|sales|purchases) — map them
+// to the closest new tab so existing redirects (e.g. payment-success URLs that
+// hardcode ?tab=purchases) still land in the right place.
+const TAB_ALIASES: Record<string, Tab> = {
+  listings: 'active',
+  sales: 'in_sales',
+  purchases: 'in_purchases',
+};
+
+type Role = 'selling' | 'buying';
+
+const SELLING_TABS: Tab[] = ['active', 'in_sales', 'past_sales'];
+const BUYING_TABS: Tab[] = ['saved', 'in_purchases', 'past_purchases'];
+
+function tabRole(tab: Tab): Role {
+  return SELLING_TABS.includes(tab) ? 'selling' : 'buying';
+}
+
+function defaultTabFor(role: Role): Tab {
+  return role === 'selling' ? 'active' : 'saved';
+}
+
+const TAB_LABELS: Record<Tab, string> = {
+  active: 'Active Listings',
+  in_sales: 'In Progress',
+  past_sales: 'Past Sales',
+  saved: 'Saved',
+  in_purchases: 'In Progress',
+  past_purchases: 'Past Purchases',
+};
 
 export default function DashboardPage() {
   return (
@@ -47,19 +90,22 @@ function DashboardFallback() {
   );
 }
 
+function resolveTab(raw: string | null): Tab {
+  if (!raw) return 'active';
+  if ((VALID_TABS as string[]).includes(raw)) return raw as Tab;
+  return TAB_ALIASES[raw] ?? 'active';
+}
+
 function Dashboard() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const tabParam = searchParams.get('tab');
-  const initialTab: Tab =
-    tabParam && (VALID_TABS as string[]).includes(tabParam) ? (tabParam as Tab) : 'listings';
+  const initialTab: Tab = resolveTab(searchParams.get('tab'));
 
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
 
   // Keep active tab in sync with URL — handles back/forward and redirects.
   useEffect(() => {
-    const t = searchParams.get('tab');
-    setActiveTab(t && (VALID_TABS as string[]).includes(t) ? (t as Tab) : 'listings');
+    setActiveTab(resolveTab(searchParams.get('tab')));
   }, [searchParams]);
 
   // Payment return banner + PayPal capture handler
@@ -155,28 +201,26 @@ function Dashboard() {
   function selectTab(tab: Tab) {
     setActiveTab(tab);
     const params = new URLSearchParams();
-    if (tab !== 'listings') params.set('tab', tab);
+    if (tab !== 'active') params.set('tab', tab);
     router.replace(`/dashboard${params.size > 0 ? `?${params.toString()}` : ''}`);
   }
 
-  const tabs: { key: Tab; label: string }[] = [
-    { key: 'listings', label: 'My Listings' },
-    { key: 'saved', label: 'Saved' },
-    { key: 'purchases', label: 'My Purchases' },
-    { key: 'sales', label: 'My Sales' },
-  ];
+  function selectRole(role: Role) {
+    selectTab(defaultTabFor(role));
+  }
 
-  // Arrow-key navigation between tabs — completes the ARIA tablist pattern
-  // (keyboard users expect Left/Right to cycle). Selecting moves focus too
-  // because the new tab gets tabIndex=0 on re-render.
+  const role = tabRole(activeTab);
+  const visibleTabs = role === 'selling' ? SELLING_TABS : BUYING_TABS;
+
+  // Arrow-key navigation between sub-tabs.
   function handleTabsKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
     if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
     e.preventDefault();
-    const currentIdx = tabs.findIndex((t) => t.key === activeTab);
+    const idx = visibleTabs.indexOf(activeTab);
     const delta = e.key === 'ArrowRight' ? 1 : -1;
-    const next = tabs[(currentIdx + delta + tabs.length) % tabs.length];
-    selectTab(next.key);
-    document.getElementById(`dashboard-tab-${next.key}`)?.focus();
+    const next = visibleTabs[(idx + delta + visibleTabs.length) % visibleTabs.length];
+    selectTab(next);
+    document.getElementById(`dashboard-tab-${next}`)?.focus();
   }
 
   return (
@@ -213,33 +257,55 @@ function Dashboard() {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="mt-6 border-b border-[var(--border-subtle)]">
+      {/* Top-level role switcher */}
+      <div className="mt-6 inline-flex rounded-lg border border-[var(--border-hi)] bg-[var(--bg-panel)] p-1">
+        {(['selling', 'buying'] as const).map((r) => {
+          const selected = role === r;
+          return (
+            <button
+              key={r}
+              type="button"
+              onClick={() => selectRole(r)}
+              aria-pressed={selected}
+              className={`rounded-md px-4 py-1.5 text-sm font-semibold transition-all ${
+                selected
+                  ? 'bg-[var(--neon-cyan)] text-[var(--btn-primary-text)] shadow-[0_0_14px_-4px_color-mix(in_oklab,var(--neon-cyan)_55%,transparent)]'
+                  : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
+              }`}
+            >
+              {r === 'selling' ? 'Selling' : 'Buying'}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Sub-tabs */}
+      <div className="mt-4 border-b border-[var(--border-subtle)]">
         <div
           role="tablist"
-          aria-label="Dashboard tabs"
+          aria-label={`${role === 'selling' ? 'Selling' : 'Buying'} tabs`}
           onKeyDown={handleTabsKeyDown}
           className="flex gap-6"
         >
-          {tabs.map((tab) => {
-            const selected = activeTab === tab.key;
+          {visibleTabs.map((tab) => {
+            const selected = activeTab === tab;
             return (
               <button
-                key={tab.key}
+                key={tab}
                 type="button"
                 role="tab"
-                id={`dashboard-tab-${tab.key}`}
+                id={`dashboard-tab-${tab}`}
                 aria-selected={selected}
-                aria-controls={`dashboard-panel-${tab.key}`}
+                aria-controls={`dashboard-panel-${tab}`}
                 tabIndex={selected ? 0 : -1}
-                onClick={() => selectTab(tab.key)}
+                onClick={() => selectTab(tab)}
                 className={`pb-3 text-sm font-medium transition-colors ${
                   selected
                     ? 'border-b-2 border-[var(--neon-cyan)] text-[var(--neon-cyan)]'
                     : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                 }`}
               >
-                {tab.label}
+                {TAB_LABELS[tab]}
               </button>
             );
           })}
@@ -253,10 +319,16 @@ function Dashboard() {
         aria-labelledby={`dashboard-tab-${activeTab}`}
         className="mt-6"
       >
-        {activeTab === 'listings' && <MyListingsTab />}
+        {activeTab === 'active' && <MyListingsTab statusFilter="ACTIVE" />}
         {activeTab === 'saved' && <SavedListingsTab />}
-        {activeTab === 'purchases' && <PurchasesTab refreshKey={ordersRefreshKey} />}
-        {activeTab === 'sales' && <SalesTab />}
+        {activeTab === 'in_purchases' && (
+          <OrdersTab role="buyer" bucket="in_progress" refreshKey={ordersRefreshKey} />
+        )}
+        {activeTab === 'past_purchases' && (
+          <OrdersTab role="buyer" bucket="past" refreshKey={ordersRefreshKey} />
+        )}
+        {activeTab === 'in_sales' && <OrdersTab role="seller" bucket="in_progress" />}
+        {activeTab === 'past_sales' && <OrdersTab role="seller" bucket="past" />}
       </div>
     </div>
   );
@@ -266,7 +338,7 @@ function Dashboard() {
 // My Listings tab
 // ---------------------------------------------------------------------------
 
-function MyListingsTab() {
+function MyListingsTab({ statusFilter }: { statusFilter?: ListingStatus }) {
   const router = useRouter();
   const [listings, setListings] = useState<ListingSummary[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -279,24 +351,35 @@ function MyListingsTab() {
   const [removeId, setRemoveId] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
 
-  const fetchListings = useCallback(async (p: number) => {
-    setLoading(true);
-    setError('');
-    try {
-      const data = await api<{
-        listings: ListingSummary[];
-        pagination: Pagination;
-        counts: StatusCounts;
-      }>(`/api/listings/my?page=${p}&limit=12`);
-      setListings(data.listings);
-      setPagination(data.pagination);
-      setCounts(data.counts);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to load listings');
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const fetchListings = useCallback(
+    async (p: number) => {
+      setLoading(true);
+      setError('');
+      try {
+        const params = new URLSearchParams({ page: String(p), limit: '12' });
+        if (statusFilter) params.set('status', statusFilter);
+        const data = await api<{
+          listings: ListingSummary[];
+          pagination: Pagination;
+          counts: StatusCounts;
+        }>(`/api/listings/my?${params.toString()}`);
+        setListings(data.listings);
+        setPagination(data.pagination);
+        setCounts(data.counts);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Failed to load listings');
+      } finally {
+        setLoading(false);
+      }
+    },
+    [statusFilter],
+  );
+
+  // Reset to page 1 whenever the status filter switches so the user doesn't
+  // land on a now-impossible page (e.g. page 5 of "all" → switch to "active").
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter]);
 
   useEffect(() => {
     fetchListings(page);
@@ -631,22 +714,18 @@ function SavedListingsTab() {
 }
 
 // ---------------------------------------------------------------------------
-// Shared orders tab (purchases + sales)
+// Shared orders tab (purchases + sales) with in-progress / past bucket split
 // ---------------------------------------------------------------------------
 
-const ORDER_STATUS_FILTERS: { value: OrderStatus | 'ALL'; label: string }[] = [
-  { value: 'ALL', label: 'All' },
-  { value: 'PENDING_CONFIRMATION', label: 'Pending' },
-  { value: 'CONFIRMED', label: 'Confirmed' },
-  { value: 'COMPLETED', label: 'Completed' },
-  { value: 'CANCELLED', label: 'Cancelled' },
-];
+type OrderBucket = 'in_progress' | 'past';
 
 function OrdersTab({
   role,
+  bucket,
   refreshKey = 0,
 }: {
   role: 'buyer' | 'seller';
+  bucket: OrderBucket;
   refreshKey?: number;
 }) {
   const currentUser = useAuthStore((s) => s.user);
@@ -655,28 +734,45 @@ function OrdersTab({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [page, setPage] = useState(1);
-  const [statusFilter, setStatusFilter] = useState<OrderStatus | 'ALL'>('ALL');
 
   const endpoint = role === 'buyer' ? 'purchases' : 'sales';
-  const emptyCopy = role === 'buyer'
-    ? {
-        title: 'No purchases yet',
-        body: 'Items you buy will appear here.',
-        cta: { href: '/browse', label: 'Browse Listings' },
-      }
-    : {
-        title: 'No sales yet',
-        body: 'When buyers request your listings, they’ll appear here to confirm.',
-        cta: { href: '/listings/new', label: 'Post a Listing' },
-      };
+  const emptyCopy = (() => {
+    if (role === 'buyer') {
+      return bucket === 'in_progress'
+        ? {
+            title: 'No purchases in progress',
+            body: 'Items you buy will appear here while they are being confirmed, paid, shipped, and delivered.',
+            cta: { href: '/browse', label: 'Browse Listings' },
+          }
+        : {
+            title: 'No past purchases',
+            body: 'Completed and cancelled purchases will appear here.',
+            cta: { href: '/browse', label: 'Browse Listings' },
+          };
+    }
+    return bucket === 'in_progress'
+      ? {
+          title: 'No sales in progress',
+          body: 'When buyers request your listings, they’ll appear here to confirm, ship, and complete.',
+          cta: { href: '/listings/new', label: 'Post a Listing' },
+        }
+      : {
+          title: 'No past sales',
+          body: 'Completed and cancelled sales will appear here.',
+          cta: { href: '/listings/new', label: 'Post a Listing' },
+        };
+  })();
 
   const fetchOrders = useCallback(
-    async (p: number, status: OrderStatus | 'ALL') => {
+    async (p: number) => {
       setLoading(true);
       setError('');
       try {
-        const params = new URLSearchParams({ page: String(p), limit: '10' });
-        if (status !== 'ALL') params.set('status', status);
+        const params = new URLSearchParams({
+          page: String(p),
+          limit: '10',
+          bucket,
+        });
         const data = await api<OrderListResponse>(
           `/api/orders/${endpoint}?${params.toString()}`,
         );
@@ -688,43 +784,27 @@ function OrdersTab({
         setLoading(false);
       }
     },
-    [endpoint],
+    [endpoint, bucket],
   );
 
+  // Reset to page 1 when the bucket switches (e.g. user clicks Past Sales
+  // while sitting on page 3 of In Progress).
   useEffect(() => {
-    fetchOrders(page, statusFilter);
-  }, [page, statusFilter, refreshKey, fetchOrders]);
+    setPage(1);
+  }, [bucket]);
+
+  useEffect(() => {
+    fetchOrders(page);
+  }, [page, refreshKey, fetchOrders]);
 
   function refresh() {
-    fetchOrders(page, statusFilter);
-  }
-
-  function changeFilter(v: OrderStatus | 'ALL') {
-    setStatusFilter(v);
-    setPage(1);
+    fetchOrders(page);
   }
 
   if (!currentUser) return null;
 
   return (
     <div>
-      {/* Status filter */}
-      <div className="mb-4 flex flex-wrap gap-2">
-        {ORDER_STATUS_FILTERS.map((f) => (
-          <button
-            key={f.value}
-            onClick={() => changeFilter(f.value)}
-            className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
-              statusFilter === f.value
-                ? 'bg-[var(--neon-cyan)] text-[var(--btn-primary-text)]'
-                : 'border border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-muted)] hover:border-[var(--border-hi)] hover:text-[var(--text-primary)]'
-            }`}
-          >
-            {f.label}
-          </button>
-        ))}
-      </div>
-
       {error && (
         <div className="mb-4 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           {error}
@@ -813,10 +893,3 @@ function OrdersTab({
   );
 }
 
-function PurchasesTab({ refreshKey }: { refreshKey: number }) {
-  return <OrdersTab role="buyer" refreshKey={refreshKey} />;
-}
-
-function SalesTab() {
-  return <OrdersTab role="seller" />;
-}

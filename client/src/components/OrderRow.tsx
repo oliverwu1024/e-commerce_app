@@ -28,6 +28,8 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
   const [error, setError] = useState('');
   const [showCompletePicker, setShowCompletePicker] = useState(false);
   const [showPayPicker, setShowPayPicker] = useState(false);
+  const [showShipPicker, setShowShipPicker] = useState(false);
+  const [trackingInput, setTrackingInput] = useState('');
   const [showReviewForm, setShowReviewForm] = useState(false);
 
   const imageUrl = order.listing.images[0]?.url;
@@ -77,6 +79,46 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
       setError(err instanceof Error ? err.message : 'Failed to start payment');
       setBusy(false);
       setShowPayPicker(false);
+    }
+  }
+
+  async function handleShip() {
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/api/orders/${order.id}/ship`, {
+        method: 'POST',
+        body: JSON.stringify(
+          trackingInput.trim() ? { trackingNumber: trackingInput.trim() } : {},
+        ),
+      });
+      setShowShipPicker(false);
+      setTrackingInput('');
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to mark as shipped');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleReceive() {
+    if (
+      !confirm(
+        'Confirm you received the item?\n\nThis will close the order and unlock leaving a review. Only do this once the item is in your hands.',
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/api/orders/${order.id}/receive`, { method: 'POST' });
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to confirm receipt');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -161,6 +203,17 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           </button>,
         );
       }
+    } else if (order.status === 'PAID') {
+      actions.push(
+        <button
+          key="ship"
+          onClick={() => setShowShipPicker((v) => !v)}
+          disabled={busy}
+          className="btn-cyber-primary text-xs"
+        >
+          Mark Shipped
+        </button>,
+      );
     }
   } else {
     // buyer
@@ -222,6 +275,17 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           </button>,
         );
       }
+    } else if (order.status === 'SHIPPED') {
+      actions.push(
+        <button
+          key="receive"
+          onClick={handleReceive}
+          disabled={busy}
+          className="btn-cyber-primary text-xs"
+        >
+          Mark Received
+        </button>,
+      );
     } else if (order.status === 'COMPLETED' && !order.review) {
       actions.push(
         <button
@@ -292,6 +356,18 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
                 <span className="text-[var(--text-dim)]">&middot;</span>
                 <span className="text-[var(--text-muted)]">
                   Paid: {PAYMENT_METHOD_LABELS[order.paymentMethod]}
+                </span>
+              </>
+            )}
+            {order.trackingNumber && (
+              <>
+                <span className="text-[var(--text-dim)]">&middot;</span>
+                <span className="inline-flex items-center gap-1 rounded-md bg-[var(--tint-cyan)] px-1.5 py-0.5 font-medium text-[var(--neon-cyan)]">
+                  <svg className="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 17a2 2 0 11-4 0 2 2 0 014 0zM19 17a2 2 0 11-4 0 2 2 0 014 0z" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M13 16V6a1 1 0 00-1-1H4a1 1 0 00-1 1v10a1 1 0 001 1h1m8-1a1 1 0 01-1 1H9m4-1V8a1 1 0 011-1h2.586a1 1 0 01.707.293l3.414 3.414a1 1 0 01.293.707V16a1 1 0 01-1 1h-1m-6-1a1 1 0 001 1h1M5 17a2 2 0 104 0m-4 0a2 2 0 114 0m6 0a2 2 0 104 0m-4 0a2 2 0 114 0" />
+                  </svg>
+                  {order.trackingNumber}
                 </span>
               </>
             )}
@@ -401,6 +477,48 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
         </div>
       )}
 
+      {/* Ship picker — seller marking PAID order as shipped */}
+      {showShipPicker && role === 'seller' && order.status === 'PAID' && (
+        <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4">
+          <p className="mb-2 text-xs font-medium text-[var(--text-primary)]">
+            Tracking number{' '}
+            <span className="font-normal text-[var(--text-dim)]">(optional)</span>
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="text"
+              value={trackingInput}
+              onChange={(e) => setTrackingInput(e.target.value)}
+              maxLength={100}
+              placeholder="e.g. ABCD1234567"
+              disabled={busy}
+              className="input-cyber min-w-0 flex-1 px-3 py-1.5 text-xs sm:flex-initial sm:w-64"
+            />
+            <button
+              onClick={handleShip}
+              disabled={busy}
+              className="btn-cyber-primary text-xs"
+            >
+              {busy ? 'Shipping…' : 'Confirm Shipped'}
+            </button>
+            <button
+              onClick={() => {
+                setShowShipPicker(false);
+                setTrackingInput('');
+              }}
+              disabled={busy}
+              className="btn-cyber-ghost text-xs"
+            >
+              Cancel
+            </button>
+          </div>
+          <p className="mt-2 text-xs text-[var(--text-muted)]">
+            Tracking number is shown to the buyer so they can follow the parcel. Leave blank
+            if you handed the item over in person.
+          </p>
+        </div>
+      )}
+
       {/* Payment picker — buyer paying online */}
       {showPayPicker && role === 'buyer' && order.status === 'CONFIRMED' && (
         <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4">
@@ -454,7 +572,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             Order ID: <span className="text-[var(--text-primary)]">{order.id}</span>
           </div>
           <MessageThread
-            orderId={order.id}
+            endpoint={`/api/orders/${order.id}/messages`}
             currentUserId={currentUserId}
             otherPartyName={otherParty.username}
           />

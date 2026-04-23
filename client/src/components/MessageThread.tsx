@@ -3,12 +3,27 @@
 import { useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import Avatar from '@/components/Avatar';
-import type { OrderMessage } from '@/types/orders';
+
+// Generic message shape the thread renders — used by both order messages
+// and pre-purchase inquiry messages. Server APIs for both return the same
+// fields (id, content, createdAt, sender), so a single component can serve
+// either with a configurable endpoint.
+export type ThreadMessage = {
+  id: string;
+  content: string;
+  createdAt: string;
+  sender: { id: string; username: string; avatarUrl: string | null };
+};
 
 type Props = {
-  orderId: string;
+  // Base URL for GET + POST. GET returns `{ messages: ThreadMessage[] }`,
+  // POST takes `{ content }` and returns `{ message: ThreadMessage }`.
+  endpoint: string;
   currentUserId: string;
   otherPartyName: string;
+  // Optional: triggered after a successful send so parent can refresh inbox
+  // counts, etc. Optional so existing callers don't have to wire it.
+  onSent?: () => void;
 };
 
 // Two consecutive messages from the same sender are grouped if their createdAt
@@ -17,11 +32,12 @@ type Props = {
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 
 export default function MessageThread({
-  orderId,
+  endpoint,
   currentUserId,
   otherPartyName,
+  onSent,
 }: Props) {
-  const [messages, setMessages] = useState<OrderMessage[]>([]);
+  const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [loading, setLoading] = useState(true);
   const [content, setContent] = useState('');
   const [sending, setSending] = useState(false);
@@ -37,9 +53,7 @@ export default function MessageThread({
     async function fetchMessages() {
       setLoading(true);
       try {
-        const data = await api<{ messages: OrderMessage[] }>(
-          `/api/orders/${orderId}/messages`,
-        );
+        const data = await api<{ messages: ThreadMessage[] }>(endpoint);
         if (!cancelled) {
           setMessages(data.messages);
           setError('');
@@ -55,7 +69,7 @@ export default function MessageThread({
     return () => {
       cancelled = true;
     };
-  }, [orderId]);
+  }, [endpoint]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -80,18 +94,16 @@ export default function MessageThread({
     setSending(true);
     setError('');
     try {
-      const res = await api<{ message: OrderMessage }>(
-        `/api/orders/${orderId}/messages`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ content: trimmed }),
-        },
-      );
+      const res = await api<{ message: ThreadMessage }>(endpoint, {
+        method: 'POST',
+        body: JSON.stringify({ content: trimmed }),
+      });
       // Always pin to bottom after the user sends — even if they had scrolled
       // up to read history.
       shouldStickRef.current = true;
       setMessages((prev) => [...prev, res.message]);
       setContent('');
+      onSent?.();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to send message');
     } finally {

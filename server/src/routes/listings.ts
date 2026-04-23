@@ -130,7 +130,8 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/listings/my — Current user's listings (all statuses)
+// GET /api/listings/my — Current user's listings (all statuses by default;
+// pass ?status=ACTIVE|ON_HOLD|SOLD|REMOVED to filter)
 router.get('/my', authenticate, async (req: Request, res: Response) => {
   try {
     const parsed = paginationSchema.safeParse(req.query);
@@ -141,7 +142,17 @@ router.get('/my', authenticate, async (req: Request, res: Response) => {
     const { page, limit } = parsed.data;
     const skip = (page - 1) * limit;
 
-    const where = { sellerId: req.userId! };
+    const statusParam = req.query.status;
+    const validStatus =
+      typeof statusParam === 'string' &&
+      ['ACTIVE', 'ON_HOLD', 'SOLD', 'REMOVED'].includes(statusParam)
+        ? (statusParam as 'ACTIVE' | 'ON_HOLD' | 'SOLD' | 'REMOVED')
+        : undefined;
+
+    const where: { sellerId: string; status?: typeof validStatus } = {
+      sellerId: req.userId!,
+    };
+    if (validStatus) where.status = validStatus;
 
     const [listings, total, statusCounts] = await Promise.all([
       prisma.listing.findMany({
@@ -167,9 +178,11 @@ router.get('/my', authenticate, async (req: Request, res: Response) => {
         },
       }),
       prisma.listing.count({ where }),
+      // Counts always reflect ALL the seller's listings, regardless of any
+      // status filter on the visible page — used by the dashboard tab badges.
       prisma.listing.groupBy({
         by: ['status'],
-        where,
+        where: { sellerId: req.userId! },
         _count: { status: true },
       }),
     ]);

@@ -21,7 +21,11 @@ export async function getSellerStats(sellerId: string): Promise<SellerStats> {
       _count: { rating: true },
     }),
     prisma.order.count({
-      where: { sellerId, status: 'COMPLETED' },
+      // Counts any order where the seller has been paid (PAID/SHIPPED/COMPLETED).
+      // We don't gate on COMPLETED-only because the seller's "successful sales"
+      // story shouldn't depend on whether the buyer remembered to mark the
+      // package received.
+      where: { sellerId, status: { in: ['PAID', 'SHIPPED', 'COMPLETED'] } },
     }),
     prisma.listing.count({
       where: { sellerId },

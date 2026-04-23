@@ -23,8 +23,10 @@ enum ListingStatus {
 
 enum OrderStatus {
   PENDING_CONFIRMATION // buyer checked out, waiting for seller to confirm
-  CONFIRMED            // seller confirmed, item on hold
-  COMPLETED            // payment done (online or in-person), deal finished
+  CONFIRMED            // seller confirmed, item on hold, awaiting payment
+  PAID                 // payment captured (online) or marked paid (cash/bank); listing now SOLD; awaiting shipment
+  SHIPPED              // seller marked posted; in transit to buyer
+  COMPLETED            // buyer confirmed received; deal finished
   CANCELLED            // either party cancelled
 }
 
@@ -67,12 +69,20 @@ enum NotificationType {
   ORDER_PLACED       // seller: buyer checked out
   ORDER_CONFIRMED    // buyer: seller accepted
   ORDER_CANCELLED    // other party: cancelled
-  ORDER_COMPLETED    // buyer: seller marked paid / online capture landed
-  ORDER_PAID         // seller: online payment captured
-  NEW_MESSAGE        // receiver: counterparty sent a message
+  ORDER_COMPLETED    // both: order fully complete (buyer received)
+  ORDER_PAID         // seller: payment captured / marked paid
+  ORDER_SHIPPED      // buyer: seller marked the item as posted
+  NEW_MESSAGE        // receiver: counterparty sent a message on an order thread
+  NEW_INQUIRY        // seller: buyer opened a pre-purchase inquiry
+  NEW_INQUIRY_REPLY  // either: counterparty replied on an inquiry thread
   NEW_REVIEW         // seller: buyer left a review
   ID_APPROVED        // user: admin approved ID
   ID_REJECTED        // user: admin rejected ID
+}
+
+enum InquiryStatus {
+  OPEN    // active conversation
+  CLOSED  // either party manually archived (still readable, just hidden by default)
 }
 
 model User {
@@ -129,6 +139,10 @@ model User {
   cart          Cart?
   sentMessages     Message[] @relation("sender")
   receivedMessages Message[] @relation("receiver")
+  buyerInquiries  Inquiry[]        @relation("inquiryBuyer")
+  sellerInquiries Inquiry[]        @relation("inquirySeller")
+  sentInquiryMessages     InquiryMessage[] @relation("inquiryMessageSender")
+  receivedInquiryMessages InquiryMessage[] @relation("inquiryMessageReceiver")
   notifications Notification[] @relation("recipient")
   triggeredNotifications Notification[] @relation("actor")
 
@@ -156,6 +170,7 @@ model Listing {
   orders        Order[]
   savedByUsers  SavedListing[]
   cartItems     CartItem[]
+  inquiries     Inquiry[]
 
   @@index([status, createdAt])
   @@index([status, category])
@@ -207,6 +222,12 @@ model Order {
   // during a live charge. Manual completions (CASH/BANK_TRANSFER) leave this
   // at NONE and jump straight from status=CONFIRMED to status=COMPLETED.
   paymentSessionState PaymentSessionState @default(NONE)
+  // Fulfillment timestamps (nullable; set when seller/buyer click the
+  // corresponding action). Used to render "Awaiting shipment" / "In transit"
+  // / "Received on …" badges and for the dashboard in-progress filter.
+  trackingNumber String?
+  shippedAt      DateTime?
+  deliveredAt    DateTime?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -323,4 +344,54 @@ model ProcessedWebhookEvent {
 
   @@unique([provider, eventId])
   @@index([createdAt])
+}
+
+// Pre-purchase inquiry — a private 1:1 conversation between a prospective
+// buyer and the listing's seller. Distinct from order-level Message threads
+// (which only exist after a purchase request). One inquiry per listing per
+// buyer; subsequent questions reuse the same thread.
+model Inquiry {
+  id            String        @id @default(uuid())
+  status        InquiryStatus @default(OPEN)
+  // Bumped whenever a message is added; powers inbox sort + unread badge.
+  lastMessageAt DateTime      @default(now())
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  listing   Listing @relation(fields: [listingId], references: [id])
+  listingId String
+
+  buyer   User   @relation("inquiryBuyer", fields: [buyerId], references: [id])
+  buyerId String
+
+  seller   User   @relation("inquirySeller", fields: [sellerId], references: [id])
+  sellerId String
+
+  messages InquiryMessage[]
+
+  // Reuse-or-create lookup: a buyer asking again on the same listing should
+  // land in their existing thread, not spawn a new one.
+  @@unique([listingId, buyerId])
+  @@index([sellerId, lastMessageAt])
+  @@index([buyerId, lastMessageAt])
+}
+
+model InquiryMessage {
+  id        String    @id @default(uuid())
+  content   String
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
+
+  inquiry   Inquiry @relation(fields: [inquiryId], references: [id], onDelete: Cascade)
+  inquiryId String
+
+  sender   User   @relation("inquiryMessageSender", fields: [senderId], references: [id])
+  senderId String
+
+  receiver   User   @relation("inquiryMessageReceiver", fields: [receiverId], references: [id])
+  receiverId String
+
+  @@index([inquiryId, createdAt])
+  // Backs unread-count: "unread inquiry messages to me".
+  @@index([receiverId, readAt])
 }

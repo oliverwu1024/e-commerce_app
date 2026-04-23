@@ -15,6 +15,7 @@ import {
   orderListQuerySchema,
   paySchema,
   paypalCaptureSchema,
+  shipSchema,
 } from '../schemas/orders.js';
 import {
   getStripeClient,
@@ -70,6 +71,9 @@ const ORDER_SUMMARY_SELECT = {
   // Exposed so the Purchases tab can surface the "Release payment lock"
   // escape hatch when a provider tab was closed without cancelling.
   paymentSessionState: true,
+  trackingNumber: true,
+  shippedAt: true,
+  deliveredAt: true,
   createdAt: true,
   updatedAt: true,
   listing: {
@@ -287,12 +291,20 @@ async function listOrders(
       res.status(400).json({ error: parsed.error.issues[0].message });
       return;
     }
-    const { page, limit, status } = parsed.data;
+    const { page, limit, status, bucket } = parsed.data;
     const skip = (page - 1) * limit;
 
     const where: Prisma.OrderWhereInput =
       role === 'seller' ? { sellerId: req.userId! } : { buyerId: req.userId! };
-    if (status) where.status = status;
+    if (status) {
+      where.status = status;
+    } else if (bucket === 'in_progress') {
+      where.status = {
+        in: ['PENDING_CONFIRMATION', 'CONFIRMED', 'PAID', 'SHIPPED'],
+      };
+    } else if (bucket === 'past') {
+      where.status = { in: ['COMPLETED', 'CANCELLED'] };
+    }
 
     const [orders, total] = await Promise.all([
       prisma.order.findMany({
@@ -705,9 +717,9 @@ router.put(
       }
 
       // Symmetric to the /cancel guard: refuse manual CASH / BANK_TRANSFER
-      // completion while a buyer's online payment session is live. Without
-      // this, seller can flip COMPLETED while Stripe is still capturing and
-      // the buyer ends up paying both CASH and the provider (the webhook's
+      // mark-paid while a buyer's online payment session is live. Without
+      // this, seller can flip PAID while Stripe is still capturing and the
+      // buyer ends up paying both CASH and the provider (the webhook's
       // already_completed no-op hides the double-charge).
       if (existing.paymentSessionState === 'PENDING') {
         res.status(409).json({
@@ -728,11 +740,10 @@ router.put(
             paymentSessionState: 'NONE',
           },
           data: {
-            status: 'COMPLETED',
+            // Manual mark-paid (CASH / BANK_TRANSFER) — same lifecycle as
+            // online: PAID first, then SHIPPED, then COMPLETED.
+            status: 'PAID',
             paymentMethod,
-            // Keeps paymentSessionState in lockstep with order.status for the
-            // admin stuck-orders query. Manual completions skip /pay so
-            // session state was NONE here; set COMPLETED anyway.
             paymentSessionState: 'COMPLETED',
           },
         });
@@ -771,6 +782,164 @@ router.put(
       res.json({ order: updated });
     } catch (err) {
       console.error('Complete order error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/orders/:id/ship — seller marks the order as shipped
+// PAID → SHIPPED. Optional tracking number (any free-form string up to 100
+// chars; we don't validate carrier-specific formats since sellers may use
+// Australia Post, courier networks, in-person handover refs, etc).
+// ---------------------------------------------------------------------------
+router.post(
+  '/:id/ship',
+  authenticate,
+  orderMutationLimiter,
+  async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const { id } = req.params;
+      if (!uuidSchema.safeParse(id).success) {
+        res.status(400).json({ error: 'Invalid order ID' });
+        return;
+      }
+
+      const parsed = shipSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.issues[0].message });
+        return;
+      }
+      const { trackingNumber } = parsed.data;
+
+      const existing = await prisma.order.findUnique({
+        where: { id },
+        select: { id: true, sellerId: true, status: true, listingId: true },
+      });
+
+      if (!existing) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+      if (existing.sellerId !== req.userId) {
+        res.status(403).json({ error: 'Only the seller can mark this order as shipped' });
+        return;
+      }
+      if (existing.status !== 'PAID') {
+        res.status(409).json({
+          error: 'Order must be paid before it can be marked shipped',
+        });
+        return;
+      }
+
+      const { count } = await prisma.order.updateMany({
+        where: { id, status: 'PAID', sellerId: req.userId },
+        data: {
+          status: 'SHIPPED',
+          shippedAt: new Date(),
+          trackingNumber: trackingNumber ?? null,
+        },
+      });
+      if (count === 0) {
+        res.status(409).json({
+          error: 'Order status changed; please refresh and try again',
+        });
+        return;
+      }
+
+      const updated = await prisma.order.findUnique({
+        where: { id },
+        select: ORDER_SUMMARY_SELECT,
+      });
+      if (updated) {
+        void createNotification({
+          recipientId: updated.buyer.id,
+          type: 'ORDER_SHIPPED',
+          title: 'Item shipped',
+          body: trackingNumber
+            ? `${updated.seller.username} shipped "${updated.listing.title}" — tracking: ${trackingNumber}`
+            : `${updated.seller.username} marked "${updated.listing.title}" as shipped.`,
+          actorId: updated.seller.id,
+          orderId: updated.id,
+          listingId: updated.listing.id,
+        });
+      }
+      res.json({ order: updated });
+    } catch (err) {
+      console.error('Ship order error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/orders/:id/receive — buyer confirms they got the item
+// SHIPPED → COMPLETED. Closes out the deal; review can now be left.
+// ---------------------------------------------------------------------------
+router.post(
+  '/:id/receive',
+  authenticate,
+  orderMutationLimiter,
+  async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const { id } = req.params;
+      if (!uuidSchema.safeParse(id).success) {
+        res.status(400).json({ error: 'Invalid order ID' });
+        return;
+      }
+
+      const existing = await prisma.order.findUnique({
+        where: { id },
+        select: { id: true, buyerId: true, status: true },
+      });
+
+      if (!existing) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+      if (existing.buyerId !== req.userId) {
+        res.status(403).json({ error: 'Only the buyer can confirm receipt' });
+        return;
+      }
+      if (existing.status !== 'SHIPPED') {
+        res.status(409).json({
+          error: 'Order must be shipped before it can be marked received',
+        });
+        return;
+      }
+
+      const { count } = await prisma.order.updateMany({
+        where: { id, status: 'SHIPPED', buyerId: req.userId },
+        data: {
+          status: 'COMPLETED',
+          deliveredAt: new Date(),
+        },
+      });
+      if (count === 0) {
+        res.status(409).json({
+          error: 'Order status changed; please refresh and try again',
+        });
+        return;
+      }
+
+      const updated = await prisma.order.findUnique({
+        where: { id },
+        select: ORDER_SUMMARY_SELECT,
+      });
+      if (updated) {
+        void createNotification({
+          recipientId: updated.seller.id,
+          type: 'ORDER_COMPLETED',
+          title: 'Item received',
+          body: `${updated.buyer.username} confirmed receipt of "${updated.listing.title}".`,
+          actorId: updated.buyer.id,
+          orderId: updated.id,
+          listingId: updated.listing.id,
+        });
+      }
+      res.json({ order: updated });
+    } catch (err) {
+      console.error('Receive order error:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   },

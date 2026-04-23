@@ -6,7 +6,10 @@ export type NotificationType =
   | 'ORDER_CANCELLED'
   | 'ORDER_COMPLETED'
   | 'ORDER_PAID'
+  | 'ORDER_SHIPPED'
   | 'NEW_MESSAGE'
+  | 'NEW_INQUIRY'
+  | 'NEW_INQUIRY_REPLY'
   | 'NEW_REVIEW'
   | 'ID_APPROVED'
   | 'ID_REJECTED';
@@ -61,6 +64,10 @@ export type InboxThreadsResponse = {
 export type UnreadCount = {
   notifications: number;
   messages: number;
+  // Per-bucket breakdown so the inbox tabs can show their own badge counts.
+  // Always present; older clients can ignore.
+  orderMessages: number;
+  inquiryMessages: number;
 };
 
 // Click targets for each notification type — the UI renders the notification
@@ -78,8 +85,13 @@ export function notificationHref(n: Notification): string {
       // We don't always know which side cancelled; both roles render the
       // order. Purchases first since most cancels are seller-driven rejects.
       return `/dashboard?tab=purchases&order=${n.orderId ?? ''}`;
+    case 'ORDER_SHIPPED':
+      return `/dashboard?tab=in_purchases&order=${n.orderId ?? ''}`;
     case 'NEW_MESSAGE':
       return `/account/messages?order=${n.orderId ?? ''}`;
+    case 'NEW_INQUIRY':
+    case 'NEW_INQUIRY_REPLY':
+      return `/account/messages?tab=inquiries`;
     case 'NEW_REVIEW':
       return n.actor ? `/sellers/${n.actor.id}?tab=reviews` : '/dashboard';
     case 'ID_APPROVED':
