@@ -113,7 +113,7 @@ export default function MessageThread({
   }
 
   return (
-    <div className="rounded-lg border border-zinc-200 bg-zinc-50">
+    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)]">
       <div
         ref={scrollRef}
         onScroll={handleScroll}
@@ -121,9 +121,9 @@ export default function MessageThread({
         aria-label={`Messages with ${otherPartyName}`}
       >
         {loading ? (
-          <p className="text-center text-xs text-zinc-400 py-4">Loading messages...</p>
+          <p className="text-center text-xs text-[var(--text-dim)] py-4">Loading messages...</p>
         ) : messages.length === 0 ? (
-          <p className="text-center text-xs text-zinc-500 py-4">
+          <p className="text-center text-xs text-[var(--text-muted)] py-4">
             No messages yet. Say hi to {otherPartyName} to coordinate the sale.
           </p>
         ) : (
@@ -169,15 +169,15 @@ export default function MessageThread({
                 <div
                   className={`max-w-[75%] rounded-lg px-3 py-1.5 text-sm ${
                     mine
-                      ? 'bg-blue-600 text-white'
-                      : 'bg-white border border-zinc-200 text-zinc-800'
+                      ? 'bg-[var(--neon-cyan)] text-[var(--btn-primary-text)]'
+                      : 'bg-[var(--bg-panel)] border border-[var(--border-subtle)] text-[var(--text-primary)]'
                   }`}
                 >
                   <p className="whitespace-pre-wrap break-words">{msg.content}</p>
                   {showFooter && (
                     <p
                       className={`mt-0.5 text-[10px] ${
-                        mine ? 'text-blue-100' : 'text-zinc-400'
+                        mine ? 'opacity-80' : 'text-[var(--text-dim)]'
                       }`}
                     >
                       {mine ? 'You' : msg.sender.username} · {time}
@@ -191,12 +191,12 @@ export default function MessageThread({
       </div>
 
       {error && (
-        <p className="px-3 pt-2 text-xs text-red-600">{error}</p>
+        <p className="px-3 pt-2 text-xs text-[var(--neon-danger)]">{error}</p>
       )}
 
       <form
         onSubmit={handleFormSubmit}
-        className="flex items-end gap-2 border-t border-zinc-200 p-3"
+        className="flex items-end gap-2 border-t border-[var(--border-subtle)] p-3"
       >
         <textarea
           value={content}
@@ -206,12 +206,12 @@ export default function MessageThread({
           maxLength={2000}
           rows={2}
           disabled={sending}
-          className="flex-1 resize-none rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
+          className="input-cyber flex-1 resize-none px-3 py-1.5 text-sm disabled:opacity-60"
         />
         <button
           type="submit"
           disabled={sending || !content.trim()}
-          className="rounded-lg bg-blue-600 px-4 py-1.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="btn-cyber-primary"
         >
           {sending ? 'Sending...' : 'Send'}
         </button>

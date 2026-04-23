@@ -59,12 +59,12 @@ function EditListingLoader() {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8">
         <div className="space-y-6 animate-pulse">
-          <div className="h-6 w-1/3 rounded bg-zinc-200" />
-          <div className="h-8 w-1/2 rounded bg-zinc-200" />
-          <div className="h-40 rounded-lg bg-zinc-200" />
-          <div className="h-10 w-full rounded-lg bg-zinc-200" />
-          <div className="h-10 w-full rounded-lg bg-zinc-200" />
-          <div className="h-32 w-full rounded-lg bg-zinc-200" />
+          <div className="h-6 w-1/3 rounded bg-[var(--bg-panel-hi)]" />
+          <div className="h-8 w-1/2 rounded bg-[var(--bg-panel-hi)]" />
+          <div className="h-40 rounded-lg bg-[var(--bg-panel-hi)]" />
+          <div className="h-10 w-full rounded-lg bg-[var(--bg-panel-hi)]" />
+          <div className="h-10 w-full rounded-lg bg-[var(--bg-panel-hi)]" />
+          <div className="h-32 w-full rounded-lg bg-[var(--bg-panel-hi)]" />
         </div>
       </div>
     );
@@ -73,11 +73,11 @@ function EditListingLoader() {
   if (error || !listing) {
     return (
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
-        <h1 className="text-2xl font-bold text-zinc-900 mb-2">Cannot edit listing</h1>
-        <p className="text-zinc-500 mb-6">{error || 'This listing could not be loaded.'}</p>
+        <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Cannot edit listing</h1>
+        <p className="text-[var(--text-muted)] mb-6">{error || 'This listing could not be loaded.'}</p>
         <Link
           href="/dashboard"
-          className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+          className="btn-cyber-primary"
         >
           Back to Dashboard
         </Link>

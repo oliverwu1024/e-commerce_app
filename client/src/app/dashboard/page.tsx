@@ -42,7 +42,7 @@ export default function DashboardPage() {
 function DashboardFallback() {
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
-      <div className="h-8 w-32 rounded bg-zinc-200 animate-pulse" />
+      <div className="h-8 w-32 rounded bg-[var(--bg-panel-hi)] animate-pulse" />
     </div>
   );
 }
@@ -181,19 +181,19 @@ function Dashboard() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="text-2xl font-bold text-zinc-900">Dashboard</h1>
+      <h1 className="text-2xl font-bold text-[var(--text-primary)]">Dashboard</h1>
 
       {/* Payment banner */}
       {(paymentBanner || capturingPayPal) && (
         <div
           className={`mt-4 rounded-lg border p-3 text-sm flex items-center justify-between ${
             capturingPayPal
-              ? 'border-blue-200 bg-blue-50 text-blue-800'
+              ? 'border-[var(--neon-cyan)]/40 bg-[var(--tint-cyan)] text-[var(--neon-cyan)]'
               : paymentBanner?.type === 'success'
-              ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
+              ? 'border-[var(--neon-green)]/40 bg-[var(--tint-green)] text-[var(--neon-green)]'
               : paymentBanner?.type === 'error'
-              ? 'border-red-200 bg-red-50 text-red-800'
-              : 'border-zinc-200 bg-zinc-50 text-zinc-700'
+              ? 'border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] text-[var(--neon-danger)]'
+              : 'border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] text-[var(--text-muted)]'
           }`}
         >
           <span>
@@ -214,7 +214,7 @@ function Dashboard() {
       )}
 
       {/* Tabs */}
-      <div className="mt-6 border-b border-zinc-200">
+      <div className="mt-6 border-b border-[var(--border-subtle)]">
         <div
           role="tablist"
           aria-label="Dashboard tabs"
@@ -235,8 +235,8 @@ function Dashboard() {
                 onClick={() => selectTab(tab.key)}
                 className={`pb-3 text-sm font-medium transition-colors ${
                   selected
-                    ? 'border-b-2 border-blue-600 text-blue-600'
-                    : 'text-zinc-500 hover:text-zinc-700'
+                    ? 'border-b-2 border-[var(--neon-cyan)] text-[var(--neon-cyan)]'
+                    : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                 }`}
               >
                 {tab.label}
@@ -321,11 +321,11 @@ function MyListingsTab() {
       {/* Stats row */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4 mb-6">
         <StatCard label="Total Listings" value={pagination?.total ?? 0} />
-        <StatCard label="Active" value={counts?.ACTIVE ?? 0} color="text-emerald-600" />
-        <StatCard label="Sold" value={counts?.SOLD ?? 0} color="text-blue-600" />
+        <StatCard label="Active" value={counts?.ACTIVE ?? 0} color="text-[var(--neon-green)]" />
+        <StatCard label="Sold" value={counts?.SOLD ?? 0} color="text-[var(--neon-cyan)]" />
         <Link
           href="/listings/new"
-          className="flex flex-col items-center justify-center rounded-xl border border-dashed border-zinc-300 p-4 text-sm font-medium text-blue-600 hover:border-blue-400 hover:bg-blue-50 transition-colors"
+          className="flex flex-col items-center justify-center rounded-xl border border-dashed border-[var(--border-hi)] p-4 text-sm font-medium text-[var(--neon-cyan)] hover:border-[var(--neon-cyan)] hover:bg-[var(--tint-cyan)] transition-colors"
         >
           <svg className="h-6 w-6 mb-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M12 4v16m8-8H4" />
@@ -336,9 +336,9 @@ function MyListingsTab() {
 
       {/* Error */}
       {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+        <div className="mb-4 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           {error}
-          <button onClick={() => setError('')} className="float-right font-medium hover:text-red-800">
+          <button onClick={() => setError('')} className="float-right font-medium hover:brightness-110">
             &times;
           </button>
         </div>
@@ -348,12 +348,12 @@ function MyListingsTab() {
       {loading && (
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="flex gap-4 rounded-xl border border-zinc-200 bg-white p-4 animate-pulse">
-              <div className="h-20 w-20 flex-shrink-0 rounded-lg bg-zinc-200" />
+            <div key={i} className="panel clip-corner flex gap-4 p-4 animate-pulse">
+              <div className="h-20 w-20 flex-shrink-0 rounded-lg bg-[var(--bg-panel-hi)]" />
               <div className="flex-1 space-y-2">
-                <div className="h-4 w-2/3 rounded bg-zinc-200" />
-                <div className="h-4 w-1/4 rounded bg-zinc-200" />
-                <div className="h-3 w-1/3 rounded bg-zinc-200" />
+                <div className="h-4 w-2/3 rounded bg-[var(--bg-panel-hi)]" />
+                <div className="h-4 w-1/4 rounded bg-[var(--bg-panel-hi)]" />
+                <div className="h-3 w-1/3 rounded bg-[var(--bg-panel-hi)]" />
               </div>
             </div>
           ))}
@@ -362,15 +362,15 @@ function MyListingsTab() {
 
       {/* Empty state */}
       {!loading && listings.length === 0 && (
-        <div className="rounded-xl border border-zinc-200 bg-white px-6 py-12 text-center">
-          <svg className="mx-auto h-12 w-12 text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+        <div className="panel clip-corner px-6 py-12 text-center">
+          <svg className="mx-auto h-12 w-12 text-[var(--text-dim)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" />
           </svg>
-          <h3 className="mt-3 text-sm font-medium text-zinc-900">No listings yet</h3>
-          <p className="mt-1 text-sm text-zinc-500">Get started by creating your first listing.</p>
+          <h3 className="mt-3 text-sm font-medium text-[var(--text-primary)]">No listings yet</h3>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">Get started by creating your first listing.</p>
           <Link
             href="/listings/new"
-            className="mt-4 inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="btn-cyber-primary mt-4"
           >
             + Sell an Item
           </Link>
@@ -393,17 +393,17 @@ function MyListingsTab() {
             return (
               <div
                 key={listing.id}
-                className="flex items-center gap-4 rounded-xl border border-zinc-200 bg-white p-4 hover:shadow-sm transition-shadow"
+                className="panel clip-corner flex items-center gap-4 p-4 hover:shadow-sm transition-shadow"
               >
                 {/* Thumbnail */}
                 <Link
                   href={`/listings/${listing.id}`}
-                  className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-100"
+                  className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-[var(--bg-panel-hi)]"
                 >
                   {imageUrl ? (
                     <img src={imageUrl} alt={listing.title} className="h-full w-full object-cover" />
                   ) : (
-                    <div className="flex h-full items-center justify-center text-zinc-300">
+                    <div className="flex h-full items-center justify-center text-[var(--text-dim)]">
                       <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                         <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
                       </svg>
@@ -414,11 +414,11 @@ function MyListingsTab() {
                 {/* Info */}
                 <div className="flex-1 min-w-0">
                   <Link href={`/listings/${listing.id}`} className="block">
-                    <h3 className="text-sm font-medium text-zinc-900 truncate hover:text-blue-600 transition-colors">
+                    <h3 className="text-sm font-medium text-[var(--text-primary)] truncate hover:text-[var(--neon-cyan)] transition-colors">
                       {listing.title}
                     </h3>
                   </Link>
-                  <p className="mt-0.5 text-sm font-bold text-zinc-900">{formatPrice(listing.price)}</p>
+                  <p className="mt-0.5 text-sm font-bold text-[var(--text-primary)]">{formatPrice(listing.price)}</p>
                   <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
                     <span className={`rounded-md px-2 py-0.5 font-medium ${statusStyle.bg}`}>
                       {statusStyle.label}
@@ -426,7 +426,7 @@ function MyListingsTab() {
                     <span className={`rounded-md px-2 py-0.5 font-medium ${condition.bg}`}>
                       {condition.label}
                     </span>
-                    <span className="text-zinc-400">{date}</span>
+                    <span className="text-[var(--text-dim)]">{date}</span>
                   </div>
                 </div>
 
@@ -436,13 +436,13 @@ function MyListingsTab() {
                     <>
                       <button
                         onClick={() => router.push(`/listings/${listing.id}/edit`)}
-                        className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
+                        className="btn-cyber-outline text-xs"
                       >
                         Edit
                       </button>
                       <button
                         onClick={() => setRemoveId(listing.id)}
-                        className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 transition-colors"
+                        className="rounded-lg border border-[var(--neon-danger)]/40 px-3 py-1.5 text-xs font-medium text-[var(--neon-danger)] hover:bg-[var(--tint-danger)] transition-colors"
                       >
                         Remove
                       </button>
@@ -461,17 +461,17 @@ function MyListingsTab() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="btn-cyber-outline disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Previous
           </button>
-          <span className="text-sm text-zinc-500">
+          <span className="text-sm text-[var(--text-muted)]">
             Page {page} of {pagination.totalPages}
           </span>
           <button
             onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
             disabled={page === pagination.totalPages}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="btn-cyber-outline disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Next
           </button>
@@ -484,26 +484,26 @@ function MyListingsTab() {
           <div
             role="alertdialog"
             aria-labelledby="remove-title"
-            className="mx-4 w-full max-w-sm rounded-xl bg-white p-6 shadow-xl"
+            className="panel clip-corner mx-4 w-full max-w-sm p-6"
           >
-            <h3 id="remove-title" className="text-lg font-semibold text-zinc-900">
+            <h3 id="remove-title" className="text-lg font-semibold text-[var(--text-primary)]">
               Remove listing?
             </h3>
-            <p className="mt-2 text-sm text-zinc-600">
+            <p className="mt-2 text-sm text-[var(--text-muted)]">
               This listing will be marked as removed and will no longer appear in search results. This action cannot be undone.
             </p>
             <div className="mt-5 flex gap-3 justify-end">
               <button
                 onClick={() => setRemoveId(null)}
                 disabled={removing}
-                className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                className="btn-cyber-outline"
               >
                 Cancel
               </button>
               <button
                 onClick={handleRemove}
                 disabled={removing}
-                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                className="rounded-lg bg-[var(--neon-danger)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-50"
               >
                 {removing ? 'Removing...' : 'Remove'}
               </button>
@@ -521,9 +521,9 @@ function MyListingsTab() {
 
 function StatCard({ label, value, color }: { label: string; value: number; color?: string }) {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4">
-      <p className="text-xs font-medium text-zinc-500">{label}</p>
-      <p className={`mt-1 text-2xl font-bold ${color ?? 'text-zinc-900'}`}>{value}</p>
+    <div className="panel clip-corner p-4">
+      <p className="text-xs font-medium text-[var(--text-muted)]">{label}</p>
+      <p className={`mt-1 text-2xl font-bold ${color ?? 'text-[var(--text-primary)]'}`}>{value}</p>
     </div>
   );
 }
@@ -565,11 +565,11 @@ function SavedListingsTab() {
     return (
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {Array.from({ length: 6 }).map((_, i) => (
-          <div key={i} className="rounded-xl border border-zinc-200 bg-white overflow-hidden animate-pulse">
-            <div className="aspect-[4/3] bg-zinc-200" />
+          <div key={i} className="panel clip-corner overflow-hidden animate-pulse">
+            <div className="aspect-[4/3] bg-[var(--bg-panel-hi)]" />
             <div className="p-3 space-y-2">
-              <div className="h-4 w-3/4 rounded bg-zinc-200" />
-              <div className="h-5 w-1/3 rounded bg-zinc-200" />
+              <div className="h-4 w-3/4 rounded bg-[var(--bg-panel-hi)]" />
+              <div className="h-5 w-1/3 rounded bg-[var(--bg-panel-hi)]" />
             </div>
           </div>
         ))}
@@ -579,17 +579,17 @@ function SavedListingsTab() {
 
   if (listings.length === 0) {
     return (
-      <div className="rounded-xl border border-zinc-200 bg-white px-6 py-12 text-center">
-        <svg className="mx-auto h-12 w-12 text-zinc-300" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
+      <div className="panel clip-corner px-6 py-12 text-center">
+        <svg className="mx-auto h-12 w-12 text-[var(--text-dim)]" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
           <path strokeLinecap="round" strokeLinejoin="round" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z" />
         </svg>
-        <h3 className="mt-3 text-sm font-medium text-zinc-900">No saved listings</h3>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h3 className="mt-3 text-sm font-medium text-[var(--text-primary)]">No saved listings</h3>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
           Browse listings and tap the heart icon to save items you like.
         </p>
         <Link
           href="/browse"
-          className="mt-4 inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+          className="btn-cyber-primary mt-4"
         >
           Browse Listings
         </Link>
@@ -610,17 +610,17 @@ function SavedListingsTab() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="btn-cyber-outline disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Previous
           </button>
-          <span className="text-sm text-zinc-500">
+          <span className="text-sm text-[var(--text-muted)]">
             Page {page} of {pagination.totalPages}
           </span>
           <button
             onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
             disabled={page === pagination.totalPages}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="btn-cyber-outline disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Next
           </button>
@@ -716,8 +716,8 @@ function OrdersTab({
             onClick={() => changeFilter(f.value)}
             className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
               statusFilter === f.value
-                ? 'bg-blue-600 text-white'
-                : 'border border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:text-zinc-900'
+                ? 'bg-[var(--neon-cyan)] text-[var(--btn-primary-text)]'
+                : 'border border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-muted)] hover:border-[var(--border-hi)] hover:text-[var(--text-primary)]'
             }`}
           >
             {f.label}
@@ -726,7 +726,7 @@ function OrdersTab({
       </div>
 
       {error && (
-        <div className="mb-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+        <div className="mb-4 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           {error}
         </div>
       )}
@@ -736,12 +736,12 @@ function OrdersTab({
           {Array.from({ length: 3 }).map((_, i) => (
             <div
               key={i}
-              className="flex gap-4 rounded-xl border border-zinc-200 bg-white p-4 animate-pulse"
+              className="panel clip-corner flex gap-4 p-4 animate-pulse"
             >
-              <div className="h-20 w-20 flex-shrink-0 rounded-lg bg-zinc-200" />
+              <div className="h-20 w-20 flex-shrink-0 rounded-lg bg-[var(--bg-panel-hi)]" />
               <div className="flex-1 space-y-2">
-                <div className="h-4 w-2/3 rounded bg-zinc-200" />
-                <div className="h-4 w-1/3 rounded bg-zinc-200" />
+                <div className="h-4 w-2/3 rounded bg-[var(--bg-panel-hi)]" />
+                <div className="h-4 w-1/3 rounded bg-[var(--bg-panel-hi)]" />
               </div>
             </div>
           ))}
@@ -749,9 +749,9 @@ function OrdersTab({
       )}
 
       {!loading && orders.length === 0 && (
-        <div className="rounded-xl border border-zinc-200 bg-white px-6 py-12 text-center">
+        <div className="panel clip-corner px-6 py-12 text-center">
           <svg
-            className="mx-auto h-12 w-12 text-zinc-300"
+            className="mx-auto h-12 w-12 text-[var(--text-dim)]"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -763,11 +763,11 @@ function OrdersTab({
               d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
             />
           </svg>
-          <h3 className="mt-3 text-sm font-medium text-zinc-900">{emptyCopy.title}</h3>
-          <p className="mt-1 text-sm text-zinc-500">{emptyCopy.body}</p>
+          <h3 className="mt-3 text-sm font-medium text-[var(--text-primary)]">{emptyCopy.title}</h3>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">{emptyCopy.body}</p>
           <Link
             href={emptyCopy.cta.href}
-            className="mt-4 inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="btn-cyber-primary mt-4"
           >
             {emptyCopy.cta.label}
           </Link>
@@ -793,17 +793,17 @@ function OrdersTab({
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="btn-cyber-outline disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Previous
           </button>
-          <span className="text-sm text-zinc-500">
+          <span className="text-sm text-[var(--text-muted)]">
             Page {page} of {pagination.totalPages}
           </span>
           <button
             onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
             disabled={page === pagination.totalPages}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="btn-cyber-outline disabled:opacity-40 disabled:cursor-not-allowed"
           >
             Next
           </button>

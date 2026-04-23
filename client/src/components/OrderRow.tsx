@@ -112,7 +112,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           key="confirm"
           onClick={() => handleMutation(`/api/orders/${order.id}/confirm`)}
           disabled={busy}
-          className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50 transition-colors"
+          className="rounded-lg bg-[var(--neon-green)] px-3 py-1.5 text-xs font-medium text-white hover:brightness-110 disabled:opacity-50 transition-colors"
         >
           Confirm
         </button>,
@@ -126,7 +126,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             )
           }
           disabled={busy}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+          className="btn-cyber-outline text-xs"
         >
           Decline
         </button>,
@@ -141,7 +141,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             key="complete"
             onClick={() => setShowCompletePicker((v) => !v)}
             disabled={busy}
-            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="btn-cyber-primary text-xs"
           >
             Mark as Paid
           </button>,
@@ -155,7 +155,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
               )
             }
             disabled={busy}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+            className="btn-cyber-outline text-xs"
           >
             Cancel
           </button>,
@@ -176,7 +176,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             )
           }
           disabled={busy}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+          className="btn-cyber-outline text-xs"
         >
           Cancel
         </button>,
@@ -191,7 +191,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             key="release"
             onClick={handleAbandon}
             disabled={busy}
-            className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-50 transition-colors"
+            className="rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] px-3 py-1.5 text-xs font-medium text-[var(--neon-amber)] hover:brightness-110 disabled:opacity-50 transition-colors"
           >
             Release lock
           </button>,
@@ -202,7 +202,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             key="pay"
             onClick={() => setShowPayPicker((v) => !v)}
             disabled={busy}
-            className="rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            className="btn-cyber-primary text-xs"
           >
             Pay Now
           </button>,
@@ -216,7 +216,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
               )
             }
             disabled={busy}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 transition-colors"
+            className="btn-cyber-outline text-xs"
           >
             Cancel
           </button>,
@@ -228,7 +228,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           key="review"
           onClick={() => setShowReviewForm((v) => !v)}
           disabled={busy}
-          className="rounded-lg bg-amber-500 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-50 transition-colors"
+          className="rounded-lg bg-[var(--neon-amber)] px-3 py-1.5 text-xs font-medium text-white hover:brightness-110 disabled:opacity-50 transition-colors"
         >
           Leave a review
         </button>,
@@ -239,12 +239,12 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
   const otherPartyLabel = role === 'buyer' ? 'Seller' : 'Buyer';
 
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white overflow-hidden">
+    <div className="panel clip-corner overflow-hidden">
       {/* Header */}
       <div className="flex items-center gap-4 p-4">
         <Link
           href={`/listings/${order.listing.id}`}
-          className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-100"
+          className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-[var(--bg-panel-hi)]"
         >
           {imageUrl ? (
             <img
@@ -253,7 +253,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
               className="h-full w-full object-cover"
             />
           ) : (
-            <div className="flex h-full items-center justify-center text-zinc-300">
+            <div className="flex h-full items-center justify-center text-[var(--text-dim)]">
               <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
               </svg>
@@ -264,7 +264,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
         <div className="flex-1 min-w-0">
           <Link
             href={`/listings/${order.listing.id}`}
-            className="block text-sm font-medium text-zinc-900 truncate hover:text-blue-600 transition-colors"
+            className="block text-sm font-medium text-[var(--text-primary)] truncate hover:text-[var(--neon-cyan)] transition-colors"
           >
             {order.listing.title}
           </Link>
@@ -272,35 +272,35 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             <span className={`rounded-md px-2 py-0.5 font-medium ${statusStyle.bg}`}>
               {statusStyle.label}
             </span>
-            <span className="text-zinc-500">
+            <span className="text-[var(--text-muted)]">
               {otherPartyLabel}:{' '}
               {role === 'buyer' ? (
                 <Link
                   href={`/sellers/${otherParty.id}`}
-                  className="text-zinc-700 hover:text-blue-600 hover:underline transition-colors"
+                  className="text-[var(--text-muted)] hover:text-[var(--neon-cyan)] hover:underline transition-colors"
                 >
                   {otherParty.username}
                 </Link>
               ) : (
-                <span className="text-zinc-700">{otherParty.username}</span>
+                <span className="text-[var(--text-muted)]">{otherParty.username}</span>
               )}
             </span>
-            <span className="text-zinc-400">&middot;</span>
-            <span className="text-zinc-400">{createdDate}</span>
+            <span className="text-[var(--text-dim)]">&middot;</span>
+            <span className="text-[var(--text-dim)]">{createdDate}</span>
             {order.paymentMethod && (
               <>
-                <span className="text-zinc-400">&middot;</span>
-                <span className="text-zinc-500">
+                <span className="text-[var(--text-dim)]">&middot;</span>
+                <span className="text-[var(--text-muted)]">
                   Paid: {PAYMENT_METHOD_LABELS[order.paymentMethod]}
                 </span>
               </>
             )}
             {role === 'buyer' && order.review && (
               <>
-                <span className="text-zinc-400">&middot;</span>
+                <span className="text-[var(--text-dim)]">&middot;</span>
                 <Link
                   href={`/sellers/${order.seller.id}?tab=reviews`}
-                  className="inline-flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700 hover:bg-amber-100 transition-colors"
+                  className="inline-flex items-center gap-1 rounded-md bg-[var(--tint-amber)] px-1.5 py-0.5 font-medium text-[var(--neon-amber)] hover:brightness-110 transition-colors"
                 >
                   <svg className="h-3 w-3" viewBox="0 0 20 20" fill="currentColor">
                     <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
@@ -313,7 +313,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
         </div>
 
         <div className="flex-shrink-0 text-right">
-          <p className="text-sm font-bold text-zinc-900">
+          <p className="text-sm font-bold text-[var(--text-primary)]">
             {formatPrice(order.amount)}
           </p>
           {actions.length > 0 && (
@@ -324,7 +324,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
 
       {/* Error banner */}
       {error && (
-        <div className="border-t border-red-200 bg-red-50 px-4 py-2 text-xs text-red-700">
+        <div className="border-t border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] px-4 py-2 text-xs text-[var(--neon-danger)]">
           {error}
         </div>
       )}
@@ -334,7 +334,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           usual actions are gone and (for the buyer) how to recover. */}
       {order.status === 'CONFIRMED' &&
         order.paymentSessionState === 'PENDING' && (
-          <div className="border-t border-amber-200 bg-amber-50 px-4 py-2 text-xs text-amber-800">
+          <div className="border-t border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] px-4 py-2 text-xs text-[var(--neon-amber)]">
             {role === 'buyer' ? (
               <>
                 Payment is in progress. If you closed the payment tab without
@@ -366,8 +366,8 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
 
       {/* Payment picker — seller completing manually */}
       {showCompletePicker && role === 'seller' && order.status === 'CONFIRMED' && (
-        <div className="border-t border-zinc-200 bg-zinc-50 p-4">
-          <p className="text-xs font-medium text-zinc-700 mb-2">
+        <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4">
+          <p className="text-xs font-medium text-[var(--text-primary)] mb-2">
             How did the buyer pay you?
           </p>
           <div className="flex flex-wrap gap-2">
@@ -380,7 +380,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
                   })
                 }
                 disabled={busy}
-                className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50 transition-colors"
+                className="rounded-lg border border-[var(--border-hi)] bg-[var(--bg-panel)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:border-[var(--neon-cyan)] hover:bg-[var(--tint-cyan)] hover:text-[var(--neon-cyan)] disabled:opacity-50 transition-colors"
               >
                 {PAYMENT_METHOD_LABELS[pm]}
               </button>
@@ -388,12 +388,12 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             <button
               onClick={() => setShowCompletePicker(false)}
               disabled={busy}
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 disabled:opacity-50"
+              className="btn-cyber-ghost text-xs"
             >
               Cancel
             </button>
           </div>
-          <p className="mt-2 text-xs text-zinc-500">
+          <p className="mt-2 text-xs text-[var(--text-muted)]">
             {order.seller.sellerType === 'BUSINESS'
               ? 'Online payments (Stripe, Square, PayPal) are processed automatically when the buyer pays — no need to mark them here.'
               : 'PayPal payments are processed automatically when the buyer pays — no need to mark them here.'}
@@ -403,8 +403,8 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
 
       {/* Payment picker — buyer paying online */}
       {showPayPicker && role === 'buyer' && order.status === 'CONFIRMED' && (
-        <div className="border-t border-zinc-200 bg-zinc-50 p-4">
-          <p className="text-xs font-medium text-zinc-700 mb-2">
+        <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4">
+          <p className="text-xs font-medium text-[var(--text-primary)] mb-2">
             Choose how to pay online:
           </p>
           <div className="flex flex-wrap gap-2">
@@ -418,12 +418,12 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             <button
               onClick={() => setShowPayPicker(false)}
               disabled={busy}
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-zinc-500 hover:text-zinc-700 disabled:opacity-50"
+              className="btn-cyber-ghost text-xs"
             >
               Cancel
             </button>
           </div>
-          <p className="mt-2 text-xs text-zinc-500">
+          <p className="mt-2 text-xs text-[var(--text-muted)]">
             Or arrange cash / bank transfer with the seller directly through the messages
             below. They&apos;ll mark the order as paid once payment is received.
           </p>
@@ -433,7 +433,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
       {/* Expand toggle */}
       <button
         onClick={() => setExpanded((v) => !v)}
-        className="w-full border-t border-zinc-200 px-4 py-2 text-xs font-medium text-zinc-500 hover:bg-zinc-50 hover:text-zinc-700 flex items-center justify-center gap-1 transition-colors"
+        className="w-full border-t border-[var(--border-subtle)] px-4 py-2 text-xs font-medium text-[var(--text-muted)] hover:bg-[var(--bg-panel-hi)] hover:text-[var(--text-primary)] flex items-center justify-center gap-1 transition-colors"
       >
         <span>{expanded ? 'Hide details' : 'View messages & details'}</span>
         <svg
@@ -449,9 +449,9 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
 
       {/* Expanded detail */}
       {expanded && (
-        <div className="border-t border-zinc-200 bg-zinc-50 p-4 space-y-4">
-          <div className="text-xs text-zinc-500 font-mono">
-            Order ID: <span className="text-zinc-700">{order.id}</span>
+        <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4 space-y-4">
+          <div className="text-xs text-[var(--text-muted)] font-mono">
+            Order ID: <span className="text-[var(--text-primary)]">{order.id}</span>
           </div>
           <MessageThread
             orderId={order.id}
@@ -477,7 +477,7 @@ function PaymentOption({
     <button
       onClick={onClick}
       disabled={disabled}
-      className="rounded-lg border border-zinc-300 bg-white px-3 py-1.5 text-xs font-medium text-zinc-700 hover:border-blue-400 hover:bg-blue-50 hover:text-blue-700 disabled:opacity-50 transition-colors"
+      className="rounded-lg border border-[var(--border-hi)] bg-[var(--bg-panel)] px-3 py-1.5 text-xs font-medium text-[var(--text-muted)] hover:border-[var(--neon-cyan)] hover:bg-[var(--tint-cyan)] hover:text-[var(--neon-cyan)] disabled:opacity-50 transition-colors"
     >
       {label}
     </button>
@@ -537,19 +537,19 @@ function ReviewForm({
   return (
     <form
       onSubmit={handleSubmit}
-      className="border-t border-zinc-200 bg-amber-50/40 p-4 space-y-3"
+      className="border-t border-[var(--border-subtle)] bg-[var(--tint-amber)] p-4 space-y-3"
     >
       <div>
-        <p className="text-sm font-medium text-zinc-900">
+        <p className="text-sm font-medium text-[var(--text-primary)]">
           Review your purchase from {sellerUsername}
         </p>
-        <p className="text-xs text-zinc-500 mt-0.5">
+        <p className="text-xs text-[var(--text-muted)] mt-0.5">
           Reviews help other buyers and are visible on the seller&apos;s profile.
         </p>
       </div>
 
       <div>
-        <label className="block text-xs font-medium text-zinc-700 mb-1">
+        <label className="block text-xs font-medium text-[var(--text-primary)] mb-1">
           Rating
         </label>
         <StarInput value={rating} onChange={setRating} disabled={submitting} />
@@ -558,9 +558,9 @@ function ReviewForm({
       <div>
         <label
           htmlFor={`review-comment-${orderId}`}
-          className="block text-xs font-medium text-zinc-700 mb-1"
+          className="block text-xs font-medium text-[var(--text-primary)] mb-1"
         >
-          Comment <span className="text-zinc-400">(optional, max 2000 chars)</span>
+          Comment <span className="text-[var(--text-dim)]">(optional, max 2000 chars)</span>
         </label>
         <textarea
           id={`review-comment-${orderId}`}
@@ -570,15 +570,15 @@ function ReviewForm({
           rows={3}
           disabled={submitting}
           placeholder={`How was your experience with ${sellerUsername}?`}
-          className="w-full resize-none rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-60"
+          className="input-cyber w-full resize-none px-3 py-2 text-sm disabled:opacity-60"
         />
-        <p className="mt-1 text-right text-[10px] text-zinc-400">
+        <p className="mt-1 text-right text-[10px] text-[var(--text-dim)]">
           {comment.length}/2000
         </p>
       </div>
 
       {error && (
-        <p className="text-xs text-red-600">{error}</p>
+        <p className="text-xs text-[var(--neon-danger)]">{error}</p>
       )}
 
       <div className="flex justify-end gap-2">
@@ -586,14 +586,14 @@ function ReviewForm({
           type="button"
           onClick={onCancel}
           disabled={submitting}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="btn-cyber-outline text-xs"
         >
           Cancel
         </button>
         <button
           type="submit"
           disabled={submitting || rating < 1}
-          className="rounded-lg bg-blue-600 px-4 py-1.5 text-xs font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          className="btn-cyber-primary text-xs"
         >
           {submitting ? 'Submitting...' : 'Submit review'}
         </button>

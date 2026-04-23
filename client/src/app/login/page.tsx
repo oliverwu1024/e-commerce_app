@@ -41,14 +41,20 @@ function LoginContent() {
   }
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-zinc-50 px-4">
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-sm border border-zinc-200">
-        <h1 className="text-2xl font-bold text-zinc-900 mb-6">Sign in</h1>
+    <div className="flex flex-1 items-center justify-center px-4 py-12">
+      <div className="panel clip-corner w-full max-w-md p-8">
+        <h1 className="mb-6 text-2xl font-bold tracking-tight text-[var(--text-primary)] sm:text-3xl">
+          Sign in
+        </h1>
 
         {error && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 border border-red-200">
-            {error}
-            <button onClick={clearError} className="float-right font-medium hover:text-red-800">
+          <div className="mb-4 flex items-start justify-between gap-2 rounded-md border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
+            <span>{error}</span>
+            <button
+              onClick={clearError}
+              aria-label="Dismiss error"
+              className="shrink-0 font-bold hover:brightness-110"
+            >
               &times;
             </button>
           </div>
@@ -56,7 +62,10 @@ function LoginContent() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-zinc-700 mb-1">
+            <label
+              htmlFor="email"
+              className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]"
+            >
               Email
             </label>
             <input
@@ -65,13 +74,16 @@ function LoginContent() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="input-cyber w-full px-3 py-2.5 text-sm"
               placeholder="you@example.com"
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-zinc-700 mb-1">
+            <label
+              htmlFor="password"
+              className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]"
+            >
               Password
             </label>
             <input
@@ -80,7 +92,7 @@ function LoginContent() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="input-cyber w-full px-3 py-2.5 text-sm"
               placeholder="Enter your password"
             />
           </div>
@@ -88,15 +100,18 @@ function LoginContent() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-cyber-primary w-full"
           >
-            {submitting ? 'Signing in...' : 'Sign in'}
+            {submitting ? 'Signing in…' : 'Sign in'}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-zinc-600">
+        <p className="mt-6 text-center text-sm text-[var(--text-muted)]">
           Don&apos;t have an account?{' '}
-          <Link href="/register" className="font-medium text-blue-600 hover:text-blue-500">
+          <Link
+            href="/register"
+            className="font-semibold text-[var(--neon-cyan)] transition-colors hover:text-[var(--accent-soft)]"
+          >
             Register
           </Link>
         </p>
@@ -107,7 +122,13 @@ function LoginContent() {
 
 export default function LoginPage() {
   return (
-    <Suspense fallback={<div className="flex flex-1 items-center justify-center"><p className="text-zinc-500">Loading...</p></div>}>
+    <Suspense
+      fallback={
+        <div className="flex flex-1 items-center justify-center">
+          <p className="text-[var(--text-muted)]">Loading…</p>
+        </div>
+      }
+    >
       <LoginContent />
     </Suspense>
   );

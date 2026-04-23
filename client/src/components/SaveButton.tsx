@@ -32,10 +32,10 @@ export default function SaveButton({ listingId, size = 'sm' }: Props) {
     <button
       onClick={handleClick}
       aria-label={saved ? 'Remove from wishlist' : 'Save to wishlist'}
-      className={`rounded-lg border transition-colors ${padClass} ${
+      className={`rounded-md backdrop-blur-sm transition-all ${padClass} ${
         saved
-          ? 'border-red-300 bg-red-50 text-red-500'
-          : 'border-zinc-300 text-zinc-400 hover:text-red-500 hover:border-red-300'
+          ? 'bg-[var(--tint-magenta)] text-[var(--neon-magenta)] border border-[var(--neon-magenta)]/50'
+          : 'bg-[var(--bg-overlay)] text-[var(--text-muted)] border border-[var(--border-hi)] hover:text-[var(--neon-magenta)] hover:border-[var(--neon-magenta)]/50'
       }`}
     >
       <svg

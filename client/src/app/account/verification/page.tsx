@@ -41,7 +41,7 @@ export default function VerificationPage() {
   if (loading) return <VerificationSkeleton />;
   if (error) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+      <div className="rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-4 text-sm text-[var(--neon-danger)]">
         {error}
       </div>
     );
@@ -56,8 +56,8 @@ export default function VerificationPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900">Seller verification</h2>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Seller verification</h2>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
           Complete each step below to start posting listings.{' '}
           {profile.sellerType === 'PERSONAL' ? (
             <>Personal sellers need email, phone and a verified government ID.</>
@@ -70,8 +70,8 @@ export default function VerificationPage() {
       <div
         className={`rounded-lg border p-4 text-sm ${
           canSell
-            ? 'border-emerald-200 bg-emerald-50 text-emerald-800'
-            : 'border-amber-200 bg-amber-50 text-amber-800'
+            ? 'border-[var(--neon-green)]/40 bg-[var(--tint-green)] text-[var(--neon-green)]'
+            : 'border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] text-[var(--neon-amber)]'
         }`}
       >
         {canSell ? (
@@ -103,10 +103,10 @@ export default function VerificationPage() {
 function VerificationSkeleton() {
   return (
     <div className="space-y-4">
-      <div className="h-5 w-48 rounded bg-zinc-100 animate-pulse" />
-      <div className="h-20 rounded-lg bg-zinc-100 animate-pulse" />
-      <div className="h-20 rounded-lg bg-zinc-100 animate-pulse" />
-      <div className="h-20 rounded-lg bg-zinc-100 animate-pulse" />
+      <div className="h-5 w-48 rounded bg-[var(--bg-panel-hi)] animate-pulse" />
+      <div className="h-20 rounded-lg bg-[var(--bg-panel-hi)] animate-pulse" />
+      <div className="h-20 rounded-lg bg-[var(--bg-panel-hi)] animate-pulse" />
+      <div className="h-20 rounded-lg bg-[var(--bg-panel-hi)] animate-pulse" />
     </div>
   );
 }
@@ -120,10 +120,10 @@ function idStepStatus(s: IdVerificationStatus): Status {
 
 function StatusBadge({ status }: { status: Status }) {
   const map: Record<Status, { label: string; cls: string }> = {
-    done: { label: 'Verified', cls: 'bg-emerald-100 text-emerald-700' },
-    pending: { label: 'Under review', cls: 'bg-amber-100 text-amber-700' },
-    rejected: { label: 'Rejected', cls: 'bg-red-100 text-red-700' },
-    todo: { label: 'Required', cls: 'bg-zinc-100 text-zinc-600' },
+    done: { label: 'Verified', cls: 'bg-[var(--tint-green)] text-[var(--neon-green)] border border-[var(--neon-green)]/40' },
+    pending: { label: 'Under review', cls: 'bg-[var(--tint-amber)] text-[var(--neon-amber)] border border-[var(--neon-amber)]/40' },
+    rejected: { label: 'Rejected', cls: 'bg-[var(--tint-danger)] text-[var(--neon-danger)] border border-[var(--neon-danger)]/40' },
+    todo: { label: 'Required', cls: 'bg-[var(--bg-panel-hi)] text-[var(--text-muted)] border border-[var(--border-subtle)]' },
   };
   const s = map[status];
   return (
@@ -143,9 +143,9 @@ function StepCard({
   children: React.ReactNode;
 }) {
   return (
-    <section className="rounded-xl border border-zinc-200 bg-white p-5">
+    <section className="panel clip-corner p-5">
       <div className="flex items-center justify-between">
-        <h3 className="text-base font-semibold text-zinc-900">{title}</h3>
+        <h3 className="text-base font-semibold text-[var(--text-primary)]">{title}</h3>
         <StatusBadge status={status} />
       </div>
       <div className="mt-4">{children}</div>
@@ -161,13 +161,13 @@ function EmailStep({ status }: { status: Status }) {
   return (
     <StepCard title="Email" status={status}>
       {status === 'done' ? (
-        <p className="text-sm text-zinc-600">Your email address is verified.</p>
+        <p className="text-sm text-[var(--text-muted)]">Your email address is verified.</p>
       ) : (
-        <div className="space-y-3 text-sm text-zinc-600">
+        <div className="space-y-3 text-sm text-[var(--text-muted)]">
           <p>Check your inbox for the verification email we sent when you registered.</p>
           <Link
             href="/verify-email"
-            className="inline-block rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+            className="btn-cyber-outline inline-block text-xs"
           >
             Resend verification email
           </Link>
@@ -249,11 +249,11 @@ function PhoneStep({
   if (status === 'done' && !editMode) {
     return (
       <StepCard title="Phone" status={status}>
-        <div className="flex items-center justify-between text-sm text-zinc-600">
+        <div className="flex items-center justify-between text-sm text-[var(--text-muted)]">
           <span>Verified: {profile.phone}</span>
           <button
             type="button"
-            className="text-xs font-medium text-blue-600 hover:underline"
+            className="text-xs font-medium text-[var(--neon-cyan)] hover:underline"
             onClick={() => {
               setEditMode(true);
               setCodeSent(false);
@@ -271,12 +271,12 @@ function PhoneStep({
   return (
     <StepCard title="Phone" status={status}>
       {error && (
-        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="mb-3 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           {error}
         </div>
       )}
       {info && !error && (
-        <div className="mb-3 rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-800">
+        <div className="mb-3 rounded-lg border border-[var(--neon-cyan)]/40 bg-[var(--tint-cyan)] p-3 text-sm text-[var(--neon-cyan)]">
           {info}
           {devCode && (
             <>
@@ -290,20 +290,20 @@ function PhoneStep({
       {!codeSent ? (
         <form onSubmit={handleSendCode} className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[200px]">
-            <label className="block text-sm font-medium text-zinc-700">Phone number</label>
+            <label className="block text-sm font-medium text-[var(--text-primary)]">Phone number</label>
             <input
               type="tel"
               value={phone}
               onChange={(e) => setPhone(e.target.value)}
               required
               placeholder="+61 400 000 000"
-              className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="input-cyber mt-1 block w-full px-3 py-2 text-sm"
             />
           </div>
           <button
             type="submit"
             disabled={sending}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="btn-cyber-primary"
           >
             {sending ? 'Sending...' : 'Send code'}
           </button>
@@ -317,7 +317,7 @@ function PhoneStep({
                 setInfo('');
                 setDevCode(null);
               }}
-              className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              className="btn-cyber-outline"
             >
               Cancel
             </button>
@@ -326,7 +326,7 @@ function PhoneStep({
       ) : (
         <form onSubmit={handleVerify} className="flex flex-wrap items-end gap-3">
           <div>
-            <label className="block text-sm font-medium text-zinc-700">6-digit code</label>
+            <label className="block text-sm font-medium text-[var(--text-primary)]">6-digit code</label>
             <input
               type="text"
               inputMode="numeric"
@@ -335,14 +335,14 @@ function PhoneStep({
               required
               maxLength={6}
               placeholder="000000"
-              className="mt-1 block w-40 rounded-lg border border-zinc-300 px-3 py-2 text-center text-lg tracking-[0.3em] focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="input-cyber mt-1 block w-40 px-3 py-2 text-center text-lg tracking-[0.3em]"
             />
           </div>
           <div className="flex gap-2">
             <button
               type="submit"
               disabled={verifying || code.length !== 6}
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="btn-cyber-primary"
             >
               {verifying ? 'Verifying...' : 'Verify'}
             </button>
@@ -353,7 +353,7 @@ function PhoneStep({
                 setCode('');
                 setInfo('');
               }}
-              className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              className="btn-cyber-outline"
             >
               Change number
             </button>
@@ -433,15 +433,15 @@ function IdStep({
   return (
     <StepCard title="Government ID" status={status}>
       {status === 'done' && (
-        <p className="text-sm text-zinc-600">Your ID has been verified.</p>
+        <p className="text-sm text-[var(--text-muted)]">Your ID has been verified.</p>
       )}
       {status === 'pending' && (
-        <p className="text-sm text-zinc-600">
+        <p className="text-sm text-[var(--text-muted)]">
           Your document is under review. This usually takes 1–2 business days.
         </p>
       )}
       {status === 'rejected' && (
-        <div className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="mb-3 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           <strong className="font-medium">Rejected.</strong>{' '}
           {profile.idRejectionReason ?? 'No reason provided.'} Please upload a clearer document.
         </div>
@@ -450,11 +450,11 @@ function IdStep({
       {(status === 'todo' || status === 'rejected') && (
         <form onSubmit={handleSubmit} className="space-y-3">
           {error && (
-            <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+            <div className="rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
               {error}
             </div>
           )}
-          <p className="text-sm text-zinc-600">
+          <p className="text-sm text-[var(--text-muted)]">
             Upload a clear photo of your driver's licence, passport or other government-issued ID.
           </p>
           <label className="block">
@@ -478,14 +478,14 @@ function IdStep({
                 }
                 setFile(f);
               }}
-              className="block w-full text-sm text-zinc-600 file:mr-3 file:rounded-lg file:border-0 file:bg-blue-50 file:px-3 file:py-2 file:text-sm file:font-medium file:text-blue-700 hover:file:bg-blue-100"
+              className="block w-full text-sm text-[var(--text-muted)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--tint-cyan)] file:px-3 file:py-2 file:text-sm file:font-medium file:text-[var(--neon-cyan)] hover:file:brightness-110"
             />
           </label>
-          <p className="text-xs text-zinc-400">{ID_ACCEPT_LABEL}</p>
+          <p className="text-xs text-[var(--text-dim)]">{ID_ACCEPT_LABEL}</p>
           <button
             type="submit"
             disabled={!file || uploading}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="btn-cyber-primary"
           >
             {uploading ? 'Uploading...' : 'Submit for review'}
           </button>
@@ -537,11 +537,11 @@ function AbnStep({
   if (status === 'done' && !editMode) {
     return (
       <StepCard title="Australian Business Number" status={status}>
-        <div className="flex items-center justify-between text-sm text-zinc-600">
+        <div className="flex items-center justify-between text-sm text-[var(--text-muted)]">
           <span>Verified: {profile.abn}</span>
           <button
             type="button"
-            className="text-xs font-medium text-blue-600 hover:underline"
+            className="text-xs font-medium text-[var(--neon-cyan)] hover:underline"
             onClick={() => {
               setEditMode(true);
               setAbn('');
@@ -558,12 +558,12 @@ function AbnStep({
     <StepCard title="Australian Business Number" status={status}>
       <form onSubmit={handleSubmit} className="space-y-3">
         {error && (
-          <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+          <div className="rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
             {error}
           </div>
         )}
         <div>
-          <label className="block text-sm font-medium text-zinc-700">ABN</label>
+          <label className="block text-sm font-medium text-[var(--text-primary)]">ABN</label>
           <input
             type="text"
             inputMode="numeric"
@@ -572,9 +572,9 @@ function AbnStep({
             required
             maxLength={11}
             placeholder="12345678901"
-            className="mt-1 block w-full max-w-xs rounded-lg border border-zinc-300 px-3 py-2 text-sm font-mono tracking-wide focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="input-cyber mt-1 block w-full max-w-xs px-3 py-2 text-sm font-mono tracking-wide"
           />
-          <p className="mt-1 text-xs text-zinc-400">
+          <p className="mt-1 text-xs text-[var(--text-dim)]">
             11 digits, no spaces. We validate using the ATO checksum algorithm.
           </p>
         </div>
@@ -582,7 +582,7 @@ function AbnStep({
           <button
             type="submit"
             disabled={saving || abn.length !== 11}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+            className="btn-cyber-primary"
           >
             {saving ? 'Verifying...' : 'Verify ABN'}
           </button>
@@ -594,7 +594,7 @@ function AbnStep({
                 setAbn(profile.abn ?? '');
                 setError('');
               }}
-              className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              className="btn-cyber-outline"
             >
               Cancel
             </button>

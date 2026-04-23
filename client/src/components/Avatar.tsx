@@ -34,7 +34,7 @@ export default function Avatar({ src, username, size = 'md', className = '' }: P
   return (
     <span
       aria-hidden="true"
-      className={`inline-flex flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-blue-100 font-bold text-blue-600 ${sizes.box} ${className}`}
+      className={`inline-flex flex-shrink-0 items-center justify-center overflow-hidden rounded-full bg-[var(--tint-cyan)] font-bold text-[var(--neon-cyan)] ${sizes.box} ${className}`}
     >
       {showImage ? (
         <img

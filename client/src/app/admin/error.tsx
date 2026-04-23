@@ -15,12 +15,12 @@ export default function AdminError({
   }, [error]);
 
   return (
-    <main className="flex-1 bg-zinc-50">
+    <main className="flex-1">
       <div className="mx-auto max-w-3xl px-4 py-16 text-center">
-        <h1 className="text-xl font-bold text-zinc-900">
+        <h1 className="text-xl font-bold text-[var(--text-primary)]">
           Admin tools unavailable
         </h1>
-        <p className="mt-2 text-sm text-zinc-600">
+        <p className="mt-2 text-sm text-[var(--text-muted)]">
           Something went wrong in the admin area. Try again, or head back to the
           main dashboard.
         </p>
@@ -28,13 +28,13 @@ export default function AdminError({
           <button
             type="button"
             onClick={reset}
-            className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+            className="btn-cyber-primary"
           >
             Try again
           </button>
           <Link
             href="/dashboard"
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+            className="btn-cyber-outline"
           >
             Dashboard
           </Link>

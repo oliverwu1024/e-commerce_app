@@ -28,10 +28,10 @@ function AdminVerifications() {
   if (user.role !== 'ADMIN') {
     return (
       <div className="mx-auto max-w-3xl px-4 py-12">
-        <h1 className="text-2xl font-bold text-zinc-900">Access denied</h1>
-        <p className="mt-2 text-sm text-zinc-600">
+        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Access denied</h1>
+        <p className="mt-2 text-sm text-[var(--text-muted)]">
           You need admin privileges to view this page.{' '}
-          <Link href="/" className="text-blue-600 hover:underline">
+          <Link href="/" className="text-[var(--neon-cyan)] hover:underline">
             Go home
           </Link>
           .
@@ -105,13 +105,13 @@ function AdminVerificationsInner() {
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
-      <h1 className="text-2xl font-bold text-zinc-900">Pending ID Verifications</h1>
-      <p className="mt-1 text-sm text-zinc-500">
+      <h1 className="text-2xl font-bold text-[var(--text-primary)]">Pending ID Verifications</h1>
+      <p className="mt-1 text-sm text-[var(--text-muted)]">
         Review submitted IDs for personal sellers. Approve to unlock listing creation.
       </p>
 
       {error && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="mt-4 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           {error}
         </div>
       )}
@@ -119,14 +119,14 @@ function AdminVerificationsInner() {
       {loading && (
         <div className="mt-6 space-y-3">
           {Array.from({ length: 3 }).map((_, i) => (
-            <div key={i} className="h-24 rounded-xl bg-zinc-100 animate-pulse" />
+            <div key={i} className="h-24 rounded-xl bg-[var(--bg-panel-hi)] animate-pulse" />
           ))}
         </div>
       )}
 
       {!loading && users.length === 0 && (
-        <div className="mt-6 rounded-xl border border-zinc-200 bg-white px-6 py-12 text-center">
-          <p className="text-sm text-zinc-600">No pending verifications.</p>
+        <div className="panel clip-corner mt-6 px-6 py-12 text-center">
+          <p className="text-sm text-[var(--text-muted)]">No pending verifications.</p>
         </div>
       )}
 
@@ -135,15 +135,15 @@ function AdminVerificationsInner() {
           {users.map((u) => (
             <article
               key={u.id}
-              className="flex flex-col gap-3 rounded-xl border border-zinc-200 bg-white p-4 sm:flex-row sm:items-center"
+              className="panel clip-corner flex flex-col gap-3 p-4 sm:flex-row sm:items-center"
             >
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-zinc-900">
+                <p className="text-sm font-semibold text-[var(--text-primary)]">
                   {u.username}{' '}
-                  <span className="font-normal text-zinc-500">— {u.name}</span>
+                  <span className="font-normal text-[var(--text-muted)]">— {u.name}</span>
                 </p>
-                <p className="text-xs text-zinc-500">{u.email}</p>
-                <p className="mt-1 text-xs text-zinc-400">
+                <p className="text-xs text-[var(--text-muted)]">{u.email}</p>
+                <p className="mt-1 text-xs text-[var(--text-dim)]">
                   Submitted{' '}
                   {new Intl.DateTimeFormat('en-AU', {
                     day: 'numeric',
@@ -161,18 +161,18 @@ function AdminVerificationsInner() {
                     href={u.idDocumentUrl}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50"
+                    className="btn-cyber-outline text-xs"
                   >
                     View document
                   </a>
                 ) : (
-                  <span className="text-xs text-zinc-400">No document</span>
+                  <span className="text-xs text-[var(--text-dim)]">No document</span>
                 )}
                 <button
                   type="button"
                   onClick={() => handleApprove(u.id)}
                   disabled={actioningId === u.id}
-                  className="rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700 disabled:opacity-50"
+                  className="rounded-lg bg-[var(--neon-green)] px-3 py-1.5 text-xs font-medium text-white hover:brightness-110 disabled:opacity-50"
                 >
                   {actioningId === u.id ? '...' : 'Approve'}
                 </button>
@@ -180,7 +180,7 @@ function AdminVerificationsInner() {
                   type="button"
                   onClick={() => setRejectTarget(u)}
                   disabled={actioningId === u.id}
-                  className="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  className="rounded-lg border border-[var(--neon-danger)]/40 px-3 py-1.5 text-xs font-medium text-[var(--neon-danger)] hover:bg-[var(--tint-danger)] disabled:opacity-50"
                 >
                   Reject
                 </button>
@@ -195,17 +195,17 @@ function AdminVerificationsInner() {
           <button
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+            className="btn-cyber-outline disabled:opacity-40"
           >
             Previous
           </button>
-          <span className="text-sm text-zinc-500">
+          <span className="text-sm text-[var(--text-muted)]">
             Page {page} of {pagination.totalPages}
           </span>
           <button
             onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
             disabled={page === pagination.totalPages}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+            className="btn-cyber-outline disabled:opacity-40"
           >
             Next
           </button>
@@ -242,12 +242,12 @@ function RejectDialog({
       <div
         role="dialog"
         aria-labelledby="reject-title"
-        className="w-full max-w-md rounded-xl bg-white p-6 shadow-xl"
+        className="panel clip-corner w-full max-w-md p-6"
       >
-        <h3 id="reject-title" className="text-lg font-semibold text-zinc-900">
+        <h3 id="reject-title" className="text-lg font-semibold text-[var(--text-primary)]">
           Reject ID for {target.username}
         </h3>
-        <p className="mt-1 text-sm text-zinc-600">
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
           The user will see this reason and can re-submit.
         </p>
         <textarea
@@ -256,14 +256,14 @@ function RejectDialog({
           maxLength={500}
           rows={3}
           placeholder="e.g. Document is blurry, name doesn't match, expired"
-          className="mt-4 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="input-cyber mt-4 block w-full px-3 py-2 text-sm"
         />
         <div className="mt-4 flex justify-end gap-2">
           <button
             type="button"
             onClick={onCancel}
             disabled={busy}
-            className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+            className="btn-cyber-outline"
           >
             Cancel
           </button>
@@ -271,7 +271,7 @@ function RejectDialog({
             type="button"
             onClick={() => onConfirm(reason.trim())}
             disabled={busy || reason.trim().length === 0}
-            className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+            className="rounded-lg bg-[var(--neon-danger)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-50"
           >
             {busy ? 'Rejecting...' : 'Reject'}
           </button>

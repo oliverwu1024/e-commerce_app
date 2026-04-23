@@ -37,7 +37,7 @@ export default function AccountSettingsPage() {
   if (loading) return <SettingsSkeleton />;
   if (loadError) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+      <div className="rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-4 text-sm text-[var(--neon-danger)]">
         {loadError}
       </div>
     );
@@ -53,7 +53,7 @@ export default function AccountSettingsPage() {
           fetchStoreUser();
         }}
       />
-      <div className="border-t border-zinc-200" />
+      <div className="border-t border-[var(--border-subtle)]" />
       <ProfileForm
         profile={profile}
         onSaved={(updated) => {
@@ -61,7 +61,7 @@ export default function AccountSettingsPage() {
           fetchStoreUser();
         }}
       />
-      <div className="border-t border-zinc-200" />
+      <div className="border-t border-[var(--border-subtle)]" />
       <PasswordForm
         onChanged={async () => {
           // Token was invalidated server-side; clear client state and bounce
@@ -73,7 +73,7 @@ export default function AccountSettingsPage() {
           }
         }}
       />
-      <div className="border-t border-zinc-200" />
+      <div className="border-t border-[var(--border-subtle)]" />
       <DangerZone
         onDeleted={async () => {
           // Server has soft-deleted the row, bumped tokenVersion and
@@ -85,7 +85,7 @@ export default function AccountSettingsPage() {
           }
         }}
       />
-      <p className="text-xs text-zinc-400">
+      <p className="text-xs text-[var(--text-dim)]">
         Signed in as {storeUser?.username ?? profile.username}
       </p>
     </div>
@@ -106,8 +106,8 @@ function AccountIdentityForm({
   return (
     <div className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900">Account</h2>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Account</h2>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
           Login identity. Changing your email requires verifying the new
           address before the switch takes effect.
         </p>
@@ -198,7 +198,7 @@ function AvatarField({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-zinc-700">
+      <label className="block text-sm font-medium text-[var(--text-primary)]">
         Profile picture
       </label>
       <div className="mt-2 flex items-center gap-4">
@@ -208,7 +208,7 @@ function AvatarField({
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={uploading || removing}
-            className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+            className="btn-cyber-outline"
           >
             {uploading ? 'Uploading...' : profile.avatarUrl ? 'Change' : 'Upload'}
           </button>
@@ -217,7 +217,7 @@ function AvatarField({
               type="button"
               onClick={handleRemove}
               disabled={uploading || removing}
-              className="rounded-lg border border-zinc-300 bg-white px-3 py-2 text-sm font-medium text-zinc-600 hover:bg-red-50 hover:text-red-600 hover:border-red-200 disabled:opacity-50"
+              className="rounded-lg border border-[var(--border-hi)] bg-[var(--bg-panel)] px-3 py-2 text-sm font-medium text-[var(--text-muted)] hover:bg-[var(--tint-danger)] hover:text-[var(--neon-danger)] hover:border-[var(--neon-danger)]/40 disabled:opacity-50"
             >
               {removing ? 'Removing...' : 'Remove'}
             </button>
@@ -231,8 +231,8 @@ function AvatarField({
           />
         </div>
       </div>
-      {error && <p className="mt-2 text-xs text-red-600">{error}</p>}
-      <p className="mt-2 text-xs text-zinc-400">
+      {error && <p className="mt-2 text-xs text-[var(--neon-danger)]">{error}</p>}
+      <p className="mt-2 text-xs text-[var(--text-dim)]">
         JPG, PNG, or WebP. Up to 2 MB.
       </p>
     </div>
@@ -271,14 +271,14 @@ function UsernameField({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-zinc-700">Username</label>
+      <label className="block text-sm font-medium text-[var(--text-primary)]">Username</label>
       {!editing ? (
         <div className="mt-1 flex items-center gap-3">
           <input
             type="text"
             value={profile.username}
             disabled
-            className="block w-full max-w-md rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-500"
+            className="block w-full max-w-md rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] px-3 py-2 text-sm text-[var(--text-muted)]"
           />
           <button
             type="button"
@@ -287,7 +287,7 @@ function UsernameField({
               setError('');
               setEditing(true);
             }}
-            className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+            className="btn-cyber-outline"
           >
             Change
           </button>
@@ -303,12 +303,12 @@ function UsernameField({
               maxLength={30}
               required
               autoFocus
-              className="block w-full max-w-md rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="input-cyber block w-full max-w-md px-3 py-2 text-sm"
             />
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="btn-cyber-primary"
             >
               {saving ? 'Saving...' : 'Save'}
             </button>
@@ -319,13 +319,13 @@ function UsernameField({
                 setError('');
               }}
               disabled={saving}
-              className="text-sm font-medium text-zinc-500 hover:text-zinc-700"
+              className="btn-cyber-ghost"
             >
               Cancel
             </button>
           </div>
-          {error && <p className="text-xs text-red-600">{error}</p>}
-          <p className="text-xs text-zinc-400">
+          {error && <p className="text-xs text-[var(--neon-danger)]">{error}</p>}
+          <p className="text-xs text-[var(--text-dim)]">
             3–30 characters. Letters, numbers, and underscores only.
           </p>
         </form>
@@ -378,7 +378,7 @@ function EmailField({
 
   return (
     <div>
-      <label className="block text-sm font-medium text-zinc-700">Email</label>
+      <label className="block text-sm font-medium text-[var(--text-primary)]">Email</label>
       {!editing ? (
         <div className="mt-1 space-y-2">
           <div className="flex items-center gap-3">
@@ -386,7 +386,7 @@ function EmailField({
               type="email"
               value={profile.email}
               disabled
-              className="block w-full max-w-md rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-sm text-zinc-500"
+              className="block w-full max-w-md rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] px-3 py-2 text-sm text-[var(--text-muted)]"
             />
             <button
               type="button"
@@ -396,26 +396,26 @@ function EmailField({
                 setDevUrl(null);
                 setEditing(true);
               }}
-              className="rounded-lg border border-zinc-300 px-3 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+              className="btn-cyber-outline"
             >
               Change
             </button>
           </div>
           {!profile.emailVerified && !profile.pendingEmail && (
-            <p className="text-xs text-amber-700">
+            <p className="text-xs text-[var(--neon-amber)]">
               Not verified yet.{' '}
-              <Link href="/verify-email" className="underline hover:text-amber-800">
+              <Link href="/verify-email" className="underline hover:brightness-110">
                 Verify now
               </Link>
             </p>
           )}
           {profile.pendingEmail && (
-            <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+            <div className="rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] p-3 text-xs text-[var(--neon-amber)]">
               Change to <span className="font-medium">{profile.pendingEmail}</span> is pending. Click the verification link we sent to the new address to complete the switch. Until then, your login email stays as above.
               {devUrl && (
                 <div className="mt-2">
                   <span className="font-semibold">Dev mode link:</span>{' '}
-                  <a href={devUrl} className="break-all text-blue-700 underline hover:text-blue-800">
+                  <a href={devUrl} className="break-all text-[var(--neon-cyan)] underline hover:text-[var(--accent-soft)]">
                     {devUrl}
                   </a>
                 </div>
@@ -433,12 +433,12 @@ function EmailField({
               required
               autoFocus
               placeholder="new@example.com"
-              className="block w-full max-w-md rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="input-cyber block w-full max-w-md px-3 py-2 text-sm"
             />
             <button
               type="submit"
               disabled={saving}
-              className="rounded-lg bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+              className="btn-cyber-primary"
             >
               {saving ? 'Sending...' : 'Send link'}
             </button>
@@ -449,13 +449,13 @@ function EmailField({
                 setError('');
               }}
               disabled={saving}
-              className="text-sm font-medium text-zinc-500 hover:text-zinc-700"
+              className="btn-cyber-ghost"
             >
               Cancel
             </button>
           </div>
-          {error && <p className="text-xs text-red-600">{error}</p>}
-          <p className="text-xs text-zinc-400">
+          {error && <p className="text-xs text-[var(--neon-danger)]">{error}</p>}
+          <p className="text-xs text-[var(--text-dim)]">
             We&apos;ll send a verification link to the new address. Your current
             email stays active until you click it.
           </p>
@@ -468,10 +468,10 @@ function EmailField({
 function SettingsSkeleton() {
   return (
     <div className="space-y-6">
-      <div className="h-5 w-32 rounded bg-zinc-100 animate-pulse" />
-      <div className="h-10 w-full max-w-md rounded bg-zinc-100 animate-pulse" />
-      <div className="h-10 w-full max-w-md rounded bg-zinc-100 animate-pulse" />
-      <div className="h-32 w-full max-w-md rounded bg-zinc-100 animate-pulse" />
+      <div className="h-5 w-32 rounded bg-[var(--bg-panel-hi)] animate-pulse" />
+      <div className="h-10 w-full max-w-md rounded bg-[var(--bg-panel-hi)] animate-pulse" />
+      <div className="h-10 w-full max-w-md rounded bg-[var(--bg-panel-hi)] animate-pulse" />
+      <div className="h-32 w-full max-w-md rounded bg-[var(--bg-panel-hi)] animate-pulse" />
     </div>
   );
 }
@@ -524,51 +524,51 @@ function ProfileForm({
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900">Profile</h2>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Profile</h2>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
           Public-facing information that appears on your seller profile.
         </p>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           {error}
         </div>
       )}
       {success && (
-        <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-700">
+        <div className="rounded-lg border border-[var(--neon-green)]/40 bg-[var(--tint-green)] p-3 text-sm text-[var(--neon-green)]">
           Profile saved.
         </div>
       )}
 
       <div>
-        <label className="block text-sm font-medium text-zinc-700">Name *</label>
+        <label className="block text-sm font-medium text-[var(--text-primary)]">Name *</label>
         <input
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
           required
           maxLength={100}
-          className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="input-cyber mt-1 block w-full px-3 py-2 text-sm"
         />
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-zinc-700">Location</label>
+        <label className="block text-sm font-medium text-[var(--text-primary)]">Location</label>
         <input
           type="text"
           value={location}
           onChange={(e) => setLocation(e.target.value)}
           maxLength={100}
           placeholder="Sydney, NSW"
-          className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="input-cyber mt-1 block w-full px-3 py-2 text-sm"
         />
       </div>
 
       <div>
-        <label className="flex items-center justify-between text-sm font-medium text-zinc-700">
+        <label className="flex items-center justify-between text-sm font-medium text-[var(--text-primary)]">
           <span>Bio</span>
-          <span className="text-xs font-normal text-zinc-400">{bio.length} / 500</span>
+          <span className="text-xs font-normal text-[var(--text-dim)]">{bio.length} / 500</span>
         </label>
         <textarea
           value={bio}
@@ -576,19 +576,19 @@ function ProfileForm({
           maxLength={500}
           rows={4}
           placeholder="A short introduction for buyers on your profile page."
-          className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="input-cyber mt-1 block w-full px-3 py-2 text-sm"
         />
       </div>
 
       {profile.sellerType === 'BUSINESS' && (
         <div>
-          <label className="block text-sm font-medium text-zinc-700">Business name</label>
+          <label className="block text-sm font-medium text-[var(--text-primary)]">Business name</label>
           <input
             type="text"
             value={businessName}
             onChange={(e) => setBusinessName(e.target.value)}
             maxLength={200}
-            className="mt-1 block w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            className="input-cyber mt-1 block w-full px-3 py-2 text-sm"
           />
         </div>
       )}
@@ -597,7 +597,7 @@ function ProfileForm({
         <button
           type="submit"
           disabled={saving}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="btn-cyber-primary"
         >
           {saving ? 'Saving...' : 'Save changes'}
         </button>
@@ -645,31 +645,31 @@ function PasswordForm({ onChanged }: { onChanged: () => void }) {
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
       <div>
-        <h2 className="text-lg font-semibold text-zinc-900">Change password</h2>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Change password</h2>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
           You'll be signed out everywhere after changing your password.
         </p>
       </div>
 
       {error && (
-        <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           {error}
         </div>
       )}
 
       <div>
-        <label className="block text-sm font-medium text-zinc-700">Current password</label>
+        <label className="block text-sm font-medium text-[var(--text-primary)]">Current password</label>
         <input
           type="password"
           value={currentPassword}
           onChange={(e) => setCurrentPassword(e.target.value)}
           required
           autoComplete="current-password"
-          className="mt-1 block w-full max-w-md rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="input-cyber mt-1 block w-full max-w-md px-3 py-2 text-sm"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-zinc-700">New password</label>
+        <label className="block text-sm font-medium text-[var(--text-primary)]">New password</label>
         <input
           type="password"
           value={newPassword}
@@ -677,11 +677,11 @@ function PasswordForm({ onChanged }: { onChanged: () => void }) {
           required
           minLength={8}
           autoComplete="new-password"
-          className="mt-1 block w-full max-w-md rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="input-cyber mt-1 block w-full max-w-md px-3 py-2 text-sm"
         />
       </div>
       <div>
-        <label className="block text-sm font-medium text-zinc-700">Confirm new password</label>
+        <label className="block text-sm font-medium text-[var(--text-primary)]">Confirm new password</label>
         <input
           type="password"
           value={confirm}
@@ -689,14 +689,14 @@ function PasswordForm({ onChanged }: { onChanged: () => void }) {
           required
           minLength={8}
           autoComplete="new-password"
-          className="mt-1 block w-full max-w-md rounded-lg border border-zinc-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+          className="input-cyber mt-1 block w-full max-w-md px-3 py-2 text-sm"
         />
       </div>
       <div>
         <button
           type="submit"
           disabled={saving}
-          className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+          className="btn-cyber-primary"
         >
           {saving ? 'Changing...' : 'Change password'}
         </button>
@@ -741,11 +741,11 @@ function DangerZone({ onDeleted }: { onDeleted: () => void }) {
   }
 
   return (
-    <section className="rounded-xl border border-red-200 bg-red-50/40 p-5">
+    <section className="rounded-xl border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-5">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-red-700">Delete account</h2>
-          <p className="mt-1 text-sm text-red-700/80">
+          <h2 className="text-lg font-semibold text-[var(--neon-danger)]">Delete account</h2>
+          <p className="mt-1 text-sm text-[var(--neon-danger)]/80">
             Permanently remove your account. Your open orders must be resolved
             first. Your listings are taken off the marketplace. Past orders,
             reviews, and messages remain visible to the people you transacted
@@ -756,7 +756,7 @@ function DangerZone({ onDeleted }: { onDeleted: () => void }) {
           <button
             type="button"
             onClick={() => setExpanded(true)}
-            className="flex-shrink-0 rounded-lg border border-red-300 bg-white px-3 py-2 text-sm font-medium text-red-700 hover:bg-red-100"
+            className="flex-shrink-0 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--bg-panel)] px-3 py-2 text-sm font-medium text-[var(--neon-danger)] hover:bg-[var(--tint-danger)]"
           >
             Delete account
           </button>
@@ -766,12 +766,12 @@ function DangerZone({ onDeleted }: { onDeleted: () => void }) {
       {expanded && (
         <form onSubmit={handleSubmit} className="mt-5 space-y-4">
           {error && (
-            <div className="rounded-lg border border-red-300 bg-red-100 p-3 text-sm text-red-800">
+            <div className="rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
               {error}
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-red-800">
+            <label className="block text-sm font-medium text-[var(--neon-danger)]">
               Current password
             </label>
             <input
@@ -780,13 +780,13 @@ function DangerZone({ onDeleted }: { onDeleted: () => void }) {
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="current-password"
               required
-              className="mt-1 block w-full max-w-md rounded-lg border border-red-300 bg-white px-3 py-2 text-sm text-zinc-900 focus:border-red-500 focus:outline-none focus:ring-1 focus:ring-red-500"
+              className="mt-1 block w-full max-w-md rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-primary)] focus:border-[var(--neon-danger)] focus:outline-none focus:ring-1 focus:ring-[var(--neon-danger)]"
             />
           </div>
           <div>
-            <label className="block text-sm font-medium text-red-800">
+            <label className="block text-sm font-medium text-[var(--neon-danger)]">
               Type{' '}
-              <code className="rounded bg-red-100 px-1 py-0.5 text-xs font-semibold text-red-900">
+              <code className="rounded bg-[var(--tint-danger)] px-1 py-0.5 text-xs font-semibold text-[var(--neon-danger)]">
                 {DELETE_ACCOUNT_PHRASE}
               </code>{' '}
               to confirm
@@ -798,10 +798,10 @@ function DangerZone({ onDeleted }: { onDeleted: () => void }) {
               placeholder={DELETE_ACCOUNT_PHRASE}
               autoComplete="off"
               aria-invalid={confirmation.length > 0 && !phraseMatches}
-              className={`mt-1 block w-full max-w-md rounded-lg border bg-white px-3 py-2 text-sm text-zinc-900 focus:outline-none focus:ring-1 ${
+              className={`mt-1 block w-full max-w-md rounded-lg border bg-[var(--bg-panel)] px-3 py-2 text-sm text-[var(--text-primary)] focus:outline-none focus:ring-1 ${
                 confirmation.length > 0 && !phraseMatches
-                  ? 'border-red-400 focus:border-red-500 focus:ring-red-500'
-                  : 'border-red-300 focus:border-red-500 focus:ring-red-500'
+                  ? 'border-[var(--neon-danger)]/60 focus:border-[var(--neon-danger)] focus:ring-[var(--neon-danger)]'
+                  : 'border-[var(--neon-danger)]/40 focus:border-[var(--neon-danger)] focus:ring-[var(--neon-danger)]'
               }`}
             />
           </div>
@@ -809,7 +809,7 @@ function DangerZone({ onDeleted }: { onDeleted: () => void }) {
             <button
               type="submit"
               disabled={!canSubmit}
-              className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              className="rounded-lg bg-[var(--neon-danger)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {submitting ? 'Deleting...' : 'Permanently delete account'}
             </button>
@@ -822,7 +822,7 @@ function DangerZone({ onDeleted }: { onDeleted: () => void }) {
                 setError('');
               }}
               disabled={submitting}
-              className="text-sm font-medium text-zinc-600 hover:text-zinc-800"
+              className="btn-cyber-ghost"
             >
               Cancel
             </button>

@@ -23,10 +23,10 @@ export type ListingSummary = {
 };
 
 export const STATUS_STYLES: Record<ListingStatus, { label: string; bg: string }> = {
-  ACTIVE: { label: 'Active', bg: 'bg-emerald-100 text-emerald-700' },
-  SOLD: { label: 'Sold', bg: 'bg-blue-100 text-blue-700' },
-  ON_HOLD: { label: 'On Hold', bg: 'bg-purple-100 text-purple-700' },
-  REMOVED: { label: 'Removed', bg: 'bg-zinc-100 text-zinc-500' },
+  ACTIVE: { label: 'Active', bg: 'bg-[var(--tint-green)] text-[var(--neon-green)] border border-[var(--neon-green)]/40' },
+  SOLD: { label: 'Sold', bg: 'bg-[var(--tint-cyan)] text-[var(--neon-cyan)] border border-[var(--neon-cyan)]/40' },
+  ON_HOLD: { label: 'On Hold', bg: 'bg-[var(--tint-magenta)] text-[var(--neon-magenta)] border border-[var(--neon-magenta)]/40' },
+  REMOVED: { label: 'Removed', bg: 'bg-[var(--bg-panel-hi)] text-[var(--text-dim)] border border-[var(--border-subtle)]' },
 };
 
 export type ListingDetail = {
@@ -89,10 +89,26 @@ export type Category = (typeof CATEGORIES)[number];
 export type Condition = 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'POOR';
 
 export const CONDITIONS: { value: Condition; label: string; bg: string }[] = [
-  { value: 'LIKE_NEW', label: 'Like New', bg: 'bg-emerald-100 text-emerald-700' },
-  { value: 'GOOD', label: 'Good', bg: 'bg-blue-100 text-blue-700' },
-  { value: 'FAIR', label: 'Fair', bg: 'bg-amber-100 text-amber-700' },
-  { value: 'POOR', label: 'Poor', bg: 'bg-red-100 text-red-700' },
+  {
+    value: 'LIKE_NEW',
+    label: 'Like New',
+    bg: 'bg-[var(--tint-green)] text-[var(--neon-green)] border border-[var(--neon-green)]/40',
+  },
+  {
+    value: 'GOOD',
+    label: 'Good',
+    bg: 'bg-[var(--tint-cyan)] text-[var(--neon-cyan)] border border-[var(--neon-cyan)]/40',
+  },
+  {
+    value: 'FAIR',
+    label: 'Fair',
+    bg: 'bg-[var(--tint-amber)] text-[var(--neon-amber)] border border-[var(--neon-amber)]/40',
+  },
+  {
+    value: 'POOR',
+    label: 'Poor',
+    bg: 'bg-[var(--tint-danger)] text-[var(--neon-danger)] border border-[var(--neon-danger)]/40',
+  },
 ];
 
 export function getConditionStyle(condition: string) {
@@ -100,7 +116,7 @@ export function getConditionStyle(condition: string) {
     CONDITIONS.find((c) => c.value === condition) ?? {
       value: condition,
       label: condition,
-      bg: 'bg-zinc-100 text-zinc-700',
+      bg: 'bg-[var(--bg-panel-hi)] text-[var(--text-muted)] border border-[var(--border-hi)]',
     }
   );
 }

@@ -1,12 +1,12 @@
 export default function ListingCardSkeleton() {
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white shadow-sm overflow-hidden">
-      <div className="aspect-[4/3] bg-zinc-200 animate-pulse" />
-      <div className="p-3 space-y-2">
-        <div className="h-4 bg-zinc-200 rounded animate-pulse w-3/4" />
-        <div className="h-4 bg-zinc-200 rounded animate-pulse w-1/2" />
-        <div className="h-5 bg-zinc-200 rounded animate-pulse w-1/3 mt-1" />
-        <div className="h-3 bg-zinc-200 rounded animate-pulse w-2/3 mt-2" />
+    <div className="panel clip-corner overflow-hidden">
+      <div className="aspect-[4/3] animate-pulse bg-[var(--bg-panel-hi)]" />
+      <div className="space-y-2 p-3.5 pb-4">
+        <div className="h-4 w-3/4 animate-pulse rounded bg-[var(--bg-panel-hi)]" />
+        <div className="h-4 w-1/2 animate-pulse rounded bg-[var(--bg-panel-hi)]" />
+        <div className="mt-1 h-5 w-1/3 animate-pulse rounded bg-[var(--bg-panel-hi)]" />
+        <div className="mt-2 h-3 w-2/3 animate-pulse rounded bg-[var(--bg-panel-hi)]" />
       </div>
     </div>
   );

@@ -23,7 +23,7 @@ function Star({ fill, size }: { fill: number; size: Size }) {
   return (
     <span className={`relative inline-block ${SIZE_CLASS[size]}`} aria-hidden="true">
       <svg
-        className={`${SIZE_CLASS[size]} text-zinc-200`}
+        className={`${SIZE_CLASS[size]} text-[var(--text-dim)]`}
         viewBox="0 0 20 20"
         fill="currentColor"
       >
@@ -35,7 +35,7 @@ function Star({ fill, size }: { fill: number; size: Size }) {
           style={{ width: `${pct}%` }}
         >
           <svg
-            className={`${SIZE_CLASS[size]} text-amber-400`}
+            className={`${SIZE_CLASS[size]} text-[var(--neon-amber)]`}
             viewBox="0 0 20 20"
             fill="currentColor"
             preserveAspectRatio="xMinYMid slice"
@@ -103,7 +103,7 @@ export function StarInput({
             disabled={disabled}
             onClick={() => onChange(star)}
             onMouseEnter={() => setHover(star)}
-            className={`transition-transform ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:scale-110 cursor-pointer'} ${filled ? 'text-amber-400' : 'text-zinc-300'}`}
+            className={`transition-transform ${disabled ? 'cursor-not-allowed opacity-60' : 'hover:scale-110 cursor-pointer'} ${filled ? 'text-[var(--neon-amber)]' : 'text-[var(--text-dim)]'}`}
           >
             <svg className={SIZE_CLASS[size]} viewBox="0 0 20 20" fill="currentColor">
               <StarPath />

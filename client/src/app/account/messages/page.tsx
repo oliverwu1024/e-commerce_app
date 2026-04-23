@@ -63,8 +63,8 @@ export default function MessagesPage() {
     <div>
       <div className="flex items-baseline justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-900">Messages</h2>
-          <p className="mt-1 text-sm text-zinc-500">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Messages</h2>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Conversations with your buyers and sellers, grouped by order.
           </p>
         </div>
@@ -72,14 +72,14 @@ export default function MessagesPage() {
           type="button"
           onClick={fetchThreads}
           disabled={loading}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="btn-cyber-outline"
         >
           {loading ? 'Loading...' : 'Refresh'}
         </button>
       </div>
 
       {error && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="mt-4 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           {error}
         </div>
       )}
@@ -87,11 +87,11 @@ export default function MessagesPage() {
       {loading && threads.length === 0 ? (
         <div className="mt-4 space-y-2">
           {Array.from({ length: 4 }).map((_, i) => (
-            <div key={i} className="h-20 rounded-lg bg-zinc-100 animate-pulse" />
+            <div key={i} className="h-20 rounded-lg bg-[var(--bg-panel-hi)] animate-pulse" />
           ))}
         </div>
       ) : threads.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">
+        <div className="panel clip-corner mt-6 p-8 text-center text-sm text-[var(--text-muted)]">
           No conversations yet. Messages appear here once you or a seller starts a thread on an order.
         </div>
       ) : (
@@ -103,17 +103,17 @@ export default function MessagesPage() {
             return (
               <li
                 key={t.orderId}
-                className={`rounded-xl border bg-white ${
-                  t.unreadCount > 0 && !open ? 'border-blue-300' : 'border-zinc-200'
+                className={`rounded-xl border bg-[var(--bg-panel)] ${
+                  t.unreadCount > 0 && !open ? 'border-[var(--neon-cyan)]' : 'border-[var(--border-subtle)]'
                 }`}
               >
                 <button
                   type="button"
                   onClick={() => toggleActive(t.orderId)}
-                  className="flex w-full items-center gap-3 p-3 text-left hover:bg-zinc-50 rounded-xl"
+                  className="flex w-full items-center gap-3 p-3 text-left hover:bg-[var(--bg-panel-hi)] rounded-xl"
                   aria-expanded={open}
                 >
-                  <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-100">
+                  <div className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-[var(--bg-panel-hi)]">
                     {imageUrl ? (
                       <img
                         src={imageUrl}
@@ -126,32 +126,32 @@ export default function MessagesPage() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <p className="text-sm font-medium text-zinc-900 truncate">
+                      <p className="text-sm font-medium text-[var(--text-primary)] truncate">
                         {t.counterparty.username}
                       </p>
                       <span className={`rounded-md px-1.5 py-0.5 text-[10px] font-medium ${statusStyle.bg}`}>
                         {statusStyle.label}
                       </span>
                       {t.unreadCount > 0 && !open && (
-                        <span className="rounded-full bg-blue-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                        <span className="rounded-full bg-[var(--neon-cyan)] px-1.5 py-0.5 text-[10px] font-bold text-[var(--btn-primary-text)]">
                           {t.unreadCount}
                         </span>
                       )}
                     </div>
-                    <p className="text-xs text-zinc-500 truncate">
+                    <p className="text-xs text-[var(--text-muted)] truncate">
                       {t.listing.title} · {formatPrice(t.amount)}
                     </p>
-                    <p className="mt-1 text-xs text-zinc-700 truncate">
-                      {t.lastMessage.fromMe && <span className="text-zinc-400">You: </span>}
+                    <p className="mt-1 text-xs text-[var(--text-muted)] truncate">
+                      {t.lastMessage.fromMe && <span className="text-[var(--text-dim)]">You: </span>}
                       {t.lastMessage.content}
                     </p>
                   </div>
                   <div className="flex flex-col items-end gap-1">
-                    <span className="text-[10px] text-zinc-400">
+                    <span className="text-[10px] text-[var(--text-dim)]">
                       {formatRelative(t.lastMessage.createdAt)}
                     </span>
                     <svg
-                      className={`h-4 w-4 text-zinc-400 transition-transform ${open ? 'rotate-180' : ''}`}
+                      className={`h-4 w-4 text-[var(--text-dim)] transition-transform ${open ? 'rotate-180' : ''}`}
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -163,8 +163,8 @@ export default function MessagesPage() {
                 </button>
 
                 {open && (
-                  <div className="border-t border-zinc-200 bg-zinc-50 p-4">
-                    <div className="mb-3 flex items-center justify-between text-xs text-zinc-500">
+                  <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4">
+                    <div className="mb-3 flex items-center justify-between text-xs text-[var(--text-muted)]">
                       <span>
                         Conversation on{' '}
                         <Link
@@ -173,14 +173,14 @@ export default function MessagesPage() {
                               ? `/dashboard?tab=purchases&order=${t.orderId}`
                               : `/dashboard?tab=sales&order=${t.orderId}`
                           }
-                          className="text-blue-600 hover:underline"
+                          className="text-[var(--neon-cyan)] hover:underline"
                         >
                           order {t.orderId.slice(0, 8)}…
                         </Link>
                       </span>
                       <Link
                         href={`/listings/${t.listing.id}`}
-                        className="text-blue-600 hover:underline"
+                        className="text-[var(--neon-cyan)] hover:underline"
                       >
                         View listing →
                       </Link>

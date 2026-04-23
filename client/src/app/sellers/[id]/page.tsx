@@ -83,13 +83,13 @@ function SellerProfile({ id }: { id: string }) {
 
   if (error || !user) {
     return (
-      <main className="flex-1 bg-zinc-50">
+      <main className="flex-1">
         <div className="mx-auto max-w-5xl px-4 py-16 text-center">
-          <h1 className="text-2xl font-bold text-zinc-900 mb-2">Seller not found</h1>
-          <p className="text-zinc-500 mb-6">{error || 'This seller may no longer exist.'}</p>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Seller not found</h1>
+          <p className="text-[var(--text-muted)] mb-6">{error || 'This seller may no longer exist.'}</p>
           <Link
             href="/browse"
-            className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+            className="btn-cyber-primary"
           >
             Browse listings
           </Link>
@@ -104,62 +104,62 @@ function SellerProfile({ id }: { id: string }) {
   }).format(new Date(user.createdAt));
 
   return (
-    <main className="flex-1 bg-zinc-50">
+    <main className="flex-1">
       <div className="mx-auto max-w-5xl px-4 py-8">
         {/* Header card */}
-        <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <div className="panel clip-corner p-6">
           <div className="flex items-start gap-4">
             <Avatar src={user.avatarUrl} username={user.username} size="xl" />
 
             <div className="flex-1 min-w-0">
               <div className="flex flex-wrap items-center gap-2">
-                <h1 className="text-2xl font-bold text-zinc-900">{user.username}</h1>
+                <h1 className="text-2xl font-bold text-[var(--text-primary)]">{user.username}</h1>
                 <span
                   className={`rounded-md px-2 py-0.5 text-xs font-medium ${
                     user.sellerType === 'BUSINESS'
-                      ? 'bg-indigo-100 text-indigo-700'
-                      : 'bg-zinc-100 text-zinc-600'
+                      ? 'bg-[var(--tint-magenta)] text-[var(--neon-magenta)] border border-[var(--neon-magenta)]/40'
+                      : 'bg-[var(--bg-panel-hi)] text-[var(--text-muted)] border border-[var(--border-subtle)]'
                   }`}
                 >
                   {user.sellerType === 'BUSINESS' ? 'Business Seller' : 'Personal Seller'}
                 </span>
               </div>
               {user.businessName && user.sellerType === 'BUSINESS' && (
-                <p className="mt-1 text-sm text-zinc-600">{user.businessName}</p>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">{user.businessName}</p>
               )}
               {user.location && (
-                <p className="mt-1 text-sm text-zinc-500">{user.location}</p>
+                <p className="mt-1 text-sm text-[var(--text-muted)]">{user.location}</p>
               )}
               <div className="mt-3 flex flex-wrap items-center gap-3 text-sm">
                 {user.avgRating !== null ? (
                   <div className="flex items-center gap-1.5">
                     <Stars rating={user.avgRating} />
-                    <span className="font-medium text-zinc-700">
+                    <span className="font-medium text-[var(--text-muted)]">
                       {user.avgRating.toFixed(1)}
                     </span>
-                    <span className="text-zinc-500">
+                    <span className="text-[var(--text-muted)]">
                       ({user.totalReviews} {user.totalReviews === 1 ? 'review' : 'reviews'})
                     </span>
                   </div>
                 ) : (
-                  <span className="text-zinc-400 text-xs">No reviews yet</span>
+                  <span className="text-[var(--text-dim)] text-xs">No reviews yet</span>
                 )}
-                <span className="text-zinc-300" aria-hidden="true">|</span>
-                <span className="text-zinc-500">
+                <span className="text-[var(--text-dim)]" aria-hidden="true">|</span>
+                <span className="text-[var(--text-muted)]">
                   {user.totalSales} {user.totalSales === 1 ? 'sale' : 'sales'}
                 </span>
-                <span className="text-zinc-300" aria-hidden="true">|</span>
-                <span className="text-zinc-500">Member since {memberSince}</span>
+                <span className="text-[var(--text-dim)]" aria-hidden="true">|</span>
+                <span className="text-[var(--text-muted)]">Member since {memberSince}</span>
               </div>
               {user.bio && (
-                <p className="mt-3 text-sm text-zinc-600 whitespace-pre-line">{user.bio}</p>
+                <p className="mt-3 text-sm text-[var(--text-muted)] whitespace-pre-line">{user.bio}</p>
               )}
             </div>
           </div>
         </div>
 
         {/* Tabs */}
-        <div className="mt-6 border-b border-zinc-200">
+        <div className="mt-6 border-b border-[var(--border-subtle)]">
           <div
             role="tablist"
             aria-label="Seller profile tabs"
@@ -185,8 +185,8 @@ function SellerProfile({ id }: { id: string }) {
                   onClick={() => selectTab(tab.key)}
                   className={`pb-3 text-sm font-medium transition-colors ${
                     selected
-                      ? 'border-b-2 border-blue-600 text-blue-600'
-                      : 'text-zinc-500 hover:text-zinc-700'
+                      ? 'border-b-2 border-[var(--neon-cyan)] text-[var(--neon-cyan)]'
+                      : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'
                   }`}
                 >
                   {tab.label}
@@ -253,7 +253,7 @@ function SellerListingsTab({ sellerId }: { sellerId: string }) {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+      <div className="rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-4 text-sm text-[var(--neon-danger)]">
         {error}
       </div>
     );
@@ -261,8 +261,8 @@ function SellerListingsTab({ sellerId }: { sellerId: string }) {
 
   if (listings.length === 0) {
     return (
-      <div className="rounded-xl border border-zinc-200 bg-white px-6 py-12 text-center">
-        <p className="text-sm text-zinc-500">
+      <div className="panel clip-corner px-6 py-12 text-center">
+        <p className="text-sm text-[var(--text-muted)]">
           This seller has no active listings right now.
         </p>
       </div>
@@ -321,10 +321,10 @@ function SellerReviewsTab({ sellerId }: { sellerId: string }) {
     return (
       <div className="space-y-3">
         {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="rounded-xl border border-zinc-200 bg-white p-4 animate-pulse">
-            <div className="h-4 w-1/4 rounded bg-zinc-200" />
-            <div className="mt-2 h-3 w-3/4 rounded bg-zinc-200" />
-            <div className="mt-1 h-3 w-1/2 rounded bg-zinc-200" />
+          <div key={i} className="panel clip-corner p-4 animate-pulse">
+            <div className="h-4 w-1/4 rounded bg-[var(--bg-panel-hi)]" />
+            <div className="mt-2 h-3 w-3/4 rounded bg-[var(--bg-panel-hi)]" />
+            <div className="mt-1 h-3 w-1/2 rounded bg-[var(--bg-panel-hi)]" />
           </div>
         ))}
       </div>
@@ -333,7 +333,7 @@ function SellerReviewsTab({ sellerId }: { sellerId: string }) {
 
   if (error) {
     return (
-      <div className="rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-600">
+      <div className="rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-4 text-sm text-[var(--neon-danger)]">
         {error}
       </div>
     );
@@ -341,8 +341,8 @@ function SellerReviewsTab({ sellerId }: { sellerId: string }) {
 
   if (!data || data.reviews.length === 0) {
     return (
-      <div className="rounded-xl border border-zinc-200 bg-white px-6 py-12 text-center">
-        <p className="text-sm text-zinc-500">
+      <div className="panel clip-corner px-6 py-12 text-center">
+        <p className="text-sm text-[var(--text-muted)]">
           No reviews yet. Reviews from completed purchases will show up here.
         </p>
       </div>
@@ -354,16 +354,16 @@ function SellerReviewsTab({ sellerId }: { sellerId: string }) {
   return (
     <div>
       {/* Aggregate panel */}
-      <div className="rounded-xl border border-zinc-200 bg-white p-5 mb-6">
+      <div className="panel clip-corner p-5 mb-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
           <div className="sm:w-40 text-center">
-            <div className="text-4xl font-bold text-zinc-900">
+            <div className="text-4xl font-bold text-[var(--text-primary)]">
               {data.avgRating !== null ? data.avgRating.toFixed(1) : '–'}
             </div>
             <div className="mt-1 flex justify-center">
               <Stars rating={data.avgRating ?? 0} />
             </div>
-            <p className="mt-1 text-xs text-zinc-500">
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
               {data.totalReviews} {data.totalReviews === 1 ? 'review' : 'reviews'}
             </p>
           </div>
@@ -374,14 +374,14 @@ function SellerReviewsTab({ sellerId }: { sellerId: string }) {
               const pct = (count / total) * 100;
               return (
                 <div key={star} className="flex items-center gap-3 text-xs">
-                  <span className="w-4 text-zinc-500">{star}</span>
-                  <div className="flex-1 h-2 rounded-full bg-zinc-100 overflow-hidden">
+                  <span className="w-4 text-[var(--text-muted)]">{star}</span>
+                  <div className="flex-1 h-2 rounded-full bg-[var(--bg-panel-hi)] overflow-hidden">
                     <div
-                      className="h-full bg-amber-400"
+                      className="h-full bg-[var(--neon-amber)]"
                       style={{ width: `${pct}%` }}
                     />
                   </div>
-                  <span className="w-8 text-right text-zinc-500">{count}</span>
+                  <span className="w-8 text-right text-[var(--text-muted)]">{count}</span>
                 </div>
               );
             })}
@@ -400,7 +400,7 @@ function SellerReviewsTab({ sellerId }: { sellerId: string }) {
           return (
             <div
               key={review.id}
-              className="rounded-xl border border-zinc-200 bg-white p-4"
+              className="panel clip-corner p-4"
             >
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-2">
@@ -410,14 +410,14 @@ function SellerReviewsTab({ sellerId }: { sellerId: string }) {
                     size="sm"
                   />
                   <Stars rating={review.rating} size="sm" />
-                  <span className="text-sm font-medium text-zinc-700">
+                  <span className="text-sm font-medium text-[var(--text-muted)]">
                     {review.reviewer.username}
                   </span>
                 </div>
-                <span className="text-xs text-zinc-400">{date}</span>
+                <span className="text-xs text-[var(--text-dim)]">{date}</span>
               </div>
               {review.comment && (
-                <p className="mt-2 text-sm text-zinc-600 whitespace-pre-wrap">
+                <p className="mt-2 text-sm text-[var(--text-muted)] whitespace-pre-wrap">
                   {review.comment}
                 </p>
               )}
@@ -451,17 +451,17 @@ function Paginator({
       <button
         onClick={() => onChange(Math.max(1, page - 1))}
         disabled={page === 1}
-        className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+        className="btn-cyber-outline disabled:opacity-40 disabled:cursor-not-allowed"
       >
         Previous
       </button>
-      <span className="text-sm text-zinc-500">
+      <span className="text-sm text-[var(--text-muted)]">
         Page {page} of {totalPages}
       </span>
       <button
         onClick={() => onChange(Math.min(totalPages, page + 1))}
         disabled={page === totalPages}
-        className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40 disabled:cursor-not-allowed"
+        className="btn-cyber-outline disabled:opacity-40 disabled:cursor-not-allowed"
       >
         Next
       </button>
@@ -471,15 +471,15 @@ function Paginator({
 
 function ProfileSkeleton() {
   return (
-    <main className="flex-1 bg-zinc-50">
+    <main className="flex-1">
       <div className="mx-auto max-w-5xl px-4 py-8">
-        <div className="rounded-xl border border-zinc-200 bg-white p-6">
+        <div className="panel clip-corner p-6">
           <div className="flex gap-4 animate-pulse">
-            <div className="h-16 w-16 rounded-full bg-zinc-200" />
+            <div className="h-16 w-16 rounded-full bg-[var(--bg-panel-hi)]" />
             <div className="flex-1 space-y-2">
-              <div className="h-6 w-1/3 rounded bg-zinc-200" />
-              <div className="h-4 w-1/4 rounded bg-zinc-200" />
-              <div className="h-4 w-1/2 rounded bg-zinc-200" />
+              <div className="h-6 w-1/3 rounded bg-[var(--bg-panel-hi)]" />
+              <div className="h-4 w-1/4 rounded bg-[var(--bg-panel-hi)]" />
+              <div className="h-4 w-1/2 rounded bg-[var(--bg-panel-hi)]" />
             </div>
           </div>
         </div>

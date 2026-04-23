@@ -19,19 +19,19 @@ export default function ListingCard({ listing }: Props) {
   return (
     <Link
       href={`/listings/${listing.id}`}
-      className="group block rounded-xl border border-zinc-200 bg-white shadow-sm overflow-hidden hover:shadow-md transition-shadow"
+      className="group relative block panel panel-hover clip-corner overflow-hidden"
     >
-      <div className="aspect-[4/3] bg-zinc-100 relative overflow-hidden">
+      <div className="relative aspect-[4/3] overflow-hidden bg-[var(--bg-panel-hi)]">
         {!showPlaceholder ? (
           <img
             src={imageUrl}
             alt={listing.title}
             loading="lazy"
             onError={() => setImageFailed(true)}
-            className="h-full w-full object-cover group-hover:scale-105 transition-transform duration-300"
+            className="h-full w-full object-cover opacity-95 transition-all duration-300 group-hover:scale-[1.03] group-hover:opacity-100"
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-zinc-300">
+          <div className="flex h-full items-center justify-center text-[var(--text-dim)]">
             <svg
               className="h-12 w-12"
               fill="none"
@@ -47,11 +47,13 @@ export default function ListingCard({ listing }: Props) {
             </svg>
           </div>
         )}
+
         <span
-          className={`absolute top-2 left-2 rounded-md px-2 py-0.5 text-xs font-medium ${condition.bg}`}
+          className={`absolute top-2 left-2 rounded-md px-2 py-0.5 text-[11px] font-semibold ${condition.bg}`}
         >
           {condition.label}
         </span>
+
         <span className="absolute top-2 right-2 flex gap-1.5">
           <AddToCartButton
             listingId={listing.id}
@@ -63,18 +65,18 @@ export default function ListingCard({ listing }: Props) {
         </span>
       </div>
 
-      <div className="p-3">
-        <h3 className="text-sm font-medium text-zinc-900 line-clamp-2 group-hover:text-blue-600 transition-colors">
+      <div className="p-3.5 pb-4">
+        <h3 className="line-clamp-2 text-sm font-semibold leading-snug text-[var(--text-primary)] transition-colors group-hover:text-[var(--neon-cyan)]">
           {listing.title}
         </h3>
-        <p className="mt-1 text-lg font-bold text-zinc-900">
+        <p className="mt-1.5 text-lg font-bold tracking-tight text-[var(--neon-cyan)]">
           {formatPrice(listing.price)}
         </p>
-        <div className="mt-2 flex items-center gap-1.5 text-xs text-zinc-500">
-          <span>{listing.seller.username}</span>
+        <div className="mt-2 flex items-center gap-1.5 text-xs text-[var(--text-dim)]">
+          <span className="text-[var(--text-muted)]">{listing.seller.username}</span>
           {listing.seller.location && (
             <>
-              <span aria-hidden="true">&middot;</span>
+              <span aria-hidden="true">·</span>
               <span>{listing.seller.location}</span>
             </>
           )}

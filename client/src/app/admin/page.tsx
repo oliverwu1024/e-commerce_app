@@ -27,10 +27,10 @@ function AdminDashboard() {
   if (user.role !== 'ADMIN') {
     return (
       <div className="mx-auto max-w-3xl px-4 py-12">
-        <h1 className="text-2xl font-bold text-zinc-900">Access denied</h1>
-        <p className="mt-2 text-sm text-zinc-600">
+        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Access denied</h1>
+        <p className="mt-2 text-sm text-[var(--text-muted)]">
           You need admin privileges to view this page.{' '}
-          <Link href="/" className="text-blue-600 hover:underline">
+          <Link href="/" className="text-[var(--neon-cyan)] hover:underline">
             Go home
           </Link>
           .
@@ -75,8 +75,8 @@ function AdminDashboardInner() {
     <div className="mx-auto max-w-6xl px-4 py-8">
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-zinc-900">Admin Dashboard</h1>
-          <p className="mt-1 text-sm text-zinc-500">
+          <h1 className="text-2xl font-bold text-[var(--text-primary)]">Admin Dashboard</h1>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Platform overview and moderation tools.
           </p>
         </div>
@@ -84,14 +84,14 @@ function AdminDashboardInner() {
           type="button"
           onClick={fetchAll}
           disabled={loading}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="btn-cyber-outline"
         >
           {loading ? 'Loading...' : 'Refresh'}
         </button>
       </div>
 
       {error && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="mt-4 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           {error}
         </div>
       )}
@@ -119,7 +119,7 @@ function StatsSkeleton() {
       {Array.from({ length: 8 }).map((_, i) => (
         <div
           key={i}
-          className="h-24 rounded-xl border border-zinc-200 bg-zinc-100 animate-pulse"
+          className="h-24 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] animate-pulse"
         />
       ))}
     </div>
@@ -132,7 +132,7 @@ function StatsSection({ stats }: { stats: AdminStats }) {
   return (
     <div className="mt-6 space-y-6">
       <section>
-        <h2 className="text-sm font-semibold text-zinc-700 uppercase tracking-wider">
+        <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">
           Overview
         </h2>
         <div className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-4">
@@ -150,64 +150,64 @@ function StatsSection({ stats }: { stats: AdminStats }) {
             label="Orders"
             value={stats.orders.total}
             sub={`${stats.orders.COMPLETED} completed`}
-            color="text-emerald-700"
+            color="text-[var(--neon-green)]"
           />
           <StatCard
             label="Revenue (AUD)"
             value={revenueDisplay}
             sub="Completed orders"
-            color="text-blue-700"
+            color="text-[var(--neon-cyan)]"
           />
         </div>
       </section>
 
       <section>
-        <h2 className="text-sm font-semibold text-zinc-700 uppercase tracking-wider">
+        <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">
           Orders
         </h2>
         <div className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-4">
           <StatCard
             label="Pending confirmation"
             value={stats.orders.PENDING_CONFIRMATION}
-            color="text-amber-700"
+            color="text-[var(--neon-amber)]"
           />
           <StatCard
             label="Confirmed"
             value={stats.orders.CONFIRMED}
-            color="text-blue-700"
+            color="text-[var(--neon-cyan)]"
           />
           <StatCard
             label="Completed"
             value={stats.orders.COMPLETED}
-            color="text-emerald-700"
+            color="text-[var(--neon-green)]"
           />
           <StatCard
             label="Cancelled"
             value={stats.orders.CANCELLED}
-            color="text-zinc-500"
+            color="text-[var(--text-muted)]"
           />
         </div>
       </section>
 
       <section>
-        <h2 className="text-sm font-semibold text-zinc-700 uppercase tracking-wider">
+        <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">
           Moderation
         </h2>
         <div className="mt-2 grid grid-cols-2 gap-4 sm:grid-cols-3">
           <StatCard
             label="Pending ID verifications"
             value={stats.pendingVerifications}
-            color={stats.pendingVerifications > 0 ? 'text-amber-700' : undefined}
+            color={stats.pendingVerifications > 0 ? 'text-[var(--neon-amber)]' : undefined}
           />
           <StatCard
             label="Stuck payments (>30m)"
             value={stats.stuckPayments}
-            color={stats.stuckPayments > 0 ? 'text-red-700' : undefined}
+            color={stats.stuckPayments > 0 ? 'text-[var(--neon-danger)]' : undefined}
           />
           <StatCard
             label="Listings removed"
             value={stats.listings.REMOVED}
-            color="text-zinc-500"
+            color="text-[var(--text-muted)]"
           />
         </div>
       </section>
@@ -232,12 +232,12 @@ function StatCard({
   const display =
     typeof value === 'number' ? value.toLocaleString('en-AU') : value;
   return (
-    <div className="rounded-xl border border-zinc-200 bg-white p-4">
-      <p className="text-xs font-medium text-zinc-500">{label}</p>
-      <p className={`mt-1 text-2xl font-bold ${color ?? 'text-zinc-900'}`}>
+    <div className="panel clip-corner p-4">
+      <p className="text-xs font-medium text-[var(--text-muted)]">{label}</p>
+      <p className={`mt-1 text-2xl font-bold ${color ?? 'text-[var(--text-primary)]'}`}>
         {display}
       </p>
-      {sub && <p className="mt-0.5 text-xs text-zinc-400">{sub}</p>}
+      {sub && <p className="mt-0.5 text-xs text-[var(--text-dim)]">{sub}</p>}
     </div>
   );
 }
@@ -254,25 +254,25 @@ function StuckOrdersSection({
   return (
     <section className="mt-8">
       <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-zinc-700 uppercase tracking-wider">
+        <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">
           Stuck Payments
         </h2>
-        <span className="text-xs text-zinc-500">
+        <span className="text-xs text-[var(--text-muted)]">
           {total} total with active session &gt; 30 min old
         </span>
       </div>
 
       {loading && orders.length === 0 ? (
-        <div className="mt-2 h-24 rounded-xl border border-zinc-200 bg-zinc-100 animate-pulse" />
+        <div className="mt-2 h-24 rounded-xl border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] animate-pulse" />
       ) : orders.length === 0 ? (
-        <div className="mt-2 rounded-xl border border-zinc-200 bg-white px-6 py-8 text-center text-sm text-zinc-600">
+        <div className="panel clip-corner mt-2 px-6 py-8 text-center text-sm text-[var(--text-muted)]">
           No stuck payments. Online payment sessions that have been in flight
           for more than 30 minutes appear here.
         </div>
       ) : (
-        <div className="mt-2 overflow-x-auto rounded-xl border border-zinc-200 bg-white">
-          <table className="min-w-full divide-y divide-zinc-200 text-sm">
-            <thead className="bg-zinc-50 text-xs uppercase text-zinc-500">
+        <div className="panel clip-corner mt-2 overflow-x-auto">
+          <table className="min-w-full divide-y divide-[var(--border-subtle)] text-sm">
+            <thead className="bg-[var(--bg-panel-hi)] text-xs uppercase text-[var(--text-muted)]">
               <tr>
                 <th scope="col" className="px-4 py-2 text-left font-medium">
                   Order
@@ -291,30 +291,30 @@ function StuckOrdersSection({
                 </th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-zinc-100">
+            <tbody className="divide-y divide-[var(--border-subtle)]">
               {orders.map((o) => (
                 <tr key={o.id}>
                   <td className="px-4 py-2">
                     <Link
                       href={`/listings/${o.listing.id}`}
-                      className="text-blue-600 hover:underline"
+                      className="text-[var(--neon-cyan)] hover:underline"
                     >
                       {o.listing.title}
                     </Link>
-                    <p className="text-xs text-zinc-400">{o.id.slice(0, 8)}…</p>
+                    <p className="text-xs text-[var(--text-dim)]">{o.id.slice(0, 8)}…</p>
                   </td>
                   <td className="px-4 py-2">
-                    <p className="text-zinc-900">{o.buyer.username}</p>
-                    <p className="text-xs text-zinc-500">{o.buyer.email}</p>
+                    <p className="text-[var(--text-primary)]">{o.buyer.username}</p>
+                    <p className="text-xs text-[var(--text-muted)]">{o.buyer.email}</p>
                   </td>
                   <td className="px-4 py-2">
-                    <p className="text-zinc-900">{o.seller.username}</p>
-                    <p className="text-xs text-zinc-500">{o.seller.email}</p>
+                    <p className="text-[var(--text-primary)]">{o.seller.username}</p>
+                    <p className="text-xs text-[var(--text-muted)]">{o.seller.email}</p>
                   </td>
                   <td className="px-4 py-2 text-right font-medium">
                     {formatPrice(o.amount)}
                   </td>
-                  <td className="px-4 py-2 text-zinc-600">
+                  <td className="px-4 py-2 text-[var(--text-muted)]">
                     {formatRelative(o.updatedAt)}
                   </td>
                 </tr>
@@ -330,27 +330,27 @@ function StuckOrdersSection({
 function QuickLinks({ pendingVerifications }: { pendingVerifications: number }) {
   return (
     <section className="mt-8">
-      <h2 className="text-sm font-semibold text-zinc-700 uppercase tracking-wider">
+      <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">
         Tools
       </h2>
       <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <Link
           href="/admin/verifications"
-          className="flex items-center justify-between rounded-xl border border-zinc-200 bg-white p-4 hover:border-blue-300 hover:shadow-sm transition"
+          className="panel clip-corner flex items-center justify-between p-4 hover:border-[var(--neon-cyan)] hover:shadow-sm transition"
         >
           <div>
-            <p className="text-sm font-semibold text-zinc-900">
+            <p className="text-sm font-semibold text-[var(--text-primary)]">
               Pending ID verifications
             </p>
-            <p className="mt-0.5 text-xs text-zinc-500">
+            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
               Review submitted IDs for personal sellers.
             </p>
           </div>
           <span
             className={`ml-3 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full px-2 text-xs font-bold ${
               pendingVerifications > 0
-                ? 'bg-amber-100 text-amber-800'
-                : 'bg-zinc-100 text-zinc-500'
+                ? 'bg-[var(--tint-amber)] text-[var(--neon-amber)] border border-[var(--neon-amber)]/40'
+                : 'bg-[var(--bg-panel-hi)] text-[var(--text-muted)] border border-[var(--border-subtle)]'
             }`}
           >
             {pendingVerifications}

@@ -53,12 +53,12 @@ export default function AddToCartButton({
   }
 
   if (variant === 'icon') {
-    const baseClass = 'rounded-lg border p-1.5 transition-colors';
+    const baseClass = 'rounded-md backdrop-blur-sm p-1.5 transition-all';
     const stateClass = !available
-      ? 'border-zinc-200 bg-zinc-50 text-zinc-300 cursor-not-allowed'
+      ? 'border border-[var(--border-subtle)] bg-[var(--bg-overlay)] text-[var(--text-dim)] cursor-not-allowed'
       : inCart
-      ? 'border-emerald-300 bg-emerald-50 text-emerald-600'
-      : 'border-zinc-300 text-zinc-500 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50';
+      ? 'border border-[var(--neon-green)]/50 bg-[var(--tint-green)] text-[var(--neon-green)]'
+      : 'border border-[var(--border-hi)] bg-[var(--bg-overlay)] text-[var(--text-muted)] hover:text-[var(--neon-cyan)] hover:border-[var(--neon-cyan)]/60';
 
     return (
       <button
@@ -100,10 +100,10 @@ export default function AddToCartButton({
   const baseClass =
     'flex-1 rounded-lg px-4 py-2.5 text-sm font-medium transition-colors flex items-center justify-center gap-2';
   const stateClass = !available
-    ? 'bg-zinc-100 text-zinc-400 cursor-not-allowed'
+    ? 'bg-[var(--bg-panel-hi)] text-[var(--text-dim)] cursor-not-allowed'
     : inCart
-    ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-    : 'bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-60';
+    ? 'bg-[var(--tint-green)] text-[var(--neon-green)] border border-[var(--neon-green)]/40'
+    : 'bg-[var(--neon-cyan)] text-[var(--btn-primary-text)] border border-[var(--neon-cyan)] hover:brightness-110 disabled:opacity-60';
 
   return (
     <button

@@ -58,27 +58,27 @@ function VerifyEmailContent() {
   };
 
   return (
-    <main className="flex flex-1 items-center justify-center bg-zinc-50 px-4">
-      <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-8 text-center">
+    <main className="flex flex-1 items-center justify-center px-4">
+      <div className="panel clip-corner w-full max-w-md p-8 text-center">
         {status === 'verifying' && (
           <>
-            <h1 className="text-xl font-bold text-zinc-900 mb-2">Verifying your email...</h1>
-            <p className="text-zinc-500">Please wait.</p>
+            <h1 className="text-xl font-bold text-[var(--text-primary)] mb-2">Verifying your email...</h1>
+            <p className="text-[var(--text-muted)]">Please wait.</p>
           </>
         )}
 
         {status === 'success' && (
           <>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-green-100">
-              <svg className="h-6 w-6 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--tint-green)]">
+              <svg className="h-6 w-6 text-[var(--neon-green)]" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
               </svg>
             </div>
-            <h1 className="text-xl font-bold text-zinc-900 mb-2">Email Verified!</h1>
-            <p className="text-zinc-600 mb-6">{message}</p>
+            <h1 className="text-xl font-bold text-[var(--text-primary)] mb-2">Email Verified!</h1>
+            <p className="text-[var(--text-muted)] mb-6">{message}</p>
             <Link
               href="/"
-              className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+              className="btn-cyber-primary"
             >
               Go to Home
             </Link>
@@ -87,18 +87,18 @@ function VerifyEmailContent() {
 
         {status === 'error' && (
           <>
-            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-100">
-              <svg className="h-6 w-6 text-red-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-[var(--tint-danger)]">
+              <svg className="h-6 w-6 text-[var(--neon-danger)]" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
               </svg>
             </div>
-            <h1 className="text-xl font-bold text-zinc-900 mb-2">Verification Failed</h1>
-            <p className="text-zinc-600 mb-6">{message}</p>
+            <h1 className="text-xl font-bold text-[var(--text-primary)] mb-2">Verification Failed</h1>
+            <p className="text-[var(--text-muted)] mb-6">{message}</p>
             {user && !user.emailVerified && (
               <button
                 onClick={handleResend}
                 disabled={resending}
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                className="btn-cyber-primary"
               >
                 {resending ? 'Sending...' : 'Resend Verification Email'}
               </button>
@@ -108,10 +108,10 @@ function VerifyEmailContent() {
 
         {status === 'idle' && (
           <>
-            <h1 className="text-xl font-bold text-zinc-900 mb-2">
+            <h1 className="text-xl font-bold text-[var(--text-primary)] mb-2">
               {retry ? 'Verification email failed to send' : 'Verify Your Email'}
             </h1>
-            <p className="text-zinc-600 mb-6">
+            <p className="text-[var(--text-muted)] mb-6">
               {retry
                 ? "Your account is created, but we couldn't send the verification email just now. Click below to try again."
                 : user
@@ -123,22 +123,22 @@ function VerifyEmailContent() {
                 <button
                   onClick={handleResend}
                   disabled={resending}
-                  className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50"
+                  className="btn-cyber-primary"
                 >
                   {resending ? 'Sending...' : 'Resend Verification Email'}
                 </button>
                 {resendSuccess && !devUrl && (
-                  <p className="mt-3 text-sm text-green-600">Verification email sent! Check your inbox.</p>
+                  <p className="mt-3 text-sm text-[var(--neon-green)]">Verification email sent! Check your inbox.</p>
                 )}
                 {devUrl && (
-                  <div className="mt-4 rounded-lg border border-amber-300 bg-amber-50 p-3 text-left text-xs text-amber-900">
+                  <div className="mt-4 rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] p-3 text-left text-xs text-[var(--neon-amber)]">
                     <p className="font-semibold">Dev mode: click-through link</p>
                     <p className="mt-1">
                       <code className="break-all">ENABLE_DEV_EMAIL=1</code> is set on the server, so here&apos;s the verification URL directly (no inbox needed):
                     </p>
                     <a
                       href={devUrl}
-                      className="mt-2 inline-block break-all text-blue-700 underline hover:text-blue-800"
+                      className="mt-2 inline-block break-all text-[var(--neon-cyan)] underline hover:text-[var(--accent-soft)]"
                     >
                       {devUrl}
                     </a>
@@ -147,12 +147,12 @@ function VerifyEmailContent() {
               </>
             )}
             {user?.emailVerified && (
-              <p className="text-sm text-green-600">Your email is already verified.</p>
+              <p className="text-sm text-[var(--neon-green)]">Your email is already verified.</p>
             )}
             {!user && (
               <Link
                 href="/login"
-                className="rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+                className="btn-cyber-primary"
               >
                 Log in
               </Link>
@@ -168,9 +168,9 @@ export default function VerifyEmailPage() {
   return (
     <Suspense
       fallback={
-        <main className="flex flex-1 items-center justify-center bg-zinc-50 px-4">
-          <div className="w-full max-w-md rounded-xl border border-zinc-200 bg-white p-8 text-center">
-            <p className="text-zinc-500">Loading...</p>
+        <main className="flex flex-1 items-center justify-center px-4">
+          <div className="panel clip-corner w-full max-w-md p-8 text-center">
+            <p className="text-[var(--text-muted)]">Loading...</p>
           </div>
         </main>
       }

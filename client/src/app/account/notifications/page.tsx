@@ -80,8 +80,8 @@ export default function NotificationsPage() {
     <div>
       <div className="flex items-baseline justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-zinc-900">Notifications</h2>
-          <p className="mt-1 text-sm text-zinc-500">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Notifications</h2>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             {unreadCount > 0
               ? `${unreadCount} unread`
               : 'All caught up.'}
@@ -91,14 +91,14 @@ export default function NotificationsPage() {
           type="button"
           onClick={handleMarkAll}
           disabled={markingAll || unreadCount === 0}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50"
+          className="btn-cyber-outline"
         >
           {markingAll ? 'Marking...' : 'Mark all as read'}
         </button>
       </div>
 
       {error && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+        <div className="mt-4 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           {error}
         </div>
       )}
@@ -106,11 +106,11 @@ export default function NotificationsPage() {
       {loading && notifications.length === 0 ? (
         <div className="mt-4 space-y-2">
           {Array.from({ length: 5 }).map((_, i) => (
-            <div key={i} className="h-16 rounded-lg bg-zinc-100 animate-pulse" />
+            <div key={i} className="h-16 rounded-lg bg-[var(--bg-panel-hi)] animate-pulse" />
           ))}
         </div>
       ) : notifications.length === 0 ? (
-        <div className="mt-6 rounded-xl border border-zinc-200 bg-white p-8 text-center text-sm text-zinc-500">
+        <div className="panel clip-corner mt-6 p-8 text-center text-sm text-[var(--text-muted)]">
           No notifications yet. Activity on your orders, messages, and reviews will appear here.
         </div>
       ) : (
@@ -125,24 +125,24 @@ export default function NotificationsPage() {
                   onClick={() => handleClickNotification(n)}
                   className={`block rounded-lg border p-3 transition-colors ${
                     isUnread
-                      ? 'border-blue-200 bg-blue-50 hover:bg-blue-100'
-                      : 'border-zinc-200 bg-white hover:bg-zinc-50'
+                      ? 'border-[var(--neon-cyan)]/40 bg-[var(--tint-cyan)] hover:brightness-[1.05]'
+                      : 'border-[var(--border-subtle)] bg-[var(--bg-panel)] hover:bg-[var(--bg-panel-hi)]'
                   }`}
                 >
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-semibold text-zinc-900">
+                      <p className="text-sm font-semibold text-[var(--text-primary)]">
                         {isUnread && (
                           <span
-                            className="mr-2 inline-block h-2 w-2 rounded-full bg-blue-600 align-middle"
+                            className="mr-2 inline-block h-2 w-2 rounded-full bg-[var(--neon-cyan)] align-middle"
                             aria-hidden="true"
                           />
                         )}
                         {n.title}
                       </p>
-                      <p className="mt-0.5 text-sm text-zinc-700 break-words">{n.body}</p>
+                      <p className="mt-0.5 text-sm text-[var(--text-muted)] break-words">{n.body}</p>
                     </div>
-                    <span className="flex-shrink-0 text-xs text-zinc-400">
+                    <span className="flex-shrink-0 text-xs text-[var(--text-dim)]">
                       {formatRelative(n.createdAt)}
                     </span>
                   </div>
@@ -159,18 +159,18 @@ export default function NotificationsPage() {
             type="button"
             onClick={() => setPage((p) => Math.max(1, p - 1))}
             disabled={page === 1}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+            className="btn-cyber-outline disabled:opacity-40"
           >
             Previous
           </button>
-          <span className="text-sm text-zinc-500">
+          <span className="text-sm text-[var(--text-muted)]">
             Page {page} of {totalPages}
           </span>
           <button
             type="button"
             onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             disabled={page === totalPages}
-            className="rounded-lg border border-zinc-300 px-3 py-1.5 text-sm font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-40"
+            className="btn-cyber-outline disabled:opacity-40"
           >
             Next
           </button>

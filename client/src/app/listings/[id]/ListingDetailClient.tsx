@@ -30,7 +30,7 @@ function ImageGallery({ images, title }: { images: ListingDetail['images']; titl
   return (
     <div>
       {/* Main image */}
-      <div className="aspect-[4/3] rounded-xl bg-zinc-100 overflow-hidden">
+      <div className="aspect-[4/3] rounded-xl bg-[var(--bg-panel-hi)] overflow-hidden">
         {currentImage ? (
           <img
             src={currentImage}
@@ -38,7 +38,7 @@ function ImageGallery({ images, title }: { images: ListingDetail['images']; titl
             className="h-full w-full object-cover"
           />
         ) : (
-          <div className="flex h-full items-center justify-center text-zinc-300">
+          <div className="flex h-full items-center justify-center text-[var(--text-dim)]">
             <svg className="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1">
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
@@ -63,8 +63,8 @@ function ImageGallery({ images, title }: { images: ListingDetail['images']; titl
               aria-pressed={idx === selectedIndex}
               className={`flex-shrink-0 h-16 w-16 rounded-lg overflow-hidden border-2 transition-colors ${
                 idx === selectedIndex
-                  ? 'border-blue-600'
-                  : 'border-zinc-200 hover:border-zinc-400'
+                  ? 'border-[var(--neon-cyan)]'
+                  : 'border-[var(--border-subtle)] hover:border-[var(--border-hi)]'
               }`}
             >
               <img
@@ -86,24 +86,24 @@ function ImageGallery({ images, title }: { images: ListingDetail['images']; titl
 
 function DetailSkeleton() {
   return (
-    <main className="flex-1 bg-zinc-50">
+    <main className="flex-1">
       <div className="mx-auto max-w-6xl px-4 py-8">
         <div className="lg:grid lg:grid-cols-5 lg:gap-10">
           <div className="lg:col-span-3">
-            <div className="aspect-[4/3] rounded-xl bg-zinc-200 animate-pulse" />
+            <div className="aspect-[4/3] rounded-xl bg-[var(--bg-panel-hi)] animate-pulse" />
           </div>
           <div className="lg:col-span-2 mt-6 lg:mt-0 space-y-4">
-            <div className="h-8 bg-zinc-200 rounded animate-pulse w-3/4" />
-            <div className="h-10 bg-zinc-200 rounded animate-pulse w-1/3" />
-            <div className="h-6 bg-zinc-200 rounded animate-pulse w-1/4" />
-            <div className="h-px bg-zinc-200 my-4" />
+            <div className="h-8 bg-[var(--bg-panel-hi)] rounded animate-pulse w-3/4" />
+            <div className="h-10 bg-[var(--bg-panel-hi)] rounded animate-pulse w-1/3" />
+            <div className="h-6 bg-[var(--bg-panel-hi)] rounded animate-pulse w-1/4" />
+            <div className="h-px bg-[var(--border-subtle)] my-4" />
             <div className="space-y-2">
-              <div className="h-4 bg-zinc-200 rounded animate-pulse" />
-              <div className="h-4 bg-zinc-200 rounded animate-pulse w-5/6" />
-              <div className="h-4 bg-zinc-200 rounded animate-pulse w-4/6" />
+              <div className="h-4 bg-[var(--bg-panel-hi)] rounded animate-pulse" />
+              <div className="h-4 bg-[var(--bg-panel-hi)] rounded animate-pulse w-5/6" />
+              <div className="h-4 bg-[var(--bg-panel-hi)] rounded animate-pulse w-4/6" />
             </div>
-            <div className="h-px bg-zinc-200 my-4" />
-            <div className="h-24 bg-zinc-200 rounded-xl animate-pulse" />
+            <div className="h-px bg-[var(--border-subtle)] my-4" />
+            <div className="h-24 bg-[var(--bg-panel-hi)] rounded-xl animate-pulse" />
           </div>
         </div>
       </div>
@@ -163,13 +163,13 @@ export default function ListingDetailClient() {
 
   if (error || !listing) {
     return (
-      <main className="flex-1 bg-zinc-50">
+      <main className="flex-1">
         <div className="mx-auto max-w-6xl px-4 py-16 text-center">
-          <h1 className="text-2xl font-bold text-zinc-900 mb-2">Listing not found</h1>
-          <p className="text-zinc-500 mb-6">{error || 'This listing may have been removed.'}</p>
+          <h1 className="text-2xl font-bold text-[var(--text-primary)] mb-2">Listing not found</h1>
+          <p className="text-[var(--text-muted)] mb-6">{error || 'This listing may have been removed.'}</p>
           <Link
             href="/browse"
-            className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700"
+            className="btn-cyber-primary"
           >
             Browse listings
           </Link>
@@ -191,22 +191,22 @@ export default function ListingDetailClient() {
   }).format(new Date(listing.createdAt));
 
   return (
-    <main className="flex-1 bg-zinc-50">
+    <main className="flex-1">
       <div className="mx-auto max-w-6xl px-4 py-8">
         {/* Breadcrumb */}
-        <nav className="mb-6 flex items-center gap-2 text-sm text-zinc-500">
-          <Link href="/browse" className="hover:text-zinc-700 transition-colors">
+        <nav className="mb-6 flex items-center gap-2 text-sm text-[var(--text-muted)]">
+          <Link href="/browse" className="hover:text-[var(--text-primary)] transition-colors">
             Browse
           </Link>
           <span aria-hidden="true">/</span>
           <Link
             href={`/browse?category=${encodeURIComponent(listing.category)}`}
-            className="hover:text-zinc-700 transition-colors"
+            className="hover:text-[var(--text-primary)] transition-colors"
           >
             {listing.category}
           </Link>
           <span aria-hidden="true">/</span>
-          <span className="text-zinc-900 truncate max-w-[200px]">{listing.title}</span>
+          <span className="text-[var(--text-primary)] truncate max-w-[200px]">{listing.title}</span>
         </nav>
 
         <div className="lg:grid lg:grid-cols-5 lg:gap-10">
@@ -218,8 +218,8 @@ export default function ListingDetailClient() {
           {/* ---- Right: Details ---- */}
           <div className="lg:col-span-2 mt-6 lg:mt-0">
             {/* Title & price */}
-            <h1 className="text-2xl font-bold text-zinc-900">{listing.title}</h1>
-            <p className="mt-2 text-3xl font-bold text-zinc-900">
+            <h1 className="text-2xl font-bold text-[var(--text-primary)]">{listing.title}</h1>
+            <p className="mt-2 text-3xl font-bold text-[var(--text-primary)]">
               {formatPrice(listing.price)}
             </p>
 
@@ -228,12 +228,12 @@ export default function ListingDetailClient() {
                 {condition.label}
               </span>
               {listing.status === 'SOLD' && (
-                <span className="rounded-md bg-red-100 text-red-700 px-2.5 py-1 text-xs font-medium">
+                <span className="rounded-md bg-[var(--tint-danger)] text-[var(--neon-danger)] border border-[var(--neon-danger)]/40 px-2.5 py-1 text-xs font-medium">
                   Sold
                 </span>
               )}
               {listing.status === 'ON_HOLD' && (
-                <span className="rounded-md bg-purple-100 text-purple-700 px-2.5 py-1 text-xs font-medium">
+                <span className="rounded-md bg-[var(--tint-magenta)] text-[var(--neon-magenta)] border border-[var(--neon-magenta)]/40 px-2.5 py-1 text-xs font-medium">
                   On Hold
                 </span>
               )}
@@ -245,13 +245,13 @@ export default function ListingDetailClient() {
                 <>
                   <Link
                     href={`/listings/${listing.id}/edit`}
-                    className="flex-1 rounded-lg border border-zinc-300 px-4 py-2.5 text-center text-sm font-medium text-zinc-700 hover:bg-zinc-50 transition-colors"
+                    className="btn-cyber-outline flex-1 text-center"
                   >
                     Edit Listing
                   </Link>
                   <button
                     onClick={() => setShowRemoveConfirm(true)}
-                    className="flex-1 rounded-lg border border-red-300 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 transition-colors"
+                    className="flex-1 rounded-lg border border-[var(--neon-danger)]/40 px-4 py-2.5 text-sm font-medium text-[var(--neon-danger)] hover:bg-[var(--tint-danger)] transition-colors"
                   >
                     Remove
                   </button>
@@ -268,7 +268,7 @@ export default function ListingDetailClient() {
                   <SaveButton listingId={listing.id} size="md" />
                 </>
               ) : (
-                <div className="flex-1 rounded-lg border border-zinc-200 bg-zinc-50 px-4 py-2.5 text-center text-sm text-zinc-600">
+                <div className="flex-1 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] px-4 py-2.5 text-center text-sm text-[var(--text-muted)]">
                   {listing.status === 'SOLD'
                     ? 'This listing has been sold.'
                     : listing.status === 'ON_HOLD'
@@ -280,21 +280,21 @@ export default function ListingDetailClient() {
 
             {/* Remove confirmation */}
             {showRemoveConfirm && (
-              <div role="alertdialog" aria-labelledby="remove-title" className="mt-3 rounded-lg border border-red-200 bg-red-50 p-4">
-                <p id="remove-title" className="text-sm text-red-700 mb-3">
+              <div role="alertdialog" aria-labelledby="remove-title" className="mt-3 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-4">
+                <p id="remove-title" className="text-sm text-[var(--neon-danger)] mb-3">
                   Are you sure you want to remove this listing? This action cannot be undone.
                 </p>
                 <div className="flex gap-2">
                   <button
                     onClick={handleRemove}
                     disabled={removing}
-                    className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+                    className="rounded-lg bg-[var(--neon-danger)] px-4 py-2 text-sm font-medium text-white hover:brightness-110 disabled:opacity-50"
                   >
                     {removing ? 'Removing...' : 'Yes, remove'}
                   </button>
                   <button
                     onClick={() => setShowRemoveConfirm(false)}
-                    className="rounded-lg border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50"
+                    className="btn-cyber-outline"
                   >
                     Cancel
                   </button>
@@ -304,61 +304,61 @@ export default function ListingDetailClient() {
 
             {/* Error display */}
             {error && (
-              <div className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-600 border border-red-200">
+              <div className="mt-3 rounded-lg bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)] border border-[var(--neon-danger)]/40">
                 {error}
               </div>
             )}
 
             {/* Description */}
-            <div className="mt-6 border-t border-zinc-200 pt-6">
-              <h2 className="text-sm font-semibold text-zinc-900 mb-2">Description</h2>
-              <p className="text-sm text-zinc-600 whitespace-pre-line leading-relaxed">
+            <div className="mt-6 border-t border-[var(--border-subtle)] pt-6">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-2">Description</h2>
+              <p className="text-sm text-[var(--text-muted)] whitespace-pre-line leading-relaxed">
                 {listing.description}
               </p>
             </div>
 
             {/* Details table */}
-            <div className="mt-6 border-t border-zinc-200 pt-6">
-              <h2 className="text-sm font-semibold text-zinc-900 mb-3">Details</h2>
+            <div className="mt-6 border-t border-[var(--border-subtle)] pt-6">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Details</h2>
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-                <dt className="text-zinc-500">Category</dt>
-                <dd className="text-zinc-900">{listing.category}</dd>
+                <dt className="text-[var(--text-muted)]">Category</dt>
+                <dd className="text-[var(--text-primary)]">{listing.category}</dd>
 
                 {listing.brand && (
                   <>
-                    <dt className="text-zinc-500">Brand</dt>
-                    <dd className="text-zinc-900">{listing.brand}</dd>
+                    <dt className="text-[var(--text-muted)]">Brand</dt>
+                    <dd className="text-[var(--text-primary)]">{listing.brand}</dd>
                   </>
                 )}
 
-                <dt className="text-zinc-500">Condition</dt>
-                <dd className="text-zinc-900">{condition.label}</dd>
+                <dt className="text-[var(--text-muted)]">Condition</dt>
+                <dd className="text-[var(--text-primary)]">{condition.label}</dd>
 
                 {listing.platform && (
                   <>
-                    <dt className="text-zinc-500">Platform</dt>
-                    <dd className="text-zinc-900">{listing.platform}</dd>
+                    <dt className="text-[var(--text-muted)]">Platform</dt>
+                    <dd className="text-[var(--text-primary)]">{listing.platform}</dd>
                   </>
                 )}
 
                 {listing.subcategory && (
                   <>
-                    <dt className="text-zinc-500">Subcategory</dt>
-                    <dd className="text-zinc-900">{listing.subcategory}</dd>
+                    <dt className="text-[var(--text-muted)]">Subcategory</dt>
+                    <dd className="text-[var(--text-primary)]">{listing.subcategory}</dd>
                   </>
                 )}
 
-                <dt className="text-zinc-500">Listed</dt>
-                <dd className="text-zinc-900">{listedDate}</dd>
+                <dt className="text-[var(--text-muted)]">Listed</dt>
+                <dd className="text-[var(--text-primary)]">{listedDate}</dd>
               </dl>
             </div>
 
             {/* Seller card */}
-            <div className="mt-6 border-t border-zinc-200 pt-6">
-              <h2 className="text-sm font-semibold text-zinc-900 mb-3">Seller</h2>
+            <div className="mt-6 border-t border-[var(--border-subtle)] pt-6">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)] mb-3">Seller</h2>
               <Link
                 href={`/sellers/${listing.seller.id}`}
-                className="block rounded-xl border border-zinc-200 bg-white p-4 hover:border-blue-300 hover:shadow-sm transition-all"
+                className="panel clip-corner block p-4 hover:border-[var(--neon-cyan)] hover:shadow-sm transition-all"
               >
                 <div className="flex items-center gap-3">
                   <Avatar
@@ -368,15 +368,15 @@ export default function ListingDetailClient() {
                   />
 
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-zinc-900 hover:text-blue-600 transition-colors">
+                    <p className="text-sm font-medium text-[var(--text-primary)] hover:text-[var(--neon-cyan)] transition-colors">
                       {listing.seller.username}
                     </p>
                     {listing.seller.location && (
-                      <p className="text-xs text-zinc-500">{listing.seller.location}</p>
+                      <p className="text-xs text-[var(--text-muted)]">{listing.seller.location}</p>
                     )}
                   </div>
                   <svg
-                    className="h-4 w-4 text-zinc-400"
+                    className="h-4 w-4 text-[var(--text-dim)]"
                     fill="none"
                     viewBox="0 0 24 24"
                     stroke="currentColor"
@@ -392,20 +392,20 @@ export default function ListingDetailClient() {
                   {listing.seller.avgRating !== null ? (
                     <div className="flex items-center gap-1.5">
                       <Stars rating={listing.seller.avgRating} />
-                      <span className="text-zinc-700 font-medium">
+                      <span className="text-[var(--text-muted)] font-medium">
                         {listing.seller.avgRating.toFixed(1)}
                       </span>
-                      <span className="text-zinc-500">
+                      <span className="text-[var(--text-muted)]">
                         ({listing.seller.totalReviews} {listing.seller.totalReviews === 1 ? 'review' : 'reviews'})
                       </span>
                     </div>
                   ) : (
-                    <span className="text-zinc-400 text-xs">No reviews yet</span>
+                    <span className="text-[var(--text-dim)] text-xs">No reviews yet</span>
                   )}
                 </div>
 
                 {/* Stats */}
-                <div className="mt-3 flex gap-4 text-xs text-zinc-500">
+                <div className="mt-3 flex gap-4 text-xs text-[var(--text-muted)]">
                   <span>{listing.seller.totalSales} {listing.seller.totalSales === 1 ? 'sale' : 'sales'}</span>
                   <span aria-hidden="true">&middot;</span>
                   <span>Member since {memberSince}</span>

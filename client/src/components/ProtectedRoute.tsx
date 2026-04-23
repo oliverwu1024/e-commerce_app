@@ -18,7 +18,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   if (loading || !user) {
     return (
       <div className="flex flex-1 items-center justify-center">
-        <p className="text-zinc-500">Loading...</p>
+        <p className="text-[var(--text-muted)]">Loading...</p>
       </div>
     );
   }

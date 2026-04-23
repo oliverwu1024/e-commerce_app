@@ -55,22 +55,22 @@ function Cart() {
 
   if (loading && !loaded) {
     return (
-      <main className="flex-1 bg-zinc-50">
+      <main className="flex-1">
         <div className="mx-auto max-w-5xl px-4 py-8">
-          <div className="h-8 w-40 rounded bg-zinc-200 animate-pulse mb-6" />
+          <div className="h-8 w-40 rounded bg-[var(--bg-panel-hi)] animate-pulse mb-6" />
           <div className="grid gap-6 lg:grid-cols-3">
             <div className="lg:col-span-2 space-y-3">
               {Array.from({ length: 3 }).map((_, i) => (
-                <div key={i} className="flex gap-4 rounded-xl border border-zinc-200 bg-white p-4 animate-pulse">
-                  <div className="h-20 w-20 flex-shrink-0 rounded-lg bg-zinc-200" />
+                <div key={i} className="panel clip-corner flex gap-4 p-4 animate-pulse">
+                  <div className="h-20 w-20 flex-shrink-0 rounded-lg bg-[var(--bg-panel-hi)]" />
                   <div className="flex-1 space-y-2">
-                    <div className="h-4 w-2/3 rounded bg-zinc-200" />
-                    <div className="h-4 w-1/4 rounded bg-zinc-200" />
+                    <div className="h-4 w-2/3 rounded bg-[var(--bg-panel-hi)]" />
+                    <div className="h-4 w-1/4 rounded bg-[var(--bg-panel-hi)]" />
                   </div>
                 </div>
               ))}
             </div>
-            <div className="rounded-xl border border-zinc-200 bg-white p-6 h-48 animate-pulse" />
+            <div className="panel clip-corner p-6 h-48 animate-pulse" />
           </div>
         </div>
       </main>
@@ -78,15 +78,15 @@ function Cart() {
   }
 
   return (
-    <main className="flex-1 bg-zinc-50">
+    <main className="flex-1">
       <div className="mx-auto max-w-5xl px-4 py-8">
-        <h1 className="text-2xl font-bold text-zinc-900">Your Cart</h1>
-        <p className="mt-1 text-sm text-zinc-500">
+        <h1 className="text-2xl font-bold text-[var(--text-primary)]">Your Cart</h1>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
           {cart.itemCount} {cart.itemCount === 1 ? 'item' : 'items'}
         </p>
 
         {error && (
-          <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+          <div className="mt-4 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
             {error}
           </div>
         )}
@@ -103,36 +103,36 @@ function Cart() {
             </div>
 
             {/* Summary */}
-            <aside className="rounded-xl border border-zinc-200 bg-white p-6 h-fit lg:sticky lg:top-4">
-              <h2 className="text-sm font-semibold text-zinc-900">Order Summary</h2>
+            <aside className="panel clip-corner p-6 h-fit lg:sticky lg:top-4">
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Order Summary</h2>
 
               <dl className="mt-4 space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <dt className="text-zinc-500">Items in cart</dt>
-                  <dd className="text-zinc-900">{cart.itemCount}</dd>
+                  <dt className="text-[var(--text-muted)]">Items in cart</dt>
+                  <dd className="text-[var(--text-primary)]">{cart.itemCount}</dd>
                 </div>
                 <div className="flex justify-between">
-                  <dt className="text-zinc-500">Ready to checkout</dt>
-                  <dd className="text-zinc-900">{cart.checkoutableCount}</dd>
+                  <dt className="text-[var(--text-muted)]">Ready to checkout</dt>
+                  <dd className="text-[var(--text-primary)]">{cart.checkoutableCount}</dd>
                 </div>
-                <div className="border-t border-zinc-200 pt-3 flex justify-between text-base font-semibold">
-                  <dt className="text-zinc-900">Subtotal</dt>
-                  <dd className="text-zinc-900">{formatPrice(cart.subtotal)}</dd>
+                <div className="border-t border-[var(--border-subtle)] pt-3 flex justify-between text-base font-semibold">
+                  <dt className="text-[var(--text-primary)]">Subtotal</dt>
+                  <dd className="text-[var(--text-primary)]">{formatPrice(cart.subtotal)}</dd>
                 </div>
               </dl>
 
               {hasUnavailable && (
-                <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                <div className="mt-4 rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] p-3 text-xs text-[var(--neon-amber)]">
                   Some items are no longer available. Remove them before checking out.
                 </div>
               )}
 
               {emailUnverified && (
-                <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-800">
+                <div className="mt-4 rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] p-3 text-xs text-[var(--neon-amber)]">
                   Please verify your email before checking out.{' '}
                   <Link
                     href="/verify-email"
-                    className="font-medium underline hover:text-amber-900"
+                    className="font-medium underline hover:brightness-110"
                   >
                     Verify now
                   </Link>
@@ -140,7 +140,7 @@ function Cart() {
               )}
 
               {checkoutError && (
-                <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-700">
+                <div className="mt-4 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-xs text-[var(--neon-danger)]">
                   {checkoutError}
                 </div>
               )}
@@ -148,17 +148,17 @@ function Cart() {
               <button
                 onClick={handleCheckout}
                 disabled={!canCheckout || checkingOut}
-                className="mt-5 w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                className="btn-cyber-primary mt-5 w-full"
               >
                 {checkingOut ? 'Sending requests...' : 'Checkout'}
               </button>
-              <p className="mt-3 text-xs text-zinc-500">
+              <p className="mt-3 text-xs text-[var(--text-muted)]">
                 Checkout sends a purchase request to each seller. Payment is arranged after the seller confirms.
               </p>
 
               <Link
                 href="/browse"
-                className="mt-4 block text-center text-sm font-medium text-blue-600 hover:text-blue-700"
+                className="mt-4 block text-center text-sm font-medium text-[var(--neon-cyan)] hover:text-[var(--accent-soft)]"
               >
                 Continue browsing
               </Link>
@@ -172,9 +172,9 @@ function Cart() {
 
 function EmptyCart() {
   return (
-    <div className="mt-8 rounded-xl border border-zinc-200 bg-white px-6 py-16 text-center">
+    <div className="panel clip-corner mt-8 px-6 py-16 text-center">
       <svg
-        className="mx-auto h-14 w-14 text-zinc-300"
+        className="mx-auto h-14 w-14 text-[var(--text-dim)]"
         fill="none"
         viewBox="0 0 24 24"
         stroke="currentColor"
@@ -186,13 +186,13 @@ function EmptyCart() {
           d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-1.5 3h13M9 20a1 1 0 102 0 1 1 0 00-2 0zm8 0a1 1 0 102 0 1 1 0 00-2 0z"
         />
       </svg>
-      <h3 className="mt-3 text-sm font-medium text-zinc-900">Your cart is empty</h3>
-      <p className="mt-1 text-sm text-zinc-500">
+      <h3 className="mt-3 text-sm font-medium text-[var(--text-primary)]">Your cart is empty</h3>
+      <p className="mt-1 text-sm text-[var(--text-muted)]">
         Browse listings and add items you want to buy.
       </p>
       <Link
         href="/browse"
-        className="mt-4 inline-block rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-700"
+        className="btn-cyber-primary mt-4"
       >
         Browse Listings
       </Link>
@@ -224,18 +224,18 @@ function CartRow({
 
   return (
     <div
-      className={`flex gap-4 rounded-xl border bg-white p-4 transition-colors ${
-        unavailable ? 'border-amber-200' : 'border-zinc-200'
+      className={`panel clip-corner flex gap-4 p-4 transition-colors ${
+        unavailable ? 'border-[var(--neon-amber)]/40' : ''
       }`}
     >
       <Link
         href={`/listings/${listing.id}`}
-        className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-zinc-100"
+        className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-[var(--bg-panel-hi)]"
       >
         {imageUrl ? (
           <img src={imageUrl} alt={listing.title} className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full items-center justify-center text-zinc-300">
+          <div className="flex h-full items-center justify-center text-[var(--text-dim)]">
             <svg className="h-8 w-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
             </svg>
@@ -246,21 +246,21 @@ function CartRow({
       <div className="flex-1 min-w-0">
         <Link
           href={`/listings/${listing.id}`}
-          className="block text-sm font-medium text-zinc-900 truncate hover:text-blue-600 transition-colors"
+          className="block text-sm font-medium text-[var(--text-primary)] truncate hover:text-[var(--neon-cyan)] transition-colors"
         >
           {listing.title}
         </Link>
-        <p className="mt-0.5 text-base font-bold text-zinc-900">
+        <p className="mt-0.5 text-base font-bold text-[var(--text-primary)]">
           {formatPrice(listing.price)}
         </p>
         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs">
           <span className={`rounded-md px-2 py-0.5 font-medium ${condition.bg}`}>
             {condition.label}
           </span>
-          <span className="text-zinc-400">Sold by {listing.seller.username}</span>
+          <span className="text-[var(--text-dim)]">Sold by {listing.seller.username}</span>
         </div>
         {unavailable && (
-          <p className="mt-2 rounded-md bg-amber-50 px-2 py-1 text-xs text-amber-800">
+          <p className="mt-2 rounded-md bg-[var(--tint-amber)] px-2 py-1 text-xs text-[var(--neon-amber)]">
             {listing.status === 'SOLD'
               ? 'This item has already been sold.'
               : listing.status === 'ON_HOLD'
@@ -274,7 +274,7 @@ function CartRow({
         <button
           onClick={handleRemove}
           disabled={removing}
-          className="rounded-lg border border-zinc-300 px-3 py-1.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 hover:border-red-300 hover:text-red-600 disabled:opacity-50 transition-colors"
+          className="btn-cyber-outline text-xs"
         >
           {removing ? 'Removing...' : 'Remove'}
         </button>

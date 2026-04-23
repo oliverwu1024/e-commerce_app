@@ -241,8 +241,26 @@ function randomDate(daysAgo: number): Date {
   return faker.date.recent({ days: daysAgo });
 }
 
-function placeholderImageUrl(title: string): string {
-  return `https://placehold.co/600x400?text=${encodeURIComponent(title.slice(0, 30))}`;
+// Per-category keywords for LoremFlickr. Maps our marketplace categories to
+// search terms that return on-topic product photos.
+const IMAGE_KEYWORDS: Record<string, string> = {
+  Phones: 'smartphone',
+  Laptops: 'laptop',
+  Desktops: 'desktop-computer',
+  Tablets: 'tablet',
+  Consoles: 'game-console',
+  Cameras: 'camera',
+  Audio: 'headphones',
+  Accessories: 'keyboard',
+  'PC Parts': 'computer-hardware',
+};
+
+function placeholderImageUrl(category: string): string {
+  const keyword = IMAGE_KEYWORDS[category] ?? 'electronics';
+  // `lock` makes the URL deterministic so the same listing keeps the same
+  // photo across reloads (LoremFlickr otherwise rotates the image per hit).
+  const lock = faker.number.int({ min: 1, max: 100000 });
+  return `https://loremflickr.com/600/400/${keyword}?lock=${lock}`;
 }
 
 // ---------------------------------------------------------------------------
@@ -251,6 +269,7 @@ function placeholderImageUrl(title: string): string {
 
 async function main() {
   console.log('Clearing existing data...');
+  await prisma.notification.deleteMany();
   await prisma.message.deleteMany();
   await prisma.review.deleteMany();
   await prisma.order.deleteMany();
@@ -329,7 +348,7 @@ async function main() {
           createdAt: randomDate(60),
           images: {
             create: [
-              { url: placeholderImageUrl(product.title), displayOrder: 0 },
+              { url: placeholderImageUrl(categoryName), displayOrder: 0 },
             ],
           },
         },
@@ -363,7 +382,7 @@ async function main() {
         createdAt: randomDate(60),
         images: {
           create: [
-            { url: placeholderImageUrl(product.title), displayOrder: 0 },
+            { url: placeholderImageUrl(categoryName), displayOrder: 0 },
           ],
         },
       },

@@ -67,16 +67,19 @@ export default function RegisterPage() {
   const displayError = localError || error;
 
   return (
-    <div className="flex flex-1 items-center justify-center bg-zinc-50 px-4 py-12">
-      <div className="w-full max-w-md rounded-xl bg-white p-8 shadow-sm border border-zinc-200">
-        <h1 className="text-2xl font-bold text-zinc-900 mb-6">Create an account</h1>
+    <div className="flex flex-1 items-center justify-center px-4 py-12">
+      <div className="panel clip-corner w-full max-w-md p-8">
+        <h1 className="mb-6 text-2xl font-bold tracking-tight text-[var(--text-primary)] sm:text-3xl">
+          Create an account
+        </h1>
 
         {displayError && (
-          <div className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-600 border border-red-200">
-            {displayError}
+          <div className="mb-4 flex items-start justify-between gap-2 rounded-md border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
+            <span>{displayError}</span>
             <button
               onClick={() => { setLocalError(''); clearError(); }}
-              className="float-right font-medium hover:text-red-800"
+              aria-label="Dismiss error"
+              className="shrink-0 font-bold hover:brightness-110"
             >
               &times;
             </button>
@@ -86,15 +89,17 @@ export default function RegisterPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           {/* Seller type toggle */}
           <div>
-            <label className="block text-sm font-medium text-zinc-700 mb-2">Account type</label>
+            <label className="mb-2 block text-sm font-semibold text-[var(--text-primary)]">
+              Account type
+            </label>
             <div className="grid grid-cols-2 gap-2">
               <button
                 type="button"
                 onClick={() => setSellerType('PERSONAL')}
-                className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
+                className={`rounded-md border px-4 py-2.5 text-sm font-semibold transition-all ${
                   sellerType === 'PERSONAL'
-                    ? 'border-blue-600 bg-blue-50 text-blue-700'
-                    : 'border-zinc-300 text-zinc-600 hover:border-zinc-400'
+                    ? 'border-[var(--neon-cyan)] bg-[var(--tint-cyan)] text-[var(--neon-cyan)]'
+                    : 'border-[var(--border-hi)] text-[var(--text-muted)] hover:border-[var(--neon-cyan)]/50 hover:text-[var(--text-primary)]'
                 }`}
               >
                 Personal
@@ -102,10 +107,10 @@ export default function RegisterPage() {
               <button
                 type="button"
                 onClick={() => setSellerType('BUSINESS')}
-                className={`rounded-lg border px-4 py-2.5 text-sm font-medium transition-colors ${
+                className={`rounded-md border px-4 py-2.5 text-sm font-semibold transition-all ${
                   sellerType === 'BUSINESS'
-                    ? 'border-blue-600 bg-blue-50 text-blue-700'
-                    : 'border-zinc-300 text-zinc-600 hover:border-zinc-400'
+                    ? 'border-[var(--neon-cyan)] bg-[var(--tint-cyan)] text-[var(--neon-cyan)]'
+                    : 'border-[var(--border-hi)] text-[var(--text-muted)] hover:border-[var(--neon-cyan)]/50 hover:text-[var(--text-primary)]'
                 }`}
               >
                 Business
@@ -113,10 +118,12 @@ export default function RegisterPage() {
             </div>
           </div>
 
-          {/* Business name - only shown for business */}
           {sellerType === 'BUSINESS' && (
             <div>
-              <label htmlFor="businessName" className="block text-sm font-medium text-zinc-700 mb-1">
+              <label
+                htmlFor="businessName"
+                className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]"
+              >
                 Business name
               </label>
               <input
@@ -125,14 +132,14 @@ export default function RegisterPage() {
                 required
                 value={businessName}
                 onChange={(e) => setBusinessName(e.target.value)}
-                className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="input-cyber w-full px-3 py-2.5 text-sm"
                 placeholder="Your business name"
               />
             </div>
           )}
 
           <div>
-            <label htmlFor="name" className="block text-sm font-medium text-zinc-700 mb-1">
+            <label htmlFor="name" className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]">
               Full name
             </label>
             <input
@@ -141,13 +148,13 @@ export default function RegisterPage() {
               required
               value={name}
               onChange={(e) => setName(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="input-cyber w-full px-3 py-2.5 text-sm"
               placeholder="John Smith"
             />
           </div>
 
           <div>
-            <label htmlFor="username" className="block text-sm font-medium text-zinc-700 mb-1">
+            <label htmlFor="username" className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]">
               Username
             </label>
             <input
@@ -156,13 +163,13 @@ export default function RegisterPage() {
               required
               value={username}
               onChange={(e) => setUsername(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="input-cyber w-full px-3 py-2.5 text-sm"
               placeholder="johnsmith"
             />
           </div>
 
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-zinc-700 mb-1">
+            <label htmlFor="email" className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]">
               Email
             </label>
             <input
@@ -171,13 +178,13 @@ export default function RegisterPage() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="input-cyber w-full px-3 py-2.5 text-sm"
               placeholder="you@example.com"
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-zinc-700 mb-1">
+            <label htmlFor="password" className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]">
               Password
             </label>
             <input
@@ -186,13 +193,13 @@ export default function RegisterPage() {
               required
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="input-cyber w-full px-3 py-2.5 text-sm"
               placeholder="At least 8 characters"
             />
           </div>
 
           <div>
-            <label htmlFor="confirmPassword" className="block text-sm font-medium text-zinc-700 mb-1">
+            <label htmlFor="confirmPassword" className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]">
               Confirm password
             </label>
             <input
@@ -201,7 +208,7 @@ export default function RegisterPage() {
               required
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
-              className="w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="input-cyber w-full px-3 py-2.5 text-sm"
               placeholder="Confirm your password"
             />
           </div>
@@ -209,15 +216,18 @@ export default function RegisterPage() {
           <button
             type="submit"
             disabled={submitting}
-            className="w-full rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="btn-cyber-primary w-full"
           >
-            {submitting ? 'Creating account...' : 'Create account'}
+            {submitting ? 'Creating account…' : 'Create account'}
           </button>
         </form>
 
-        <p className="mt-6 text-center text-sm text-zinc-600">
+        <p className="mt-6 text-center text-sm text-[var(--text-muted)]">
           Already have an account?{' '}
-          <Link href="/login" className="font-medium text-blue-600 hover:text-blue-500">
+          <Link
+            href="/login"
+            className="font-semibold text-[var(--neon-cyan)] transition-colors hover:text-[var(--accent-soft)]"
+          >
             Sign in
           </Link>
         </p>

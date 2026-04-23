@@ -187,12 +187,12 @@ export default function ImageUpload({ images, onChange, maxImages = 10 }: Props)
           onDragLeave={handleDragLeave}
           className={`w-full rounded-lg border-2 border-dashed p-8 text-center transition-colors ${
             dragOver
-              ? 'border-blue-500 bg-blue-50'
-              : 'border-zinc-300 hover:border-zinc-400 hover:bg-zinc-50'
+              ? 'border-[var(--neon-cyan)] bg-[var(--tint-cyan)]'
+              : 'border-[var(--border-hi)] hover:border-[var(--border-hi)] hover:bg-[var(--bg-panel-hi)]'
           }`}
         >
           <svg
-            className="mx-auto h-10 w-10 text-zinc-400"
+            className="mx-auto h-10 w-10 text-[var(--text-dim)]"
             fill="none"
             viewBox="0 0 24 24"
             stroke="currentColor"
@@ -204,10 +204,10 @@ export default function ImageUpload({ images, onChange, maxImages = 10 }: Props)
               d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.41a2.25 2.25 0 013.182 0l2.909 2.91m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z"
             />
           </svg>
-          <p className="mt-2 text-sm font-medium text-zinc-700">
+          <p className="mt-2 text-sm font-medium text-[var(--text-primary)]">
             Click to upload or drag and drop
           </p>
-          <p className="mt-1 text-xs text-zinc-500">
+          <p className="mt-1 text-xs text-[var(--text-muted)]">
             JPG, PNG, or WebP up to 5 MB &middot; {images.length}/{maxImages} images
           </p>
         </button>
@@ -223,12 +223,12 @@ export default function ImageUpload({ images, onChange, maxImages = 10 }: Props)
       />
 
       {notice && (
-        <div className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-700">
+        <div className="flex items-start gap-2 rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] px-3 py-2 text-sm text-[var(--neon-amber)]">
           <span className="flex-1">{notice}</span>
           <button
             type="button"
             onClick={() => setNotice(null)}
-            className="font-medium hover:text-amber-900"
+            className="font-medium hover:brightness-110"
           >
             &times;
           </button>
@@ -240,7 +240,7 @@ export default function ImageUpload({ images, onChange, maxImages = 10 }: Props)
           {images.map((img, index) => (
             <div
               key={img.id}
-              className="group relative aspect-square overflow-hidden rounded-lg border border-zinc-200 bg-zinc-100"
+              className="group relative aspect-square overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)]"
             >
               <img
                 src={img.preview}
@@ -255,13 +255,13 @@ export default function ImageUpload({ images, onChange, maxImages = 10 }: Props)
               )}
 
               {img.error && (
-                <div className="absolute inset-0 flex items-center justify-center bg-red-900/60 p-2">
+                <div className="absolute inset-0 flex items-center justify-center bg-[var(--neon-danger)]/60 p-2">
                   <p className="text-center text-xs font-medium text-white">{img.error}</p>
                 </div>
               )}
 
               {index === 0 && (
-                <span className="absolute left-1.5 top-1.5 rounded bg-blue-600 px-1.5 py-0.5 text-[10px] font-semibold text-white">
+                <span className="absolute left-1.5 top-1.5 rounded bg-[var(--neon-cyan)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--btn-primary-text)]">
                   Cover
                 </span>
               )}
@@ -294,7 +294,7 @@ export default function ImageUpload({ images, onChange, maxImages = 10 }: Props)
                 <button
                   type="button"
                   onClick={() => removeImage(img.id)}
-                  className="rounded bg-red-600/80 p-1 text-white hover:bg-red-700"
+                  className="rounded bg-[var(--neon-danger)]/80 p-1 text-white hover:bg-[var(--neon-danger)]"
                   title="Remove"
                 >
                   <svg className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>

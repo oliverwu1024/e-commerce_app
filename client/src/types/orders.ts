@@ -21,11 +21,11 @@ export const ORDER_STATUS_STYLES: Record<
 > = {
   PENDING_CONFIRMATION: {
     label: 'Pending',
-    bg: 'bg-amber-100 text-amber-700',
+    bg: 'bg-[var(--tint-amber)] text-[var(--neon-amber)] border border-[var(--neon-amber)]/40',
   },
-  CONFIRMED: { label: 'Confirmed', bg: 'bg-blue-100 text-blue-700' },
-  COMPLETED: { label: 'Completed', bg: 'bg-emerald-100 text-emerald-700' },
-  CANCELLED: { label: 'Cancelled', bg: 'bg-zinc-100 text-zinc-500' },
+  CONFIRMED: { label: 'Confirmed', bg: 'bg-[var(--tint-cyan)] text-[var(--neon-cyan)] border border-[var(--neon-cyan)]/40' },
+  COMPLETED: { label: 'Completed', bg: 'bg-[var(--tint-green)] text-[var(--neon-green)] border border-[var(--neon-green)]/40' },
+  CANCELLED: { label: 'Cancelled', bg: 'bg-[var(--bg-panel-hi)] text-[var(--text-dim)] border border-[var(--border-subtle)]' },
 };
 
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {

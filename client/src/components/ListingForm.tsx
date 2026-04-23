@@ -156,37 +156,37 @@ export default function ListingForm({ listing }: Props) {
   return (
     <div className="mx-auto max-w-3xl px-4 py-8">
       {/* Breadcrumb */}
-      <nav className="mb-6 text-sm text-zinc-500">
-        <Link href="/" className="hover:text-zinc-700">Home</Link>
+      <nav className="mb-6 text-sm text-[var(--text-muted)]">
+        <Link href="/" className="hover:text-[var(--text-primary)]">Home</Link>
         <span className="mx-2">/</span>
         {isEdit ? (
           <>
-            <Link href={`/listings/${listing.id}`} className="hover:text-zinc-700">
+            <Link href={`/listings/${listing.id}`} className="hover:text-[var(--text-primary)]">
               {listing.title}
             </Link>
             <span className="mx-2">/</span>
-            <span className="text-zinc-900">Edit</span>
+            <span className="text-[var(--text-primary)]">Edit</span>
           </>
         ) : (
-          <span className="text-zinc-900">Sell an Item</span>
+          <span className="text-[var(--text-primary)]">Sell an Item</span>
         )}
       </nav>
 
-      <h1 className="text-2xl font-bold text-zinc-900">
+      <h1 className="text-2xl font-bold text-[var(--text-primary)]">
         {isEdit ? 'Edit Listing' : 'Create a Listing'}
       </h1>
-      <p className="mt-1 text-sm text-zinc-500">
+      <p className="mt-1 text-sm text-[var(--text-muted)]">
         {isEdit
           ? 'Update the details of your listing.'
           : 'Fill in the details below to list your item for sale.'}
       </p>
 
       {submitError && (
-        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-600">
+        <div className="mt-4 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           {submitError}
           <button
             onClick={() => setSubmitError('')}
-            className="float-right font-medium hover:text-red-800"
+            className="float-right font-medium hover:brightness-110"
           >
             &times;
           </button>
@@ -196,26 +196,26 @@ export default function ListingForm({ listing }: Props) {
       <form onSubmit={handleSubmit} className="mt-8 space-y-8">
         {/* Photos */}
         <section>
-          <h2 className="text-lg font-semibold text-zinc-900">Photos</h2>
-          <p className="mt-1 text-sm text-zinc-500">
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Photos</h2>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
             Add up to 10 photos. The first image will be the cover photo.
           </p>
           <div className="mt-3">
             <ImageUpload images={images} onChange={setImages} maxImages={10} />
           </div>
-          {errors.images && <p className="mt-1.5 text-sm text-red-600">{errors.images}</p>}
+          {errors.images && <p className="mt-1.5 text-sm text-[var(--neon-danger)]">{errors.images}</p>}
         </section>
 
-        <hr className="border-zinc-200" />
+        <hr className="border-[var(--border-subtle)]" />
 
         {/* Item Details */}
         <section className="space-y-5">
-          <h2 className="text-lg font-semibold text-zinc-900">Item Details</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Item Details</h2>
 
           {/* Title */}
           <div>
-            <label htmlFor="title" className="block text-sm font-medium text-zinc-700">
-              Title <span className="text-red-500">*</span>
+            <label htmlFor="title" className="block text-sm font-medium text-[var(--text-primary)]">
+              Title <span className="text-[var(--neon-danger)]">*</span>
             </label>
             <input
               id="title"
@@ -224,45 +224,45 @@ export default function ListingForm({ listing }: Props) {
               onChange={(e) => setTitle(e.target.value)}
               placeholder='e.g. "iPhone 14 Pro 128GB — Space Black"'
               maxLength={200}
-              className={`mt-1 w-full rounded-lg border px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:outline-none focus:ring-1 ${
+              className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-1 ${
                 errors.title
-                  ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
-                  : 'border-zinc-300 focus:border-blue-500 focus:ring-blue-500'
+                  ? 'border-[var(--neon-danger)]/60 bg-[var(--bg-input)] text-[var(--text-primary)] placeholder-[var(--text-dim)] focus:border-[var(--neon-danger)] focus:ring-[var(--neon-danger)]'
+                  : 'input-cyber'
               }`}
             />
             <div className="mt-1 flex justify-between">
-              {errors.title ? <p className="text-sm text-red-600">{errors.title}</p> : <span />}
-              <span className="text-xs text-zinc-400">{title.length}/200</span>
+              {errors.title ? <p className="text-sm text-[var(--neon-danger)]">{errors.title}</p> : <span />}
+              <span className="text-xs text-[var(--text-dim)]">{title.length}/200</span>
             </div>
           </div>
 
           {/* Category */}
           <div>
-            <label htmlFor="category" className="block text-sm font-medium text-zinc-700">
-              Category <span className="text-red-500">*</span>
+            <label htmlFor="category" className="block text-sm font-medium text-[var(--text-primary)]">
+              Category <span className="text-[var(--neon-danger)]">*</span>
             </label>
             <select
               id="category"
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className={`mt-1 w-full rounded-lg border px-3 py-2 text-zinc-900 focus:outline-none focus:ring-1 ${
+              className={`mt-1 w-full rounded-lg border px-3 py-2 focus:outline-none focus:ring-1 ${
                 errors.category
-                  ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
-                  : 'border-zinc-300 focus:border-blue-500 focus:ring-blue-500'
-              } ${!category ? 'text-zinc-400' : ''}`}
+                  ? 'border-[var(--neon-danger)]/60 bg-[var(--bg-input)] text-[var(--text-primary)] focus:border-[var(--neon-danger)] focus:ring-[var(--neon-danger)]'
+                  : 'input-cyber'
+              } ${!category ? 'text-[var(--text-dim)]' : ''}`}
             >
               <option value="" disabled>Select a category</option>
               {CATEGORIES.map((cat) => (
                 <option key={cat} value={cat}>{cat}</option>
               ))}
             </select>
-            {errors.category && <p className="mt-1 text-sm text-red-600">{errors.category}</p>}
+            {errors.category && <p className="mt-1 text-sm text-[var(--neon-danger)]">{errors.category}</p>}
           </div>
 
           {/* Brand / Subcategory / Platform */}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div>
-              <label htmlFor="brand" className="block text-sm font-medium text-zinc-700">Brand</label>
+              <label htmlFor="brand" className="block text-sm font-medium text-[var(--text-primary)]">Brand</label>
               <input
                 id="brand"
                 type="text"
@@ -270,42 +270,42 @@ export default function ListingForm({ listing }: Props) {
                 onChange={(e) => setBrand(e.target.value)}
                 placeholder="e.g. Apple, Samsung"
                 maxLength={100}
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="input-cyber mt-1 w-full px-3 py-2"
               />
             </div>
             <div>
-              <label htmlFor="subcategory" className="block text-sm font-medium text-zinc-700">Subcategory</label>
+              <label htmlFor="subcategory" className="block text-sm font-medium text-[var(--text-primary)]">Subcategory</label>
               <input
                 id="subcategory"
                 type="text"
                 value={subcategory}
                 onChange={(e) => setSubcategory(e.target.value)}
                 placeholder="e.g. Smartphone, Laptop"
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="input-cyber mt-1 w-full px-3 py-2"
               />
             </div>
             <div>
-              <label htmlFor="platform" className="block text-sm font-medium text-zinc-700">Platform</label>
+              <label htmlFor="platform" className="block text-sm font-medium text-[var(--text-primary)]">Platform</label>
               <input
                 id="platform"
                 type="text"
                 value={platform}
                 onChange={(e) => setPlatform(e.target.value)}
                 placeholder="e.g. iOS, Windows"
-                className="mt-1 w-full rounded-lg border border-zinc-300 px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="input-cyber mt-1 w-full px-3 py-2"
               />
             </div>
           </div>
         </section>
 
-        <hr className="border-zinc-200" />
+        <hr className="border-[var(--border-subtle)]" />
 
         {/* Condition */}
         <section>
-          <h2 className="text-lg font-semibold text-zinc-700">
-            Condition <span className="text-red-500">*</span>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+            Condition <span className="text-[var(--neon-danger)]">*</span>
           </h2>
-          {errors.condition && <p className="mt-1 text-sm text-red-600">{errors.condition}</p>}
+          {errors.condition && <p className="mt-1 text-sm text-[var(--neon-danger)]">{errors.condition}</p>}
           <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
             {CONDITIONS.map((c) => {
               const selected = condition === c.value;
@@ -314,8 +314,8 @@ export default function ListingForm({ listing }: Props) {
                   key={c.value}
                   className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors ${
                     selected
-                      ? 'border-blue-600 bg-blue-50 ring-1 ring-blue-600'
-                      : 'border-zinc-200 hover:border-zinc-300 hover:bg-zinc-50'
+                      ? 'border-[var(--neon-cyan)] bg-[var(--tint-cyan)] ring-1 ring-[var(--neon-cyan)]'
+                      : 'border-[var(--border-subtle)] hover:border-[var(--border-hi)] hover:bg-[var(--bg-panel-hi)]'
                   }`}
                 >
                   <input
@@ -324,13 +324,13 @@ export default function ListingForm({ listing }: Props) {
                     value={c.value}
                     checked={selected}
                     onChange={() => setCondition(c.value)}
-                    className="mt-0.5 h-4 w-4 border-zinc-300 text-blue-600 focus:ring-blue-500"
+                    className="mt-0.5 h-4 w-4 border-[var(--border-hi)] text-[var(--neon-cyan)] focus:ring-[var(--neon-cyan)]"
                   />
                   <div>
                     <span className={`inline-block rounded px-2 py-0.5 text-xs font-semibold ${c.bg}`}>
                       {c.label}
                     </span>
-                    <p className="mt-1 text-sm text-zinc-600">{CONDITION_DESCRIPTIONS[c.value]}</p>
+                    <p className="mt-1 text-sm text-[var(--text-muted)]">{CONDITION_DESCRIPTIONS[c.value]}</p>
                   </div>
                 </label>
               );
@@ -338,17 +338,17 @@ export default function ListingForm({ listing }: Props) {
           </div>
         </section>
 
-        <hr className="border-zinc-200" />
+        <hr className="border-[var(--border-subtle)]" />
 
         {/* Pricing */}
         <section>
-          <h2 className="text-lg font-semibold text-zinc-900">Pricing</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Pricing</h2>
           <div className="mt-3">
-            <label htmlFor="price" className="block text-sm font-medium text-zinc-700">
-              Price (AUD) <span className="text-red-500">*</span>
+            <label htmlFor="price" className="block text-sm font-medium text-[var(--text-primary)]">
+              Price (AUD) <span className="text-[var(--neon-danger)]">*</span>
             </label>
             <div className="relative mt-1">
-              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500">$</span>
+              <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">$</span>
               <input
                 id="price"
                 type="text"
@@ -359,26 +359,26 @@ export default function ListingForm({ listing }: Props) {
                   if (val === '' || /^\d*\.?\d{0,2}$/.test(val)) setPrice(val);
                 }}
                 placeholder="0.00"
-                className={`w-full rounded-lg border py-2 pl-8 pr-14 text-zinc-900 placeholder-zinc-400 focus:outline-none focus:ring-1 ${
+                className={`w-full rounded-lg border py-2 pl-8 pr-14 focus:outline-none focus:ring-1 ${
                   errors.price
-                    ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
-                    : 'border-zinc-300 focus:border-blue-500 focus:ring-blue-500'
+                    ? 'border-[var(--neon-danger)]/60 bg-[var(--bg-input)] text-[var(--text-primary)] placeholder-[var(--text-dim)] focus:border-[var(--neon-danger)] focus:ring-[var(--neon-danger)]'
+                    : 'input-cyber'
                 }`}
               />
-              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-zinc-400">AUD</span>
+              <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--text-dim)]">AUD</span>
             </div>
-            {errors.price && <p className="mt-1 text-sm text-red-600">{errors.price}</p>}
+            {errors.price && <p className="mt-1 text-sm text-[var(--neon-danger)]">{errors.price}</p>}
           </div>
         </section>
 
-        <hr className="border-zinc-200" />
+        <hr className="border-[var(--border-subtle)]" />
 
         {/* Description */}
         <section>
-          <h2 className="text-lg font-semibold text-zinc-900">Description</h2>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">Description</h2>
           <div className="mt-3">
-            <label htmlFor="description" className="block text-sm font-medium text-zinc-700">
-              Describe your item <span className="text-red-500">*</span>
+            <label htmlFor="description" className="block text-sm font-medium text-[var(--text-primary)]">
+              Describe your item <span className="text-[var(--neon-danger)]">*</span>
             </label>
             <textarea
               id="description"
@@ -387,31 +387,31 @@ export default function ListingForm({ listing }: Props) {
               rows={5}
               maxLength={5000}
               placeholder="Include details like model, storage, colour, what's included, any defects or damage, and reason for selling."
-              className={`mt-1 w-full resize-y rounded-lg border px-3 py-2 text-zinc-900 placeholder-zinc-400 focus:outline-none focus:ring-1 ${
+              className={`mt-1 w-full resize-y rounded-lg border px-3 py-2 focus:outline-none focus:ring-1 ${
                 errors.description
-                  ? 'border-red-300 focus:border-red-500 focus:ring-red-500'
-                  : 'border-zinc-300 focus:border-blue-500 focus:ring-blue-500'
+                  ? 'border-[var(--neon-danger)]/60 bg-[var(--bg-input)] text-[var(--text-primary)] placeholder-[var(--text-dim)] focus:border-[var(--neon-danger)] focus:ring-[var(--neon-danger)]'
+                  : 'input-cyber'
               }`}
             />
             <div className="mt-1 flex justify-between">
               {errors.description ? (
-                <p className="text-sm text-red-600">{errors.description}</p>
+                <p className="text-sm text-[var(--neon-danger)]">{errors.description}</p>
               ) : (
                 <span />
               )}
-              <span className="text-xs text-zinc-400">{description.length}/5000</span>
+              <span className="text-xs text-[var(--text-dim)]">{description.length}/5000</span>
             </div>
           </div>
         </section>
 
-        <hr className="border-zinc-200" />
+        <hr className="border-[var(--border-subtle)]" />
 
         {/* Submit */}
         <div className="flex items-center gap-4">
           <button
             type="submit"
             disabled={submitting}
-            className="rounded-lg bg-blue-600 px-6 py-2.5 text-sm font-medium text-white hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+            className="btn-cyber-primary"
           >
             {submitting
               ? isEdit ? 'Saving...' : 'Publishing...'
@@ -419,7 +419,7 @@ export default function ListingForm({ listing }: Props) {
           </button>
           <Link
             href={isEdit ? `/listings/${listing.id}` : '/'}
-            className="text-sm font-medium text-zinc-600 hover:text-zinc-800"
+            className="btn-cyber-ghost"
           >
             Cancel
           </Link>
