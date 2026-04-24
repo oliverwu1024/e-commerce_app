@@ -1,4 +1,5 @@
 import { Router, Request, Response } from 'express';
+import { timingSafeEqual } from 'node:crypto';
 import { WebhooksHelper } from 'square';
 import prisma from '../lib/prisma.js';
 import { Prisma } from '../generated/prisma/client.js';
@@ -339,6 +340,142 @@ router.post('/square', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Square webhook handler error:', err);
     res.status(500).json({ error: 'Webhook handler failed' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/webhooks/email — inbound email webhook
+//
+// Receives parsed email events from whatever inbound provider you've wired to
+// support@electromarket-app.com (Resend Inbound, Mailgun Inbound Parse,
+// Cloudflare Email Routing → Worker → here, etc.). Auth is a shared secret
+// in `X-Email-Secret` (env: EMAIL_WEBHOOK_SECRET) — providers send it as a
+// custom header configured in their dashboard.
+//
+// Expected JSON body:
+//   {
+//     from:     "alice@gmail.com",
+//     to:       "support@electromarket-app.com",          // informational
+//     subject:  "Re: My order [#abc12345]",
+//     text:     "...plain-text body, ideally with quoted history stripped...",
+//     html?:    "...optional HTML body...",
+//     fromName?:"Alice Example"                            // if provider parses it
+//   }
+//
+// Threading: we extract `[#<submission-id-prefix>]` from the subject. If
+// matched, the email is appended as an INBOUND ContactReply on that
+// submission (and status flips back to NEW so the admin sees there's a
+// new message). If no tag, treat as a fresh inbound — create a new
+// ContactSubmission with status=NEW.
+// ---------------------------------------------------------------------------
+router.post('/email', async (req: Request, res: Response) => {
+  // Verify the shared secret. Providers vary in capability — most allow
+  // adding custom headers. If yours can't, prefix the path with the secret
+  // and update this check accordingly. Use timingSafeEqual to avoid leaking
+  // length-discriminating timing on a brute-force attempt.
+  const expected = process.env.EMAIL_WEBHOOK_SECRET;
+  if (!expected) {
+    console.error('[email webhook] EMAIL_WEBHOOK_SECRET not configured');
+    res.status(503).json({ error: 'Inbound email not configured' });
+    return;
+  }
+  const provided = req.headers['x-email-secret'];
+  if (typeof provided !== 'string') {
+    res.status(401).json({ error: 'Missing X-Email-Secret' });
+    return;
+  }
+  const a = Buffer.from(provided);
+  const b = Buffer.from(expected);
+  if (a.length !== b.length || !timingSafeEqual(a, b)) {
+    res.status(401).json({ error: 'Invalid secret' });
+    return;
+  }
+
+  // We're mounted under express.raw — req.body is a Buffer. Parse manually.
+  let payload: {
+    from?: string;
+    fromName?: string;
+    to?: string;
+    subject?: string;
+    text?: string;
+    html?: string;
+  };
+  try {
+    payload = JSON.parse((req.body as Buffer).toString('utf8'));
+  } catch {
+    res.status(400).json({ error: 'Invalid JSON' });
+    return;
+  }
+
+  const fromEmail = (payload.from || '').trim().toLowerCase();
+  const subject = (payload.subject || '').trim();
+  const body = (payload.text || payload.html || '').trim();
+
+  if (!fromEmail || !subject || !body) {
+    res.status(400).json({ error: 'Missing from / subject / body' });
+    return;
+  }
+
+  // Subject thread tag: [#<12-char-prefix>]. Inserted by sendAdminContactReply
+  // on every outbound, preserved by mail clients in the reply. Match
+  // case-insensitively because some clients lowercase header values.
+  const tagMatch = subject.match(/\[#([a-z0-9]+)\]/i);
+  const idPrefix = tagMatch ? tagMatch[1].toLowerCase() : null;
+
+  try {
+    if (idPrefix) {
+      // Find a submission whose UUID starts with the tag. Prisma's `startsWith`
+      // is case-insensitive when paired with `mode: 'insensitive'`. UUID alpha
+      // chars are lowercase already so this should always match exactly, but
+      // we use insensitive as a safety net.
+      const submission = await prisma.contactSubmission.findFirst({
+        where: { id: { startsWith: idPrefix, mode: 'insensitive' } },
+        select: { id: true, status: true, fromEmail: true },
+      });
+      if (submission) {
+        await prisma.$transaction([
+          prisma.contactReply.create({
+            data: {
+              submissionId: submission.id,
+              body,
+              direction: 'INBOUND',
+              // adminId stays null — this is the customer.
+            },
+          }),
+          // Customer just replied → reopen the thread for admin attention.
+          prisma.contactSubmission.update({
+            where: { id: submission.id },
+            data: { status: 'NEW' },
+          }),
+        ]);
+        res.json({ received: true, threadedTo: submission.id });
+        return;
+      }
+      // Tag present but no match (admin closed + DB cleared, replied to a
+      // forwarded chain, etc.). Fall through to new-submission creation so
+      // the message isn't lost.
+      console.warn(`[email webhook] thread tag #${idPrefix} not found — creating new submission`);
+    }
+
+    // No matching thread → cold email to support. Create a new submission.
+    // fromName is optional from providers; default to local-part for the
+    // "Hi <name>," salutation in the admin UI.
+    const fromName = (payload.fromName || fromEmail.split('@')[0] || 'Unknown').slice(0, 100);
+    // Strip our own subject tag from the persisted subject so it doesn't
+    // visibly carry forward in the admin UI.
+    const cleanedSubject = subject.replace(/\s*\[#[a-z0-9]+\]\s*/gi, ' ').trim().slice(0, 150);
+    const fresh = await prisma.contactSubmission.create({
+      data: {
+        fromName,
+        fromEmail,
+        subject: cleanedSubject || '(no subject)',
+        message: body.slice(0, 3000),
+      },
+    });
+    res.json({ received: true, createdSubmission: fresh.id });
+  } catch (err) {
+    console.error('[email webhook] handler failed:', err);
+    res.status(500).json({ error: 'Inbound handler failed' });
   }
 });
 

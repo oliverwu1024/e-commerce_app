@@ -12,7 +12,9 @@ type ContactReply = {
   id: string;
   body: string;
   sentAt: string;
-  admin: { id: string; username: string };
+  direction: 'OUTBOUND' | 'INBOUND';
+  // Null when the reply came from the customer via the inbound webhook.
+  admin: { id: string; username: string } | null;
 };
 
 type ContactSubmission = {
@@ -184,18 +186,34 @@ function SubmissionCard({
         {submission.message}
       </p>
 
-      {submission.replies.map((r) => (
-        <div
-          key={r.id}
-          className="mt-3 rounded border-l-2 border-[var(--neon-cyan)] bg-[var(--bg-panel-hi)] p-3 text-xs"
-        >
-          <p className="text-[var(--text-muted)]">
-            <strong className="text-[var(--text-primary)]">{r.admin.username}</strong>{' '}
-            · {new Date(r.sentAt).toLocaleString()}
-          </p>
-          <p className="mt-1 whitespace-pre-wrap text-[var(--text-primary)]">{r.body}</p>
-        </div>
-      ))}
+      {submission.replies.map((r) => {
+        const inbound = r.direction === 'INBOUND';
+        return (
+          <div
+            key={r.id}
+            className={`mt-3 rounded border-l-2 p-3 text-xs ${
+              inbound
+                ? 'border-[var(--neon-amber)] bg-[var(--tint-amber)]/30'
+                : 'border-[var(--neon-cyan)] bg-[var(--bg-panel-hi)]'
+            }`}
+          >
+            <p className="text-[var(--text-muted)]">
+              <strong className="text-[var(--text-primary)]">
+                {inbound
+                  ? `${submission.fromName} (customer)`
+                  : (r.admin?.username ?? 'admin')}
+              </strong>{' '}
+              · {new Date(r.sentAt).toLocaleString()}
+              {inbound && (
+                <span className="ml-2 rounded-full border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] px-1.5 py-0.5 text-[10px] font-medium text-[var(--neon-amber)]">
+                  inbound
+                </span>
+              )}
+            </p>
+            <p className="mt-1 whitespace-pre-wrap text-[var(--text-primary)]">{r.body}</p>
+          </div>
+        );
+      })}
 
       {submission.status !== 'CLOSED' && (
         <div className="mt-4">

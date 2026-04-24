@@ -281,26 +281,39 @@ export async function sendNewMessageEmail(
   });
 }
 
-// Admin replying to a customer support inquiry from inside the app. Sent
-// from the platform's noreply address with replyTo=ADMIN_EMAIL so any
-// follow-up from the customer comes back to the same admin inbox the
-// original /api/contact email landed in. From: never exposes the admin's
-// personal email — that was the whole point of building this flow.
+// Admin replying to a customer support inquiry from inside the app.
+//
+// The subject gets a [#<id-prefix>] tag — when the customer hits Reply in
+// their email client, that tag survives in the reply subject and our inbound
+// webhook (POST /api/webhooks/email) extracts it to thread the response back
+// onto the same ContactSubmission instead of opening a new ticket.
+//
+// We deliberately do NOT set Reply-To = ADMIN_EMAIL anymore — that header
+// was visible to the recipient and leaked the admin's personal address.
+// Instead, replies go to From: (noreply@electromarket-app.com) and our
+// inbound parsing picks them up from the support inbox via the webhook.
 export async function sendAdminContactReply(
+  submissionId: string,
   toEmail: string,
   toName: string,
   originalSubject: string,
   body: string,
 ): Promise<void> {
-  const adminEmail = process.env.ADMIN_EMAIL;
-  // Strip an existing "Re:" so reply chains don't grow "Re: Re: Re:".
-  const cleaned = originalSubject.replace(/^(re:\s*)+/i, '').trim();
-  const subject = `Re: ${cleaned}`;
+  // Strip an existing "Re:" or our own "[#xxx]" tag so reply chains don't
+  // grow "Re: Re: Re:" or "[#abc] [#abc]".
+  const cleaned = originalSubject
+    .replace(/^(re:\s*)+/i, '')
+    .replace(/\s*\[#[a-z0-9]+\]\s*/gi, ' ')
+    .trim();
+  const tag = `[#${submissionId.slice(0, 12)}]`;
+  const subject = `Re: ${cleaned} ${tag}`;
 
   await sendMail({
     from: EMAIL_CONFIG.from,
     to: toEmail,
-    replyTo: adminEmail || undefined,
+    // No replyTo — Reply-To headers are recipient-visible. Replies route
+    // back through the From: address (noreply@) which our inbound webhook
+    // is configured to receive at the email provider.
     subject,
     html: `
       <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
@@ -311,8 +324,11 @@ export async function sendAdminContactReply(
         </p>
         <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;"/>
         <p style="color: #9ca3af; font-size: 12px;">
-          Reply to this email and your message will reach us at the same place
-          your original enquiry went.
+          Reply to this email or write to us at
+          <a href="mailto:support@electromarket-app.com">support@electromarket-app.com</a>
+          — the conversation continues in the same place. Please keep
+          ${escapeHtml(tag)} in the subject line so we can match it to your
+          ticket.
         </p>
       </div>
     `,

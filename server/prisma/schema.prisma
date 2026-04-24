@@ -99,9 +99,14 @@ enum DisputeReason {
 }
 
 enum ContactStatus {
-  NEW       // arrived, no admin action
-  REPLIED   // at least one admin reply sent
+  NEW       // arrived, no admin action (or customer just replied on a previously-replied thread)
+  REPLIED   // at least one admin reply sent and waiting on customer
   CLOSED    // admin marked done; no more replies expected
+}
+
+enum ContactReplyDirection {
+  OUTBOUND  // admin → customer, sent via sendAdminContactReply
+  INBOUND   // customer → admin, received via /api/webhooks/email
 }
 
 // Audience preset for a broadcast. KEEP IN SYNC with resolveAudience() in
@@ -541,20 +546,24 @@ model ContactSubmission {
   @@index([fromEmail])
 }
 
-// One row per admin reply on a contact submission. Stored so we can render
-// the conversation history in /admin/contact and so we know which admin
-// answered (audit). Reply content is sent via Resend at write time; this is
-// the local record of what we sent.
+// One row per message on a contact thread — both directions. Admin replies
+// have direction=OUTBOUND and adminId set. Customer replies (received via
+// the inbound email webhook) have direction=INBOUND, adminId=null.
+// Originally OUTBOUND-only ("ContactReply"); INBOUND added when we set up
+// inbound email parsing so customers replying via Gmail land in /admin/contact
+// instead of the admin's personal inbox.
 model ContactReply {
-  id           String  @id @default(uuid())
-  body         String  @db.VarChar(5000)
-  sentAt       DateTime @default(now())
+  id        String                  @id @default(uuid())
+  body      String                  @db.VarChar(10000)
+  sentAt    DateTime                @default(now())
+  direction ContactReplyDirection   @default(OUTBOUND)
 
   submission   ContactSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
   submissionId String
 
-  admin   User   @relation("contactReplyAdmin", fields: [adminId], references: [id])
-  adminId String
+  // Set on OUTBOUND only (admin who composed the reply). NULL on INBOUND.
+  admin   User?  @relation("contactReplyAdmin", fields: [adminId], references: [id])
+  adminId String?
 
   @@index([submissionId, sentAt])
 }

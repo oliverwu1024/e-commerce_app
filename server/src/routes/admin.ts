@@ -448,6 +448,7 @@ router.post(
     }
     try {
       await sendAdminContactReply(
+        submission.id,
         submission.fromEmail,
         submission.fromName,
         submission.subject,
@@ -466,6 +467,7 @@ router.post(
         submissionId: id,
         body: parsed.data.body,
         adminId: req.userId!,
+        direction: 'OUTBOUND',
       },
     });
     await prisma.contactSubmission.update({
