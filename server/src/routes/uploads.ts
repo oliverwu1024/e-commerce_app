@@ -1,11 +1,11 @@
 import { Router, Request, Response } from 'express';
 import crypto from 'crypto';
-import rateLimit from 'express-rate-limit';
 import { PutObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { z } from 'zod';
 import { s3, S3_BUCKET, S3_REGION } from '../config/s3.js';
 import { authenticate } from '../middleware/auth.js';
+import { createRateLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
 
@@ -40,12 +40,10 @@ const presignedUrlSchema = z.object({
   purpose: z.enum(['listing', 'id-document', 'avatar']).optional().default('listing'),
 });
 
-const uploadLimiter = rateLimit({
+const uploadLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 60,
   message: { error: 'Too many upload requests, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 // POST /api/uploads/presigned-url — Generate a presigned S3 PUT URL

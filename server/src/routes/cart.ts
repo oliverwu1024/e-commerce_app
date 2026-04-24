@@ -1,19 +1,17 @@
 import { Router, Request, Response } from 'express';
-import rateLimit from 'express-rate-limit';
 import prisma from '../lib/prisma.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { uuidSchema } from '../schemas/common.js';
 import { addCartItemSchema } from '../schemas/cart.js';
 import { authenticate } from '../middleware/auth.js';
+import { createRateLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
 
-const cartWriteLimiter = rateLimit({
+const cartWriteLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 60,
   message: { error: 'Too many cart changes, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 const CART_ITEM_SELECT = {

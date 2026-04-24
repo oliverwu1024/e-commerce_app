@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
-import rateLimit from 'express-rate-limit';
 import prisma from '../lib/prisma.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { authenticate } from '../middleware/auth.js';
+import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { uuidSchema } from '../schemas/common.js';
 import {
   createInquirySchema,
@@ -15,12 +15,10 @@ const router = Router();
 
 // Tighter limiter — inquiries are write-heavy (one per question typed) and a
 // good thing to throttle to discourage bots.
-const inquiryWriteLimiter = rateLimit({
+const inquiryWriteLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 60,
   message: { error: 'Too many inquiry actions; please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 const INQUIRY_SUMMARY_SELECT = {

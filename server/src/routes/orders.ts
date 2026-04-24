@@ -1,5 +1,4 @@
 import { Router, Request, Response } from 'express';
-import rateLimit from 'express-rate-limit';
 import { randomUUID } from 'node:crypto';
 import {
   OrdersController,
@@ -8,6 +7,7 @@ import {
 import prisma from '../lib/prisma.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { authenticate } from '../middleware/auth.js';
+import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { uuidSchema } from '../schemas/common.js';
 import {
   completeOrderSchema,
@@ -36,28 +36,22 @@ import { sendOrderPlacedEmail, sendNewMessageEmail } from '../utils/email.js';
 
 const router = Router();
 
-const checkoutLimiter = rateLimit({
+const checkoutLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 30,
   message: { error: 'Too many checkout attempts, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
-const orderMutationLimiter = rateLimit({
+const orderMutationLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 60,
   message: { error: 'Too many order updates, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
-const messagingLimiter = rateLimit({
+const messagingLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 120,
   message: { error: 'Too many messages, please slow down' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 // Thrown inside the checkout transaction to force rollback on a lost race.

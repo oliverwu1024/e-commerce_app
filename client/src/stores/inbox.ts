@@ -67,6 +67,9 @@ export const useInboxStore = create<InboxState>((set, get) => ({
   },
 
   reset: () => {
-    set({ counts: { notifications: 0, messages: 0 }, loaded: false });
+    set({
+      counts: { notifications: 0, messages: 0, orderMessages: 0, inquiryMessages: 0 },
+      loaded: false,
+    });
   },
 }));

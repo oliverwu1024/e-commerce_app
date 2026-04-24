@@ -1,8 +1,8 @@
 import { Router, Request, Response } from 'express';
-import rateLimit from 'express-rate-limit';
 import prisma from '../lib/prisma.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { authenticate } from '../middleware/auth.js';
+import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { uuidSchema } from '../schemas/common.js';
 import {
   createReviewSchema,
@@ -12,12 +12,10 @@ import { createNotification } from '../services/notifications.js';
 
 const router = Router();
 
-const reviewWriteLimiter = rateLimit({
+const reviewWriteLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 30,
   message: { error: 'Too many reviews submitted, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 const REVIEW_SELECT = {

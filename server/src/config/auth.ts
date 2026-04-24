@@ -11,7 +11,10 @@ if (!process.env.JWT_SECRET && process.env.NODE_ENV !== 'test') {
 export const AUTH_CONFIG = {
   jwtSecret: process.env.JWT_SECRET || 'test-only-jwt-secret-do-not-use',
   jwtExpiresIn: '7d',
-  bcryptRounds: 10,
+  // 12 is the 2026 baseline for bcrypt — ~300ms per hash on modern hardware,
+  // four orders of magnitude more offline-crack cost than 10. Existing hashes
+  // stored at 10 stay valid because bcrypt encodes the cost in the hash.
+  bcryptRounds: 12,
   cookie: {
     name: 'token',
     httpOnly: true,

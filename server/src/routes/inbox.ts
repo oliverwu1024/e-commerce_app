@@ -1,16 +1,14 @@
 import { Router, Request, Response } from 'express';
-import rateLimit from 'express-rate-limit';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
+import { createRateLimiter } from '../middleware/rateLimiter.js';
 
 const router = Router();
 
-const inboxLimiter = rateLimit({
+const inboxLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 300, // polled from the navbar
   message: { error: 'Too many inbox requests' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 // ---------------------------------------------------------------------------

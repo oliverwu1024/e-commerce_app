@@ -1,18 +1,16 @@
 import { Router, Request, Response } from 'express';
-import rateLimit from 'express-rate-limit';
 import prisma from '../lib/prisma.js';
 import type { Prisma } from '../generated/prisma/client.js';
 import { authenticate } from '../middleware/auth.js';
+import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { notificationQuerySchema, markReadSchema } from '../schemas/notifications.js';
 
 const router = Router();
 
-const notifLimiter = rateLimit({
+const notifLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 300, // polling-friendly — bell refetches every ~60s on the client
   message: { error: 'Too many notification requests' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 const NOTIFICATION_SELECT = {

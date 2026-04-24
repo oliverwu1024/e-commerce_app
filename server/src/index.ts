@@ -19,15 +19,50 @@ import inquiryRoutes from './routes/inquiries.js';
 import webhookRoutes from './routes/webhooks.js';
 import { validateSquareWebhookConfig } from './config/square.js';
 
-// Startup config checks — fail fast rather than silently-400 every webhook.
+// Fail fast at boot on missing required env — the alternative is a service
+// that reports "ok" and 500s on the first real request. JWT_SECRET is already
+// guarded in config/auth.ts; this adds the rest of the critical ones.
+function validateEnv(): void {
+  const required = ['DATABASE_URL', 'CLIENT_URL'];
+  const missing = required.filter((key) => !process.env[key]);
+  if (missing.length > 0) {
+    throw new Error(
+      `Required environment variables missing: ${missing.join(', ')}. ` +
+        'Set them in .env (dev) or the container environment (prod).',
+    );
+  }
+}
+validateEnv();
 validateSquareWebhookConfig();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-app.use(helmet());
+// Trust exactly one proxy hop (nginx / ALB). Without this, req.ip is the
+// proxy's loopback address and every user shares one rate-limit bucket; also
+// the `secure: true` cookie flag (which reads X-Forwarded-Proto) is ignored.
+// express-rate-limit v8 warns loudly if this is unset when X-Forwarded-For
+// is present, so setting it locally too costs nothing and prevents noise.
+app.set('trust proxy', 1);
+
+// Helmet defaults plus a stricter frame-ancestors to block clickjacking of
+// the API. `contentSecurityPolicy: false` because this process serves JSON
+// only — the Next client handles its own CSP.
+app.use(
+  helmet({
+    contentSecurityPolicy: false,
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+    frameguard: { action: 'deny' },
+  }),
+);
+
+// CLIENT_URL may be a comma-separated list for preview-deploy topologies.
+const allowedOrigins = (process.env.CLIENT_URL || 'http://localhost:3000')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean);
 app.use(cors({
-  origin: process.env.CLIENT_URL || 'http://localhost:3000',
+  origin: allowedOrigins.length === 1 ? allowedOrigins[0] : allowedOrigins,
   credentials: true,
 }));
 
@@ -61,6 +96,29 @@ app.use('/api/notifications', notificationRoutes);
 app.use('/api/inbox', inboxRoutes);
 app.use('/api/inquiries', inquiryRoutes);
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+// Graceful shutdown: stop accepting new connections, let in-flight requests
+// finish, then close the Prisma pool. Without this, SIGTERM (docker stop,
+// k8s evict) kills mid-transaction writes. The 15-second cap is the same
+// grace window Kubernetes defaults to — matching it avoids surprise SIGKILLs.
+function shutdown(signal: string): void {
+  console.log(`${signal} received, shutting down...`);
+  const timeout = setTimeout(() => {
+    console.error('Shutdown timed out; forcing exit.');
+    process.exit(1);
+  }, 15000);
+  server.close(async () => {
+    clearTimeout(timeout);
+    try {
+      await prisma.$disconnect();
+    } catch (err) {
+      console.error('Error disconnecting Prisma:', err);
+    }
+    process.exit(0);
+  });
+}
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));

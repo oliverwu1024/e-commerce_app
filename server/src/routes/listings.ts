@@ -1,24 +1,31 @@
 import { Router, Request, Response } from 'express';
-import rateLimit from 'express-rate-limit';
 import prisma from '../lib/prisma.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { listingQuerySchema, createListingSchemaForUser, updateListingSchemaForUser, paginationSchema } from '../schemas/listings.js';
 import { uuidSchema } from '../schemas/common.js';
 import { authenticate } from '../middleware/auth.js';
+import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { getSellerStats } from '../services/sellerStats.js';
 
 const router = Router();
 
-const createListingLimiter = rateLimit({
+const createListingLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 30,
   message: { error: 'Too many listings created, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
+});
+
+// Guard the public browse/search endpoint against enumeration abuse. Keys on
+// user when authenticated (most visitors are anonymous, so this largely falls
+// back to IP).
+const browseLimiter = createRateLimiter({
+  windowMs: 15 * 60 * 1000,
+  max: 300,
+  message: { error: 'Too many requests, please slow down' },
 });
 
 // GET /api/listings — Browse listings with filters, search, sort, pagination
-router.get('/', async (req: Request, res: Response) => {
+router.get('/', browseLimiter, async (req: Request, res: Response) => {
   try {
     const parsed = listingQuerySchema.safeParse(req.query);
     if (!parsed.success) {

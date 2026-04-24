@@ -1,0 +1,92 @@
+# Production compose. Differs from docker-compose.yml (dev) in:
+#   - restart: unless-stopped on long-running services
+#   - no bind-mount of src/ (image is authoritative)
+#   - server/client commands run the compiled output, not nodemon/next-dev
+#   - every secret comes from the environment; fails fast if missing
+#   - healthcheck on the server so orchestrators can detect DB-down
+#
+# Usage:
+#   1. Copy server/.env.example to server/.env.prod and fill in real values.
+#   2. export $(grep -v '^#' server/.env.prod | xargs) (or use docker-compose --env-file)
+#   3. docker compose -f docker-compose.prod.yml up -d --build
+#   4. First deploy only: docker compose -f docker-compose.prod.yml exec server npx prisma migrate deploy
+#
+# For a managed Postgres (RDS / Cloud SQL / Neon), delete the `db` service
+# and point DATABASE_URL at the managed instance. Consider Multi-AZ and
+# automated backups at that point.
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-ecommerce}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    # No host port publish in prod — only the server container talks to it.
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  server:
+    build:
+      context: ./server
+      target: runner
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    environment:
+      NODE_ENV: production
+      PORT: 5000
+      DATABASE_URL: ${DATABASE_URL:?DATABASE_URL is required}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      CLIENT_URL: ${CLIENT_URL:?CLIENT_URL is required}
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST is required}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:?SMTP_USER is required}
+      SMTP_PASS: ${SMTP_PASS:?SMTP_PASS is required}
+      EMAIL_FROM: ${EMAIL_FROM:?EMAIL_FROM is required}
+      AWS_REGION: ${AWS_REGION:?AWS_REGION is required}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:?AWS_ACCESS_KEY_ID is required}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:?AWS_SECRET_ACCESS_KEY is required}
+      AWS_S3_BUCKET: ${AWS_S3_BUCKET:?AWS_S3_BUCKET is required}
+      STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
+      STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
+      SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN:-}
+      SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-}
+      SQUARE_ENV: ${SQUARE_ENV:-production}
+      SQUARE_WEBHOOK_SIGNATURE_KEY: ${SQUARE_WEBHOOK_SIGNATURE_KEY:-}
+      SQUARE_WEBHOOK_URL: ${SQUARE_WEBHOOK_URL:-}
+      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
+      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
+      PAYPAL_ENV: ${PAYPAL_ENV:-production}
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    depends_on:
+      db:
+        condition: service_healthy
+
+  client:
+    build:
+      context: ./client
+      target: runner
+      args:
+        # Baked into the client bundle at build time — must be the
+        # public-facing API URL, not the internal compose service name.
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:?NEXT_PUBLIC_API_URL is required}
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      - server
+
+volumes:
+  pgdata:

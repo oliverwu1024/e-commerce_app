@@ -1,24 +1,22 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import rateLimit from 'express-rate-limit';
 import { Prisma } from '../generated/prisma/client.js';
 import prisma from '../lib/prisma.js';
 import { AUTH_CONFIG } from '../config/auth.js';
 import { EMAIL_CONFIG } from '../config/email.js';
 import { registerSchema, loginSchema } from '../schemas/auth.js';
 import { authenticate, JwtPayload } from '../middleware/auth.js';
+import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { clearTokenCookie } from '../utils/cookies.js';
 import { generateVerificationToken, sendVerificationEmail } from '../utils/email.js';
 
 const router = Router();
 
-const authLimiter = rateLimit({
+const authLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 20,
   message: { error: 'Too many attempts, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 // Dev-only: expose the verification URL in API responses + stdout so a dev
@@ -51,6 +49,7 @@ function setTokenCookie(res: Response, token: string): void {
     secure: AUTH_CONFIG.cookie.secure,
     sameSite: AUTH_CONFIG.cookie.sameSite,
     maxAge: AUTH_CONFIG.cookie.maxAge,
+    path: '/',
   });
 }
 

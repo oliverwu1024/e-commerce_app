@@ -1,7 +1,6 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
-import rateLimit from 'express-rate-limit';
 import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import prisma from '../lib/prisma.js';
 import { Prisma } from '../generated/prisma/client.js';
@@ -10,6 +9,7 @@ import { EMAIL_CONFIG } from '../config/email.js';
 import { clearTokenCookie } from '../utils/cookies.js';
 import { s3, S3_BUCKET, S3_REGION } from '../config/s3.js';
 import { authenticate } from '../middleware/auth.js';
+import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { uuidSchema } from '../schemas/common.js';
 import {
   updateProfileSchema,
@@ -35,38 +35,30 @@ function buildVerificationUrl(token: string): string {
 
 const router = Router();
 
-const profileLimiter = rateLimit({
+const profileLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 60,
   message: { error: 'Too many requests, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
-const passwordChangeLimiter = rateLimit({
+const passwordChangeLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { error: 'Too many password change attempts, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 // Split the phone limiters so a streak of failed confirms doesn't also block
 // the user from requesting a fresh code on a different bucket.
-const phoneStartLimiter = rateLimit({
+const phoneStartLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 6,
   message: { error: 'Too many code requests, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
-const phoneConfirmLimiter = rateLimit({
+const phoneConfirmLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 10,
   message: { error: 'Too many confirmation attempts, please try again later' },
-  standardHeaders: true,
-  legacyHeaders: false,
 });
 
 const PHONE_CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
