@@ -34,7 +34,7 @@ export const EXPECTED_CURRENCY = 'AUD';
 export async function markOrderPaid(
   orderId: string,
   paymentMethod: PaymentMethod,
-  reported: { amountCents: string; currency: string },
+  reported: { amountCents: string; currency: string; providerId?: string | null },
 ): Promise<PaidResult> {
   const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
@@ -71,6 +71,9 @@ export async function markOrderPaid(
         // (or auto-flip after N days; not yet implemented).
         status: 'PAID',
         paymentMethod,
+        // Provider's payment identifier — used later to issue refunds
+        // through the same provider account that took the charge.
+        ...(reported.providerId ? { paymentProviderId: reported.providerId } : {}),
         // Close the payment session so cancel is no longer blocked. Keeps the
         // invariant "post-payment ⇒ paymentSessionState=COMPLETED" for the
         // admin stuck-orders query.

@@ -19,6 +19,7 @@ import inquiryRoutes from './routes/inquiries.js';
 import webhookRoutes from './routes/webhooks.js';
 import contactRoutes from './routes/contact.js';
 import sellerPaymentRoutes from './routes/sellerPayments.js';
+import disputeRoutes from './routes/disputes.js';
 import { validateSquareWebhookConfig } from './config/square.js';
 import { verifySmtpAtStartup } from './config/email.js';
 import { csrfOriginGuard } from './middleware/csrf.js';
@@ -116,6 +117,8 @@ app.use('/api/inbox', inboxRoutes);
 app.use('/api/inquiries', inquiryRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/seller/payments', sellerPaymentRoutes);
+// disputes mounts its own /orders/:id/disputes and /admin/disputes paths
+app.use('/api', disputeRoutes);
 
 const server = app.listen(PORT, () => {
   logger.info('server.start', { port: Number(PORT) });

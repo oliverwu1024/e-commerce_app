@@ -99,6 +99,7 @@ router.post('/stripe', async (req: Request, res: Response) => {
         client_reference_id?: string | null;
         amount_total?: number | null;
         currency?: string | null;
+        payment_intent?: string | null;
       };
       // event.account is populated for Connect events (i.e., every session
       // under the new flow). Logged for audit only — metadata.orderId is
@@ -126,6 +127,7 @@ router.post('/stripe', async (req: Request, res: Response) => {
         markOrderPaid(orderId, 'STRIPE', {
           amountCents: String(session.amount_total),
           currency: session.currency!,
+          providerId: session.payment_intent ?? null,
         }),
       );
 
@@ -145,6 +147,43 @@ router.post('/stripe', async (req: Request, res: Response) => {
         });
       }
       res.json({ received: true, result: result.status });
+      return;
+    }
+
+    if (event.type === 'account.updated') {
+      // Stripe pinged us because a connected account's state changed —
+      // KYC newly satisfied, requirements added, payouts paused, etc.
+      // Sync our SellerPaymentAccount row so buyers stop seeing a Pay
+      // button against a restricted seller. event.account holds the
+      // Stripe account ID; the event payload is the Account itself.
+      const account = event.data.object as {
+        id?: string;
+        charges_enabled?: boolean;
+        payouts_enabled?: boolean;
+        requirements?: { disabled_reason?: string | null } | null;
+      };
+      const accountId = account.id ?? (event as unknown as { account?: string }).account ?? null;
+      if (!accountId) {
+        res.json({ received: true, note: 'account.updated missing account id' });
+        return;
+      }
+      const charges = Boolean(account.charges_enabled);
+      const payouts = Boolean(account.payouts_enabled);
+      const restricted = Boolean(account.requirements?.disabled_reason);
+      const status = restricted ? 'RESTRICTED' : charges ? 'ACTIVE' : 'PENDING';
+      // Use updateMany so we silently no-op if we don't have a matching
+      // row (e.g., Stripe forwarding events for an account this platform
+      // doesn't own — unlikely but cheap to defend against).
+      const { count } = await prisma.sellerPaymentAccount.updateMany({
+        where: { provider: 'STRIPE', accountId },
+        data: {
+          status,
+          chargesEnabled: charges,
+          payoutsEnabled: payouts,
+          lastSyncedAt: new Date(),
+        },
+      });
+      res.json({ received: true, updated: count });
       return;
     }
 

@@ -31,6 +31,11 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
   const [showShipPicker, setShowShipPicker] = useState(false);
   const [trackingInput, setTrackingInput] = useState('');
   const [showReviewForm, setShowReviewForm] = useState(false);
+  const [showDisputeForm, setShowDisputeForm] = useState(false);
+  const [disputeReason, setDisputeReason] = useState<
+    'NOT_RECEIVED' | 'NOT_AS_DESCRIBED' | 'DAMAGED' | 'OTHER'
+  >('NOT_RECEIVED');
+  const [disputeDescription, setDisputeDescription] = useState('');
 
   const imageUrl = order.listing.images[0]?.url;
   const otherParty = role === 'buyer' ? order.seller : order.buyer;
@@ -79,6 +84,54 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
       setError(err instanceof Error ? err.message : 'Failed to start payment');
       setBusy(false);
       setShowPayPicker(false);
+    }
+  }
+
+  async function handleRefund() {
+    // Wallet refunds (Stripe / Square) re-credit the buyer's original card,
+    // which usually takes 5–10 days at their bank. CASH / BANK_TRANSFER
+    // assume the seller has settled offline; we just record the refund
+    // here so the order history is consistent.
+    const wallet =
+      order.paymentMethod === 'STRIPE' || order.paymentMethod === 'SQUARE';
+    const msg = wallet
+      ? `Refund A$${order.amount} to the buyer via ${order.paymentMethod}? This is a full refund and cannot be reversed from inside ElectroMarket.`
+      : `Mark this order as refunded? You should already have returned the buyer's payment via ${order.paymentMethod ? PAYMENT_METHOD_LABELS[order.paymentMethod] : 'the original method'} before doing this.`;
+    if (!confirm(msg)) return;
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/api/orders/${order.id}/refund`, { method: 'POST' });
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Refund failed');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function handleSubmitDispute() {
+    if (disputeDescription.trim().length < 10) {
+      setError('Please describe what happened in at least 10 characters.');
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/api/orders/${order.id}/disputes`, {
+        method: 'POST',
+        body: JSON.stringify({
+          reason: disputeReason,
+          description: disputeDescription.trim(),
+        }),
+      });
+      setShowDisputeForm(false);
+      setDisputeDescription('');
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to open dispute');
+    } finally {
+      setBusy(false);
     }
   }
 
@@ -213,6 +266,28 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
         >
           Mark Shipped
         </button>,
+        <button
+          key="refund"
+          onClick={handleRefund}
+          disabled={busy}
+          className="btn-cyber-outline text-xs"
+        >
+          Refund
+        </button>,
+      );
+    } else if (order.status === 'SHIPPED' || order.status === 'COMPLETED') {
+      // Refund remains available even after shipment — covers item-arrived-
+      // damaged and post-completion disputes. Seller is on the hook for
+      // recovering the item separately if they refund a shipped order.
+      actions.push(
+        <button
+          key="refund"
+          onClick={handleRefund}
+          disabled={busy}
+          className="btn-cyber-outline text-xs"
+        >
+          Refund
+        </button>,
       );
     }
   } else {
@@ -284,6 +359,27 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           className="btn-cyber-primary text-xs"
         >
           Mark Received
+        </button>,
+        <button
+          key="dispute"
+          onClick={() => setShowDisputeForm((v) => !v)}
+          disabled={busy}
+          className="btn-cyber-outline text-xs"
+        >
+          Open dispute
+        </button>,
+      );
+    } else if (order.status === 'PAID') {
+      // Buyer can dispute even before shipment — "I paid but the seller went
+      // dark" is a real failure mode and shouldn't require waiting for ship.
+      actions.push(
+        <button
+          key="dispute"
+          onClick={() => setShowDisputeForm((v) => !v)}
+          disabled={busy}
+          className="btn-cyber-outline text-xs"
+        >
+          Open dispute
         </button>,
       );
     } else if (order.status === 'COMPLETED' && !order.review) {
@@ -553,6 +649,65 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
               below. They&apos;ll mark the order as paid once payment is received.
             </p>
           )}
+        </div>
+      )}
+
+      {/* Dispute form — buyer opening a dispute on PAID/SHIPPED/COMPLETED */}
+      {showDisputeForm && role === 'buyer' && (
+        <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4 space-y-3">
+          <p className="text-xs font-medium text-[var(--text-primary)]">
+            Open a dispute on this order
+          </p>
+          <div>
+            <label className="text-[11px] text-[var(--text-muted)]">What went wrong?</label>
+            <select
+              value={disputeReason}
+              onChange={(e) =>
+                setDisputeReason(e.target.value as typeof disputeReason)
+              }
+              disabled={busy}
+              className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel)] p-2 text-xs text-[var(--text-primary)]"
+            >
+              <option value="NOT_RECEIVED">I never received the item</option>
+              <option value="NOT_AS_DESCRIBED">It&apos;s not as described</option>
+              <option value="DAMAGED">Arrived damaged</option>
+              <option value="OTHER">Other</option>
+            </select>
+          </div>
+          <textarea
+            value={disputeDescription}
+            onChange={(e) => setDisputeDescription(e.target.value)}
+            placeholder="Describe what happened (10–2000 characters). Include dates, what was promised vs received, photos uploaded elsewhere if relevant."
+            rows={4}
+            maxLength={2000}
+            disabled={busy}
+            className="w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel)] p-2 text-xs text-[var(--text-primary)]"
+          />
+          <p className="text-[11px] text-[var(--text-dim)]">
+            We&apos;ll notify the seller and mediate. ElectroMarket can&apos;t reverse a
+            transaction directly — refunds (if any) come from the seller via the same
+            payment method you paid with.
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleSubmitDispute}
+              disabled={busy || disputeDescription.trim().length < 10}
+              className="btn-cyber-primary text-xs disabled:opacity-50"
+            >
+              {busy ? 'Submitting…' : 'Open dispute'}
+            </button>
+            <button
+              onClick={() => {
+                setShowDisputeForm(false);
+                setDisputeDescription('');
+                setError('');
+              }}
+              disabled={busy}
+              className="btn-cyber-ghost text-xs"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 

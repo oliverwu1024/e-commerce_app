@@ -252,6 +252,7 @@ router.get('/stats', async (_req: Request, res: Response) => {
       SHIPPED: 0,
       COMPLETED: 0,
       CANCELLED: 0,
+      REFUNDED: 0,
     };
     for (const row of orderCounts) orders[row.status] = row._count._all;
 

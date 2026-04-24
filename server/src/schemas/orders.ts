@@ -25,7 +25,7 @@ export const orderListQuerySchema = z.object({
   page: z.coerce.number().int().min(1).optional().default(1),
   limit: z.coerce.number().int().min(1).max(50).optional().default(20),
   status: z
-    .enum(['PENDING_CONFIRMATION', 'CONFIRMED', 'PAID', 'SHIPPED', 'COMPLETED', 'CANCELLED'])
+    .enum(['PENDING_CONFIRMATION', 'CONFIRMED', 'PAID', 'SHIPPED', 'COMPLETED', 'CANCELLED', 'REFUNDED'])
     .optional(),
   // Convenience filter for the dashboard's "In Progress" vs "Past" tabs.
   // 'in_progress' = anything that's not COMPLETED or CANCELLED.
@@ -44,6 +44,18 @@ export const shipSchema = z.object({
 });
 
 export type ShipInput = z.infer<typeof shipSchema>;
+
+// Seller-initiated refund. Optional reason shown to the buyer + stored
+// on the order for the seller's own records.
+export const refundSchema = z.object({
+  reason: z
+    .string()
+    .trim()
+    .max(500, 'Reason must be 500 characters or fewer')
+    .optional(),
+});
+
+export type RefundInput = z.infer<typeof refundSchema>;
 
 // Buyer-initiated online payment. Only STRIPE + SQUARE are supported; sellers
 // who want another channel (cash / bank transfer / arranged-by-message) use

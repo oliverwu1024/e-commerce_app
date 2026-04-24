@@ -332,8 +332,18 @@ function Dashboard() {
         {activeTab === 'past_purchases' && (
           <OrdersTab role="buyer" bucket="past" refreshKey={ordersRefreshKey} />
         )}
-        {activeTab === 'in_sales' && <OrdersTab role="seller" bucket="in_progress" />}
-        {activeTab === 'past_sales' && <OrdersTab role="seller" bucket="past" />}
+        {activeTab === 'in_sales' && (
+          <>
+            <SellerEarningsCard />
+            <OrdersTab role="seller" bucket="in_progress" />
+          </>
+        )}
+        {activeTab === 'past_sales' && (
+          <>
+            <SellerEarningsCard />
+            <OrdersTab role="seller" bucket="past" />
+          </>
+        )}
       </div>
     </div>
   );
@@ -714,6 +724,136 @@ function SavedListingsTab() {
           </button>
         </div>
       )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Seller earnings rollup — sits above the sales orders list. Shows gross /
+// net / platform-fee totals plus a per-method breakdown so the seller can
+// see what came from Stripe vs Square vs cash. Fee figure is approximate
+// (uses current PLATFORM_FEE_BPS, not the historical rate per order).
+// ---------------------------------------------------------------------------
+type SellerEarnings = {
+  gross: string;
+  fee: string;
+  net: string;
+  byMethod: Array<{
+    method: 'STRIPE' | 'SQUARE' | 'CASH' | 'BANK_TRANSFER' | 'PAYPAL' | 'UNKNOWN';
+    count: number;
+    gross: string;
+    fee: string;
+  }>;
+  feeBasisPoints: number;
+};
+
+function SellerEarningsCard() {
+  const [data, setData] = useState<SellerEarnings | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<SellerEarnings>('/api/seller/payments/earnings')
+      .then((res) => {
+        if (!cancelled) setData(res);
+      })
+      .catch(() => {
+        // Silent: a failed earnings fetch shouldn't block the orders list.
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="mb-6 h-32 animate-pulse rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel)]" />
+    );
+  }
+  if (!data || Number(data.gross) === 0) return null;
+
+  const feePct = (data.feeBasisPoints / 100).toFixed(data.feeBasisPoints % 100 === 0 ? 0 : 2);
+
+  return (
+    <section className="mb-6 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel)] p-5">
+      <div className="flex items-baseline justify-between">
+        <h3 className="text-sm font-semibold uppercase tracking-wide text-[var(--text-muted)]">
+          Earnings
+        </h3>
+        <span className="text-xs text-[var(--text-dim)]">Lifetime · paid orders</span>
+      </div>
+      <dl className="mt-3 grid grid-cols-3 gap-4">
+        <Stat label="Gross" value={`A$${data.gross}`} />
+        <Stat label={`Platform fee (${feePct}%)`} value={`−A$${data.fee}`} muted />
+        <Stat label="Net to you" value={`A$${data.net}`} highlight />
+      </dl>
+      {data.byMethod.length > 1 && (
+        <div className="mt-4 border-t border-[var(--border-subtle)] pt-3">
+          <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
+            By payment method
+          </p>
+          <ul className="space-y-1 text-xs text-[var(--text-muted)]">
+            {data.byMethod.map((m) => (
+              <li key={m.method} className="flex items-center justify-between">
+                <span>
+                  {METHOD_LABEL[m.method]} · {m.count} order{m.count === 1 ? '' : 's'}
+                </span>
+                <span className="font-mono text-[var(--text-primary)]">
+                  A${m.gross}
+                  {Number(m.fee) > 0 && (
+                    <span className="ml-1 text-[var(--text-dim)]">(fee A${m.fee})</span>
+                  )}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <p className="mt-3 text-[11px] text-[var(--text-dim)]">
+        Platform fee is approximate — it&apos;s computed at the current {feePct}% rate, not
+        the historical rate at each charge. Cash and bank transfer are fee-free.
+      </p>
+    </section>
+  );
+}
+
+const METHOD_LABEL: Record<SellerEarnings['byMethod'][number]['method'], string> = {
+  STRIPE: 'Stripe',
+  SQUARE: 'Square',
+  CASH: 'Cash',
+  BANK_TRANSFER: 'Bank transfer',
+  PAYPAL: 'PayPal (legacy)',
+  UNKNOWN: 'Unknown',
+};
+
+function Stat({
+  label,
+  value,
+  muted,
+  highlight,
+}: {
+  label: string;
+  value: string;
+  muted?: boolean;
+  highlight?: boolean;
+}) {
+  return (
+    <div>
+      <dt className="text-xs text-[var(--text-muted)]">{label}</dt>
+      <dd
+        className={`mt-1 text-lg font-semibold ${
+          highlight
+            ? 'text-[var(--neon-cyan)]'
+            : muted
+              ? 'text-[var(--text-muted)]'
+              : 'text-[var(--text-primary)]'
+        }`}
+      >
+        {value}
+      </dd>
     </div>
   );
 }

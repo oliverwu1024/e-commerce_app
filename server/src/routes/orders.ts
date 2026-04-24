@@ -10,6 +10,7 @@ import {
   messageSchema,
   orderListQuerySchema,
   paySchema,
+  refundSchema,
   shipSchema,
 } from '../schemas/orders.js';
 import {
@@ -303,7 +304,7 @@ async function listOrders(
         in: ['PENDING_CONFIRMATION', 'CONFIRMED', 'PAID', 'SHIPPED'],
       };
     } else if (bucket === 'past') {
-      where.status = { in: ['COMPLETED', 'CANCELLED'] };
+      where.status = { in: ['COMPLETED', 'CANCELLED', 'REFUNDED'] };
     }
 
     const [orders, total] = await Promise.all([
@@ -1337,9 +1338,15 @@ router.post(
         res.status(502).json({ error: 'Square order missing amount/currency' });
         return;
       }
+      // Capture the underlying Square payment id so refunds can later call
+      // square.refunds.refundPayment({ payment_id }) without round-tripping
+      // through the order again. Falls back to the tender id which can also
+      // be used as payment id for card tenders in Square's API.
+      const paymentId = tender?.paymentId ?? tender?.id ?? null;
       const result = await markOrderPaid(id, 'SQUARE', {
         amountCents: String(amountMoney.amount),
         currency: amountMoney.currency,
+        providerId: paymentId,
       });
       if (result.status === 'not_found') {
         res.status(404).json({ error: 'Order not found' });
@@ -1367,6 +1374,189 @@ router.post(
       res.json({ order: updated, idempotent: result.status === 'already_completed' });
     } catch (err) {
       console.error('Square confirm error:', err);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/orders/:id/refund — seller refunds the buyer for a paid order.
+// Allowed on PAID / SHIPPED / COMPLETED. Routes the call through the seller's
+// connected provider account (Stripe Connect via stripeAccount header, Square
+// via seller's OAuth token) so the original card / wallet is credited. For
+// CASH / BANK_TRANSFER, no provider call — we trust the seller has settled
+// the offline channel and just flip status to REFUNDED for record-keeping.
+// Full-refund only in v1; partial-refund is a follow-up.
+// ---------------------------------------------------------------------------
+router.post(
+  '/:id/refund',
+  authenticate,
+  orderMutationLimiter,
+  async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const { id } = req.params;
+      if (!uuidSchema.safeParse(id).success) {
+        res.status(400).json({ error: 'Invalid order ID' });
+        return;
+      }
+      const parsed = refundSchema.safeParse(req.body ?? {});
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.issues[0].message });
+        return;
+      }
+      const { reason } = parsed.data;
+
+      const order = await prisma.order.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          amount: true,
+          status: true,
+          buyerId: true,
+          sellerId: true,
+          paymentMethod: true,
+          paymentProviderId: true,
+          listing: { select: { id: true, title: true } },
+          buyer: { select: { username: true } },
+        },
+      });
+      if (!order) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+      if (order.sellerId !== req.userId) {
+        res.status(403).json({ error: 'Only the seller can issue a refund' });
+        return;
+      }
+      if (
+        order.status !== 'PAID' &&
+        order.status !== 'SHIPPED' &&
+        order.status !== 'COMPLETED'
+      ) {
+        res.status(409).json({
+          error: 'Refunds are only allowed on paid / shipped / completed orders',
+        });
+        return;
+      }
+      if (!order.paymentMethod) {
+        res.status(409).json({ error: 'Order has no payment method on record' });
+        return;
+      }
+
+      const amountCents = Math.round(Number(order.amount) * 100);
+      let refundProviderId: string | null = null;
+
+      if (order.paymentMethod === 'STRIPE') {
+        const sellerAccount = await findAccount(order.sellerId, 'STRIPE');
+        if (!sellerAccount?.accountId) {
+          res.status(503).json({
+            error: 'Cannot refund: seller no longer has a connected Stripe account.',
+          });
+          return;
+        }
+        if (!order.paymentProviderId) {
+          res.status(409).json({
+            error:
+              'No Stripe payment_intent on record for this order. Refund must be issued manually from the Stripe dashboard.',
+          });
+          return;
+        }
+        try {
+          const refund = await getStripeClient().refunds.create(
+            { payment_intent: order.paymentProviderId },
+            { stripeAccount: sellerAccount.accountId },
+          );
+          refundProviderId = refund.id;
+        } catch (err) {
+          console.error('[refund] stripe refund failed:', err);
+          res.status(502).json({ error: 'Stripe refund failed; nothing changed.' });
+          return;
+        }
+      } else if (order.paymentMethod === 'SQUARE') {
+        const sellerAccount = await findAccount(order.sellerId, 'SQUARE');
+        if (!sellerAccount?.accessToken) {
+          res.status(503).json({
+            error: 'Cannot refund: seller no longer has a connected Square account.',
+          });
+          return;
+        }
+        if (!order.paymentProviderId) {
+          res.status(409).json({
+            error:
+              'No Square payment ID on record for this order. Refund must be issued manually from the Square dashboard.',
+          });
+          return;
+        }
+        try {
+          const sellerSquare = new SquareClient({
+            token: sellerAccount.accessToken,
+            environment:
+              process.env.SQUARE_ENV === 'production'
+                ? SquareEnvironment.Production
+                : SquareEnvironment.Sandbox,
+          });
+          const resp = await sellerSquare.refunds.refundPayment({
+            idempotencyKey: randomUUID(),
+            paymentId: order.paymentProviderId,
+            amountMoney: { amount: BigInt(amountCents), currency: 'AUD' },
+          });
+          refundProviderId = resp.refund?.id ?? null;
+        } catch (err) {
+          console.error('[refund] square refund failed:', err);
+          res.status(502).json({ error: 'Square refund failed; nothing changed.' });
+          return;
+        }
+      }
+      // CASH / BANK_TRANSFER / PAYPAL (legacy): no provider call. Seller is
+      // expected to have already moved the money offline; we just record
+      // the refund.
+
+      // Flip the order. Conditional on the same statuses we read above so a
+      // race against shipping/completion doesn't quietly succeed.
+      const { count } = await prisma.order.updateMany({
+        where: {
+          id,
+          status: { in: ['PAID', 'SHIPPED', 'COMPLETED'] },
+        },
+        data: {
+          status: 'REFUNDED',
+          refundedAt: new Date(),
+          refundReason: reason ?? null,
+          refundProviderId,
+        },
+      });
+      if (count === 0) {
+        // Provider call already succeeded; the order moved out from under
+        // us (extremely unlikely race). Don't undo the provider refund —
+        // log loudly so an admin can reconcile.
+        console.error('[refund] provider refunded but order state changed', {
+          orderId: id,
+          refundProviderId,
+        });
+        res.status(500).json({
+          error:
+            'Provider refund succeeded but the order state changed concurrently. Contact support to reconcile.',
+        });
+        return;
+      }
+
+      void createNotification({
+        recipientId: order.buyerId,
+        type: 'ORDER_REFUNDED',
+        title: 'Refund issued',
+        body: `Your payment for "${order.listing.title}" has been refunded${reason ? `: ${reason}` : '.'}`,
+        actorId: order.sellerId,
+        orderId: id,
+        listingId: order.listing.id,
+      });
+
+      const updated = await prisma.order.findUnique({
+        where: { id },
+        select: ORDER_SUMMARY_SELECT,
+      });
+      res.json({ order: updated, refundProviderId });
+    } catch (err) {
+      console.error('Refund error:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   },

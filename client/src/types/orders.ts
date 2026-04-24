@@ -6,7 +6,8 @@ export type OrderStatus =
   | 'PAID'
   | 'SHIPPED'
   | 'COMPLETED'
-  | 'CANCELLED';
+  | 'CANCELLED'
+  | 'REFUNDED';
 
 // In-progress = anything not yet finalised. Used by the dashboard filter.
 export const IN_PROGRESS_STATUSES: OrderStatus[] = [
@@ -16,7 +17,7 @@ export const IN_PROGRESS_STATUSES: OrderStatus[] = [
   'SHIPPED',
 ];
 
-export const PAST_STATUSES: OrderStatus[] = ['COMPLETED', 'CANCELLED'];
+export const PAST_STATUSES: OrderStatus[] = ['COMPLETED', 'CANCELLED', 'REFUNDED'];
 
 export type PaymentMethod =
   | 'CASH'
@@ -54,6 +55,10 @@ export const ORDER_STATUS_STYLES: Record<
   CANCELLED: {
     label: 'Cancelled',
     bg: 'bg-[var(--bg-panel-hi)] text-[var(--text-dim)] border border-[var(--border-subtle)]',
+  },
+  REFUNDED: {
+    label: 'Refunded',
+    bg: 'bg-[var(--tint-amber)] text-[var(--neon-amber)] border border-[var(--neon-amber)]/40',
   },
 };
 

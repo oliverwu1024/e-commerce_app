@@ -356,6 +356,19 @@ function QuickLinks({ pendingVerifications }: { pendingVerifications: number }) 
             {pendingVerifications}
           </span>
         </Link>
+        <Link
+          href="/admin/disputes"
+          className="panel clip-corner flex items-center justify-between p-4 hover:border-[var(--neon-cyan)] hover:shadow-sm transition"
+        >
+          <div>
+            <p className="text-sm font-semibold text-[var(--text-primary)]">
+              Open disputes
+            </p>
+            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+              Buyer-filed disputes awaiting admin resolution.
+            </p>
+          </div>
+        </Link>
       </div>
     </section>
   );

@@ -16,6 +16,7 @@ import {
   toPublic,
   upsertAccount,
 } from '../services/sellerPaymentAccounts.js';
+import { getSellerEarnings } from '../services/sellerEarnings.js';
 
 const router = Router();
 
@@ -39,6 +40,16 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
     accounts: accounts.map(toPublic),
     canAcceptOnline: accounts.some(canAcceptPayments),
   });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/seller/payments/earnings — gross / fee / net rollup for the
+// signed-in seller. Powers the dashboard earnings card. Includes a per-
+// method breakdown so the seller can see what's coming from Stripe vs cash.
+// ---------------------------------------------------------------------------
+router.get('/earnings', authenticate, async (req: Request, res: Response) => {
+  const earnings = await getSellerEarnings(req.userId!);
+  res.json(earnings);
 });
 
 // ===========================================================================

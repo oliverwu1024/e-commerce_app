@@ -28,6 +28,7 @@ enum OrderStatus {
   SHIPPED              // seller marked posted; in transit to buyer
   COMPLETED            // buyer confirmed received; deal finished
   CANCELLED            // either party cancelled
+  REFUNDED             // seller refunded the buyer post-payment (item returned, dispute outcome, etc.)
 }
 
 enum PaymentMethod {
@@ -72,12 +73,29 @@ enum NotificationType {
   ORDER_COMPLETED    // both: order fully complete (buyer received)
   ORDER_PAID         // seller: payment captured / marked paid
   ORDER_SHIPPED      // buyer: seller marked the item as posted
+  ORDER_REFUNDED     // buyer: seller issued a refund
+  ORDER_DISPUTED     // seller + admin: buyer opened a dispute
+  DISPUTE_RESOLVED   // buyer + seller: admin closed a dispute
   NEW_MESSAGE        // receiver: counterparty sent a message on an order thread
   NEW_INQUIRY        // seller: buyer opened a pre-purchase inquiry
   NEW_INQUIRY_REPLY  // either: counterparty replied on an inquiry thread
   NEW_REVIEW         // seller: buyer left a review
   ID_APPROVED        // user: admin approved ID
   ID_REJECTED        // user: admin rejected ID
+}
+
+enum DisputeStatus {
+  OPEN              // buyer just filed; awaiting admin / seller action
+  RESOLVED_REFUND   // admin marked resolved with refund (informational; refund itself happens via the refund endpoint)
+  RESOLVED_NO_REFUND // admin marked resolved without refund (seller's position upheld)
+  WITHDRAWN         // buyer withdrew the dispute
+}
+
+enum DisputeReason {
+  NOT_RECEIVED       // item never arrived
+  NOT_AS_DESCRIBED   // received but condition / model / spec doesn't match listing
+  DAMAGED            // arrived broken
+  OTHER              // free-text in `description`
 }
 
 enum InquiryStatus {
@@ -174,6 +192,9 @@ model User {
   notifications Notification[] @relation("recipient")
   triggeredNotifications Notification[] @relation("actor")
   paymentAccounts SellerPaymentAccount[]
+  buyerDisputes  Dispute[] @relation("disputeBuyer")
+  sellerDisputes Dispute[] @relation("disputeSeller")
+  resolvedDisputes Dispute[] @relation("disputeResolver")
 
   @@index([deletedAt])
 }
@@ -257,6 +278,18 @@ model Order {
   trackingNumber String?   @db.VarChar(100)
   shippedAt      DateTime?
   deliveredAt    DateTime?
+  // Provider-side payment identifier captured at PAID time, used for refunds.
+  //  - Stripe: payment_intent id (pi_...)
+  //  - Square: payment id (the tender behind the Order)
+  //  - cash/bank: null (no provider call possible)
+  paymentProviderId String? @db.VarChar(200)
+  // Refund metadata. refundedAt is set when status flips to REFUNDED;
+  // refundReason is the seller's free-text justification (shown to buyer).
+  // refundProviderId is the Stripe refund_id / Square refund_id for audit
+  // — null for cash/bank where no provider was involved.
+  refundedAt       DateTime?
+  refundReason     String?  @db.VarChar(500)
+  refundProviderId String?  @db.VarChar(200)
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
 
@@ -271,6 +304,7 @@ model Order {
 
   review   Review?
   messages Message[]
+  dispute  Dispute?
 
   @@index([sellerId, createdAt])
   @@index([buyerId, createdAt])
@@ -423,6 +457,40 @@ model InquiryMessage {
   @@index([inquiryId, createdAt])
   // Backs unread-count: "unread inquiry messages to me".
   @@index([receiverId, readAt])
+}
+
+// Buyer-initiated dispute on a paid order. One per order (unique on orderId)
+// — re-disputing means the buyer reopens via messaging, not a second row.
+// Notifying admin on creation lets us mediate; resolution is admin-only via
+// the admin disputes queue.
+model Dispute {
+  id          String         @id @default(uuid())
+  status      DisputeStatus  @default(OPEN)
+  reason      DisputeReason
+  description String         @db.VarChar(2000)
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+  resolvedAt  DateTime?
+  // Free-text resolution note from the admin (visible to buyer + seller).
+  resolutionNote String?     @db.VarChar(2000)
+
+  order   Order  @relation(fields: [orderId], references: [id])
+  orderId String @unique
+
+  buyer   User   @relation("disputeBuyer", fields: [buyerId], references: [id])
+  buyerId String
+
+  seller   User   @relation("disputeSeller", fields: [sellerId], references: [id])
+  sellerId String
+
+  // Set when an admin closes the dispute. Nullable — open disputes have no
+  // resolver yet.
+  resolvedBy   User?   @relation("disputeResolver", fields: [resolvedById], references: [id])
+  resolvedById String?
+
+  // Backs the admin queue ("show me OPEN disputes oldest-first").
+  @@index([status, createdAt])
+  @@index([sellerId])
 }
 
 // A seller's linked payment provider account. Per-seller credentials replace
