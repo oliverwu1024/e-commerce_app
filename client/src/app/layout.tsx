@@ -3,6 +3,7 @@ import { Orbitron, Manrope, Geist_Mono, Fraunces } from "next/font/google";
 import "./globals.css";
 import AuthProvider from "@/components/AuthProvider";
 import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
 
 const orbitron = Orbitron({
   variable: "--font-orbitron",
@@ -55,7 +56,8 @@ export default function RootLayout({
       <body className="min-h-full flex flex-col">
         <AuthProvider>
           <Navbar />
-          {children}
+          <main className="flex-1">{children}</main>
+          <Footer />
         </AuthProvider>
       </body>
     </html>

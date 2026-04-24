@@ -45,6 +45,7 @@ export type PendingVerification = {
   email: string;
   sellerType: SellerType;
   idDocumentUrl: string | null;
+  idDocumentBackUrl: string | null;
   idSubmittedAt: string | null;
   createdAt: string;
 };

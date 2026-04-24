@@ -163,10 +163,22 @@ function AdminVerificationsInner() {
                     rel="noopener noreferrer"
                     className="btn-cyber-outline text-xs"
                   >
-                    View document
+                    View front
                   </a>
                 ) : (
-                  <span className="text-xs text-[var(--text-dim)]">No document</span>
+                  <span className="text-xs text-[var(--text-dim)]">No front</span>
+                )}
+                {u.idDocumentBackUrl ? (
+                  <a
+                    href={u.idDocumentBackUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn-cyber-outline text-xs"
+                  >
+                    View back
+                  </a>
+                ) : (
+                  <span className="text-xs text-[var(--text-dim)]">No back</span>
                 )}
                 <button
                   type="button"

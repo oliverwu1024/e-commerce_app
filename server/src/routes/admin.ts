@@ -72,6 +72,7 @@ router.get('/verifications', async (req: Request, res: Response) => {
           email: true,
           sellerType: true,
           idDocumentUrl: true,
+          idDocumentBackUrl: true,
           idSubmittedAt: true,
           createdAt: true,
         },
@@ -79,12 +80,14 @@ router.get('/verifications', async (req: Request, res: Response) => {
       prisma.user.count({ where }),
     ]);
 
-    // Swap the raw S3 URL for a short-lived presigned GET URL so admins can
-    // view the document without the bucket being publicly readable.
+    // Swap raw S3 URLs for short-lived presigned GET URLs so admins can view
+    // the documents without the bucket being publicly readable. Front + back
+    // are signed independently so admins can open either in a new tab.
     const withSignedUrls = await Promise.all(
       users.map(async (u) => ({
         ...u,
         idDocumentUrl: await signIdDocumentUrl(u.idDocumentUrl),
+        idDocumentBackUrl: await signIdDocumentUrl(u.idDocumentBackUrl),
       })),
     );
 
@@ -166,9 +169,10 @@ router.put('/verifications/:userId', async (req: Request<{ userId: string }>, re
         data: {
           idVerification: 'REJECTED',
           idRejectionReason: parsed.data.reason,
-          // Clear the document URL so the rejected scan isn't left hanging;
-          // the user must re-upload to retry.
+          // Clear both document URLs so rejected scans aren't left hanging;
+          // the user must re-upload both sides to retry.
           idDocumentUrl: null,
+          idDocumentBackUrl: null,
           // Clear the submission timestamp so re-submission gets a fresh slot
           // at the back of the queue on sort time, not the original position.
           idSubmittedAt: null,

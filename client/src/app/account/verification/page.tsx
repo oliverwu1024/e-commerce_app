@@ -380,51 +380,64 @@ function IdStep({
   status: Status;
   onChange: () => void;
 }) {
-  const [file, setFile] = useState<File | null>(null);
+  const [frontFile, setFrontFile] = useState<File | null>(null);
+  const [backFile, setBackFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState('');
-  const inputRef = useRef<HTMLInputElement>(null);
+  const frontRef = useRef<HTMLInputElement>(null);
+  const backRef = useRef<HTMLInputElement>(null);
+
+  // Upload a single file to S3 via a presigned URL and return the canonical
+  // S3 URL the server will record. Shared by front + back.
+  async function uploadOne(file: File): Promise<string> {
+    const presign = await api<{ uploadUrl: string; fileUrl: string }>(
+      '/api/uploads/presigned-url',
+      {
+        method: 'POST',
+        body: JSON.stringify({
+          fileType: file.type,
+          fileSize: file.size,
+          purpose: 'id-document',
+        }),
+      },
+    );
+    const uploadRes = await fetch(presign.uploadUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': file.type },
+      body: file,
+    });
+    if (!uploadRes.ok) {
+      throw new Error(`Upload failed (${uploadRes.status})`);
+    }
+    return presign.fileUrl;
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!file) return;
+    if (!frontFile || !backFile) return;
     setError('');
     setUploading(true);
     try {
-      // 1. Ask server for a presigned PUT URL on the id-documents prefix.
-      const presign = await api<{ uploadUrl: string; fileUrl: string }>(
-        '/api/uploads/presigned-url',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            fileType: file.type,
-            fileSize: file.size,
-            purpose: 'id-document',
-          }),
-        },
-      );
+      // Upload front and back in parallel — they hit different presigned URLs
+      // so there's no coordination needed. On any failure neither state flips
+      // because we call verify-id only after both have succeeded.
+      const [frontUrl, backUrl] = await Promise.all([
+        uploadOne(frontFile),
+        uploadOne(backFile),
+      ]);
 
-      // 2. PUT the file to S3 directly.
-      const uploadRes = await fetch(presign.uploadUrl, {
-        method: 'PUT',
-        headers: { 'Content-Type': file.type },
-        body: file,
-      });
-      if (!uploadRes.ok) {
-        throw new Error(`Upload failed (${uploadRes.status})`);
-      }
-
-      // 3. Tell the server the URL to record + flip idVerification → PENDING_REVIEW.
       await api<{ message: string }>('/api/users/verify-id', {
         method: 'POST',
-        body: JSON.stringify({ documentUrl: presign.fileUrl }),
+        body: JSON.stringify({ documentUrl: frontUrl, documentBackUrl: backUrl }),
       });
 
-      setFile(null);
-      if (inputRef.current) inputRef.current.value = '';
+      setFrontFile(null);
+      setBackFile(null);
+      if (frontRef.current) frontRef.current.value = '';
+      if (backRef.current) backRef.current.value = '';
       onChange();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload document');
+      setError(err instanceof Error ? err.message : 'Failed to upload documents');
     } finally {
       setUploading(false);
     }
@@ -437,54 +450,51 @@ function IdStep({
       )}
       {status === 'pending' && (
         <p className="text-sm text-[var(--text-muted)]">
-          Your document is under review. This usually takes 1–2 business days.
+          Your documents are under review. This usually takes 1–2 business days.
         </p>
       )}
       {status === 'rejected' && (
         <div className="mb-3 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           <strong className="font-medium">Rejected.</strong>{' '}
-          {profile.idRejectionReason ?? 'No reason provided.'} Please upload a clearer document.
+          {profile.idRejectionReason ?? 'No reason provided.'} Please upload clearer documents.
         </div>
       )}
 
       {(status === 'todo' || status === 'rejected') && (
-        <form onSubmit={handleSubmit} className="space-y-3">
+        <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <div className="rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
               {error}
             </div>
           )}
           <p className="text-sm text-[var(--text-muted)]">
-            Upload a clear photo of your driver's licence, passport or other government-issued ID.
+            Upload clear photos of the <strong>front and back</strong> of your driver's
+            licence, passport card or other government-issued ID.
           </p>
-          <label className="block">
-            <span className="sr-only">ID document</span>
-            <input
-              ref={inputRef}
-              type="file"
-              accept={ID_ACCEPT}
-              onChange={(e) => {
-                setError('');
-                const f = e.target.files?.[0];
-                if (!f) {
-                  setFile(null);
-                  return;
-                }
-                if (f.size > 5 * 1024 * 1024) {
-                  setError('File must be under 5 MB');
-                  setFile(null);
-                  e.target.value = '';
-                  return;
-                }
-                setFile(f);
-              }}
-              className="block w-full text-sm text-[var(--text-muted)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--tint-cyan)] file:px-3 file:py-2 file:text-sm file:font-medium file:text-[var(--neon-cyan)] hover:file:brightness-110"
-            />
-          </label>
+
+          <IdFileInput
+            label="Front of ID"
+            file={frontFile}
+            inputRef={frontRef}
+            onChange={(f, msg) => {
+              setError(msg ?? '');
+              setFrontFile(f);
+            }}
+          />
+          <IdFileInput
+            label="Back of ID"
+            file={backFile}
+            inputRef={backRef}
+            onChange={(f, msg) => {
+              setError(msg ?? '');
+              setBackFile(f);
+            }}
+          />
+
           <p className="text-xs text-[var(--text-dim)]">{ID_ACCEPT_LABEL}</p>
           <button
             type="submit"
-            disabled={!file || uploading}
+            disabled={!frontFile || !backFile || uploading}
             className="btn-cyber-primary"
           >
             {uploading ? 'Uploading...' : 'Submit for review'}
@@ -492,6 +502,48 @@ function IdStep({
         </form>
       )}
     </StepCard>
+  );
+}
+
+function IdFileInput({
+  label,
+  file,
+  inputRef,
+  onChange,
+}: {
+  label: string;
+  file: File | null;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+  onChange: (file: File | null, errorMessage?: string) => void;
+}) {
+  return (
+    <label className="block">
+      <span className="block text-sm font-medium text-[var(--text-primary)]">{label}</span>
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ID_ACCEPT}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (!f) {
+            onChange(null);
+            return;
+          }
+          if (f.size > 5 * 1024 * 1024) {
+            e.target.value = '';
+            onChange(null, 'File must be under 5 MB');
+            return;
+          }
+          onChange(f);
+        }}
+        className="mt-1 block w-full text-sm text-[var(--text-muted)] file:mr-3 file:rounded-lg file:border-0 file:bg-[var(--tint-cyan)] file:px-3 file:py-2 file:text-sm file:font-medium file:text-[var(--neon-cyan)] hover:file:brightness-110"
+      />
+      {file && (
+        <span className="mt-1 block text-xs text-[var(--text-dim)]">
+          Selected: {file.name}
+        </span>
+      )}
+    </label>
   );
 }
 

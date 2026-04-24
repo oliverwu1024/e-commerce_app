@@ -17,6 +17,7 @@ import notificationRoutes from './routes/notifications.js';
 import inboxRoutes from './routes/inbox.js';
 import inquiryRoutes from './routes/inquiries.js';
 import webhookRoutes from './routes/webhooks.js';
+import contactRoutes from './routes/contact.js';
 import { validateSquareWebhookConfig } from './config/square.js';
 import { verifySmtpAtStartup } from './config/email.js';
 import { csrfOriginGuard } from './middleware/csrf.js';
@@ -112,6 +113,7 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/inbox', inboxRoutes);
 app.use('/api/inquiries', inquiryRoutes);
+app.use('/api/contact', contactRoutes);
 
 const server = app.listen(PORT, () => {
   logger.info('server.start', { port: Number(PORT) });

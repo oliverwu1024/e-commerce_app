@@ -24,7 +24,11 @@ import {
   updateAvatarSchema,
 } from '../schemas/users.js';
 import { getSellerStats } from '../services/sellerStats.js';
-import { generateVerificationToken, sendVerificationEmail } from '../utils/email.js';
+import {
+  generateVerificationToken,
+  sendVerificationEmail,
+  sendIdSubmittedEmail,
+} from '../utils/email.js';
 
 const DEV_EMAIL_ENABLED = process.env.ENABLE_DEV_EMAIL === '1';
 
@@ -380,7 +384,8 @@ router.post('/verify-phone/confirm', authenticate, phoneConfirmLimiter, async (r
 
 // ---------------------------------------------------------------------------
 // POST /api/users/verify-id — submit ID document for admin review
-// documentUrl must be an S3 URL under this user's id-documents/ prefix.
+// Both documentUrl (front) and documentBackUrl (back) must be S3 URLs under
+// this user's id-documents/ prefix. Each is HEAD-checked before we flip state.
 // ---------------------------------------------------------------------------
 router.post('/verify-id', authenticate, profileLimiter, async (req: Request, res: Response) => {
   try {
@@ -389,11 +394,11 @@ router.post('/verify-id', authenticate, profileLimiter, async (req: Request, res
       res.status(400).json({ error: parsed.error.issues[0].message });
       return;
     }
-    const { documentUrl } = parsed.data;
+    const { documentUrl, documentBackUrl } = parsed.data;
 
     const current = await prisma.user.findUnique({
       where: { id: req.userId },
-      select: { sellerType: true, idVerification: true },
+      select: { sellerType: true, idVerification: true, username: true, email: true },
     });
     if (!current) {
       res.status(404).json({ error: 'User not found' });
@@ -410,7 +415,12 @@ router.post('/verify-id', authenticate, profileLimiter, async (req: Request, res
       return;
     }
 
-    // URL must belong to this user's id-documents prefix on our bucket.
+    if (documentUrl === documentBackUrl) {
+      res.status(400).json({ error: 'Front and back must be different uploads.' });
+      return;
+    }
+
+    // Each URL must belong to this user's id-documents prefix on our bucket.
     if (!S3_BUCKET) {
       res.status(503).json({ error: 'ID upload service is not configured.' });
       return;
@@ -418,37 +428,57 @@ router.post('/verify-id', authenticate, profileLimiter, async (req: Request, res
     const bucketRoot = `https://${S3_BUCKET}.s3.${S3_REGION}.amazonaws.com/`;
     const expectedPrefix = `${bucketRoot}id-documents/${req.userId}/`;
     if (!documentUrl.startsWith(expectedPrefix)) {
-      res.status(400).json({ error: 'Document URL does not match your upload prefix.' });
+      res.status(400).json({ error: 'Front document URL does not match your upload prefix.' });
+      return;
+    }
+    if (!documentBackUrl.startsWith(expectedPrefix)) {
+      res.status(400).json({ error: 'Back document URL does not match your upload prefix.' });
       return;
     }
 
-    // Verify the object actually exists before flipping to PENDING_REVIEW.
-    // A syntactically-valid URL under the user's prefix proves nothing — the
-    // user could POST the path without having uploaded, leaving admins to
-    // click View document and 404. HEAD is cheap and catches this.
-    const key = documentUrl.slice(bucketRoot.length);
-    try {
-      await s3.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }));
-    } catch (err) {
-      const status = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
-      if (status === 404 || status === 403) {
-        res.status(400).json({ error: 'Upload not found. Please try uploading again.' });
-        return;
+    // HEAD-check both uploads before flipping state. A syntactically-valid URL
+    // under the user's prefix proves nothing — the user could POST the path
+    // without having actually uploaded, leaving admins to click and 404.
+    for (const [label, url] of [
+      ['front', documentUrl],
+      ['back', documentBackUrl],
+    ] as const) {
+      const key = url.slice(bucketRoot.length);
+      try {
+        await s3.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+      } catch (err) {
+        const status = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
+        if (status === 404 || status === 403) {
+          res.status(400).json({ error: `${label === 'front' ? 'Front' : 'Back'} upload not found. Please try uploading again.` });
+          return;
+        }
+        throw err;
       }
-      throw err;
     }
 
     await prisma.user.update({
       where: { id: req.userId },
       data: {
         idDocumentUrl: documentUrl,
+        idDocumentBackUrl: documentBackUrl,
         idVerification: 'PENDING_REVIEW',
         idSubmittedAt: new Date(),
         idRejectionReason: null,
       },
     });
 
-    res.json({ message: 'ID document submitted for review.' });
+    // Notify admin. Fire-and-log: a broken email pipeline shouldn't block the
+    // user from flipping to PENDING_REVIEW — the dashboard is authoritative.
+    const adminEmail = process.env.ADMIN_EMAIL;
+    if (adminEmail) {
+      sendIdSubmittedEmail(adminEmail, current.username, current.email, req.userId!).catch(
+        (err) => {
+          console.error('Failed to send ID-submitted admin email:', err);
+        },
+      );
+    }
+
+    res.json({ message: 'ID documents submitted for review.' });
   } catch (err) {
     console.error('Verify ID error:', err);
     res.status(500).json({ error: 'Internal server error' });

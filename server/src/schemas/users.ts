@@ -58,14 +58,18 @@ export const confirmPhoneVerificationSchema = z.object({
 });
 
 export const verifyIdSchema = z.object({
-  // The URL returned by the presigned-url endpoint for purpose=id-document.
-  // We validate the prefix in the route against user.id so a user can't submit
-  // another user's upload URL. Scheme check here is redundant with the prefix
-  // check in the handler but keeps the invariant local to the schema.
+  // Both front + back URLs are required — government IDs (driver's licence,
+  // passport card, national ID) always have two sides and admins need both
+  // to verify identity. Prefix checks live in the route handler against the
+  // caller's userId so a user can't submit another user's upload URL.
   documentUrl: z
     .string()
-    .url('Invalid document URL')
-    .refine((v) => v.startsWith('https://'), 'Document URL must use https'),
+    .url('Invalid front document URL')
+    .refine((v) => v.startsWith('https://'), 'Front document URL must use https'),
+  documentBackUrl: z
+    .string()
+    .url('Invalid back document URL')
+    .refine((v) => v.startsWith('https://'), 'Back document URL must use https'),
 });
 
 export const verifyAbnSchema = z.object({

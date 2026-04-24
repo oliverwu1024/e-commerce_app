@@ -114,7 +114,8 @@ model User {
   businessName   String?    @db.VarChar(100) // only for BUSINESS sellers
   abn            String?    @db.VarChar(11)  // Australian Business Number — 11 digits
   abnVerified    Boolean    @default(false)
-  idDocumentUrl  String?    @db.VarChar(500) // S3 URL — PERSONAL sellers only
+  idDocumentUrl     String? @db.VarChar(500) // S3 URL — PERSONAL sellers only, front of ID
+  idDocumentBackUrl String? @db.VarChar(500) // S3 URL — PERSONAL sellers only, back of ID
   idVerification VerificationStatus @default(NOT_SUBMITTED)
   idSubmittedAt  DateTime? // set when user POSTs /verify-id; admin queue orders by this (not updatedAt, which is bumped by unrelated profile edits)
   idRejectionReason String? @db.VarChar(500) // set when admin rejects; cleared on re-submit

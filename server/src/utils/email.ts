@@ -102,6 +102,79 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+export async function sendIdSubmittedEmail(
+  adminEmail: string,
+  username: string,
+  userEmail: string,
+  userId: string,
+): Promise<void> {
+  const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+  const reviewUrl = `${clientUrl}/admin/verifications`;
+
+  await sendMail({
+    from: EMAIL_CONFIG.from,
+    to: adminEmail,
+    subject: `New ID submission from ${username}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2>New ID verification pending review</h2>
+        <p><strong>${escapeHtml(username)}</strong> (${escapeHtml(userEmail)}) just submitted a government ID for verification.</p>
+        <p style="color: #666; font-size: 14px;">User ID: <code>${escapeHtml(userId)}</code></p>
+        <p>Open the admin queue to view the front and back images and approve or reject:</p>
+        <a href="${reviewUrl}"
+           style="display: inline-block; background: #2563eb; color: #fff; padding: 12px 24px;
+                  border-radius: 8px; text-decoration: none; font-weight: 600;">
+          Review submission
+        </a>
+        <p style="margin-top: 16px; color: #999; font-size: 12px;">
+          ID photos are never attached to emails. They're stored in a private bucket and
+          only visible inside the admin dashboard via short-lived signed URLs.
+        </p>
+      </div>
+    `,
+  });
+}
+
+export async function sendContactFormEmail(
+  adminEmail: string,
+  fromName: string,
+  fromEmail: string,
+  subject: string,
+  message: string,
+): Promise<void> {
+  // Escape every user-supplied field — name/subject/message are all
+  // attacker-controlled (anonymous contact form), and fromEmail ends up in a
+  // mailto: link. Reply-To lets the admin hit reply and have it go back to
+  // the form submitter, not noreply@.
+  await sendMail({
+    from: EMAIL_CONFIG.from,
+    to: adminEmail,
+    replyTo: fromEmail,
+    subject: `[Support] ${subject}`,
+    html: `
+      <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto;">
+        <h2 style="margin-bottom: 4px;">New support enquiry</h2>
+        <p style="color: #666; margin-top: 0;">Someone filled in the Contact form on ElectroMarket.</p>
+        <table style="border-collapse: collapse; margin: 16px 0; font-size: 14px;">
+          <tr>
+            <td style="padding: 4px 12px 4px 0; color: #666;">From:</td>
+            <td style="padding: 4px 0;"><strong>${escapeHtml(fromName)}</strong> &lt;<a href="mailto:${escapeHtml(fromEmail)}">${escapeHtml(fromEmail)}</a>&gt;</td>
+          </tr>
+          <tr>
+            <td style="padding: 4px 12px 4px 0; color: #666;">Subject:</td>
+            <td style="padding: 4px 0;"><strong>${escapeHtml(subject)}</strong></td>
+          </tr>
+        </table>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 16px 0;"/>
+        <div style="white-space: pre-wrap; line-height: 1.5;">${escapeHtml(message)}</div>
+        <p style="margin-top: 24px; color: #999; font-size: 12px;">
+          Reply to this email to respond — it'll go to ${escapeHtml(fromEmail)}.
+        </p>
+      </div>
+    `,
+  });
+}
+
 export async function sendOrderPlacedEmail(
   sellerEmail: string,
   sellerUsername: string,

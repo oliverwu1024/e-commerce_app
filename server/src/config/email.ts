@@ -27,6 +27,9 @@ export interface MailParams {
   subject: string;
   html: string;
   from?: string;
+  // Used for the contact form — the admin hits reply and their message goes
+  // back to the original submitter, not the `noreply@` sender.
+  replyTo?: string;
 }
 
 // Single send entrypoint. Picks Resend HTTP API when RESEND_API_KEY is set
@@ -35,22 +38,24 @@ export interface MailParams {
 export async function sendMail(params: MailParams): Promise<void> {
   const from = params.from ?? EMAIL_CONFIG.from;
   if (RESEND_API_KEY) {
+    const body: Record<string, unknown> = {
+      from,
+      to: [params.to],
+      subject: params.subject,
+      html: params.html,
+    };
+    if (params.replyTo) body.reply_to = params.replyTo;
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${RESEND_API_KEY}`,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        from,
-        to: [params.to],
-        subject: params.subject,
-        html: params.html,
-      }),
+      body: JSON.stringify(body),
     });
     if (!res.ok) {
-      const body = await res.text().catch(() => '');
-      throw new Error(`Resend API ${res.status}: ${body.slice(0, 500)}`);
+      const responseBody = await res.text().catch(() => '');
+      throw new Error(`Resend API ${res.status}: ${responseBody.slice(0, 500)}`);
     }
     return;
   }
@@ -59,6 +64,7 @@ export async function sendMail(params: MailParams): Promise<void> {
     to: params.to,
     subject: params.subject,
     html: params.html,
+    ...(params.replyTo ? { replyTo: params.replyTo } : {}),
   });
 }
 
