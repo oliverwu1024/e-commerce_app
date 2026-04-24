@@ -36,8 +36,11 @@ function emit(level: LogLevel, msg: string, meta?: Record<string, unknown>): voi
 
   if (isProduction) {
     // Single-line JSON so log aggregators (Datadog/Loki/CloudWatch) parse
-    // each line as one event.
-    process.stdout.write(JSON.stringify(entry) + '\n');
+    // each line as one event. Use `console.log` (not `process.stdout.write`)
+    // because console.log's semantics are friendlier for non-TTY stdout:
+    // Node auto-flushes per-call on most runtimes, which matters in
+    // container logs where buffered writes can hide boot/crash signals.
+    console.log(JSON.stringify(entry));
   } else {
     const prefix = `[${entry.time}] ${level.toUpperCase().padEnd(5)} ${msg}`;
     if (meta && Object.keys(meta).length > 0) {
