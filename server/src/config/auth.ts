@@ -8,6 +8,14 @@ if (!process.env.JWT_SECRET && process.env.NODE_ENV !== 'test') {
   );
 }
 
+// In production the client is deployed to a different eTLD+1 from the
+// server (e.g. vercel.app vs railway.app), so the auth cookie must be
+// SameSite=None to ride along on cross-site fetch requests. SameSite=None
+// requires Secure, which is also true in production. CSRF protection comes
+// from the Origin-header guard (middleware/csrf.ts), not SameSite=Lax.
+// In dev (localhost both sides), SameSite=Lax is fine and slightly tighter.
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+
 export const AUTH_CONFIG = {
   jwtSecret: process.env.JWT_SECRET || 'test-only-jwt-secret-do-not-use',
   jwtExpiresIn: '7d',
@@ -18,8 +26,8 @@ export const AUTH_CONFIG = {
   cookie: {
     name: 'token',
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax' as const,
+    secure: IS_PRODUCTION,
+    sameSite: (IS_PRODUCTION ? 'none' : 'lax') as 'none' | 'lax',
     maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
   },
 };
