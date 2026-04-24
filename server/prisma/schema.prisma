@@ -85,6 +85,28 @@ enum InquiryStatus {
   CLOSED  // either party manually archived (still readable, just hidden by default)
 }
 
+enum PaymentProvider {
+  STRIPE
+  SQUARE
+  PAYPAL
+}
+
+// Lifecycle of a seller's connected payment account.
+//  PENDING      — seller clicked "Connect", provider redirected us back, but
+//                 KYC/charges aren't yet usable. Buttons stay hidden.
+//  ACTIVE       — fully onboarded, charges+payouts enabled.
+//  RESTRICTED   — provider paused the account (KYC issue, dispute rate, etc.).
+//                 We stop offering it for new orders; existing in-flight
+//                 captures still run.
+//  DISCONNECTED — token revoked by seller at the provider, or we detected an
+//                 auth failure and disabled. Needs re-onboarding.
+enum SellerAccountStatus {
+  PENDING
+  ACTIVE
+  RESTRICTED
+  DISCONNECTED
+}
+
 model User {
   id             String   @id @default(uuid())
   email          String   @unique @db.VarChar(255)
@@ -151,6 +173,7 @@ model User {
   receivedInquiryMessages InquiryMessage[] @relation("inquiryMessageReceiver")
   notifications Notification[] @relation("recipient")
   triggeredNotifications Notification[] @relation("actor")
+  paymentAccounts SellerPaymentAccount[]
 
   @@index([deletedAt])
 }
@@ -400,4 +423,42 @@ model InquiryMessage {
   @@index([inquiryId, createdAt])
   // Backs unread-count: "unread inquiry messages to me".
   @@index([receiverId, readAt])
+}
+
+// A seller's linked payment provider account. Per-seller credentials replace
+// the previous centralized platform keys — funds settle directly to the
+// seller's bank/PayPal, so the platform is no longer in the funds flow.
+//  - Stripe: `accountId` is `acct_...` from Stripe Connect Standard.
+//    `accessToken` stays null (Stripe Connect uses the `Stripe-Account` header
+//    with our platform secret key, not a per-seller token).
+//  - PayPal: `accountId` is the merchant's `merchant_id` from Partner Referrals.
+//    No token stored — we use our platform client credentials and pass the
+//    merchant via `payee.merchant_id`.
+//  - Square: `accessToken` + `refreshToken` are the seller's OAuth tokens
+//    (encrypted at rest); `accountId` is the seller's Square merchant_id;
+//    `locationId` is their default location.
+// Unique (userId, provider) — re-onboarding updates the row in place so
+// history (onboardedAt, status transitions) isn't lost.
+model SellerPaymentAccount {
+  id             String               @id @default(uuid())
+  provider       PaymentProvider
+  status         SellerAccountStatus  @default(PENDING)
+  accountId      String               @db.VarChar(200)
+  accessToken    String?              @db.VarChar(5000)
+  refreshToken   String?              @db.VarChar(5000)
+  tokenExpiresAt DateTime?
+  scope          String?              @db.VarChar(500)
+  locationId     String?              @db.VarChar(100)
+  chargesEnabled Boolean              @default(false)
+  payoutsEnabled Boolean              @default(false)
+  onboardedAt    DateTime?
+  lastSyncedAt   DateTime?
+  createdAt      DateTime             @default(now())
+  updatedAt      DateTime             @updatedAt
+
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
+
+  @@unique([userId, provider])
+  @@index([provider, status])
 }

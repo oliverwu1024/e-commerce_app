@@ -470,9 +470,8 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             </button>
           </div>
           <p className="mt-2 text-xs text-[var(--text-muted)]">
-            {order.seller.sellerType === 'BUSINESS'
-              ? 'Online payments (Stripe, Square, PayPal) are processed automatically when the buyer pays — no need to mark them here.'
-              : 'PayPal payments are processed automatically when the buyer pays — no need to mark them here.'}
+            Online payments (Stripe, Square) are processed automatically when
+            the buyer pays — only record here for offline payments.
           </p>
         </div>
       )}
@@ -519,20 +518,21 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
         </div>
       )}
 
-      {/* Payment picker — buyer paying online */}
+      {/* Payment picker — buyer paying online. Only shows providers the
+          seller has actually connected (server filters seller.paymentAccounts
+          to ACTIVE + chargesEnabled only, so presence here = safe to render). */}
       {showPayPicker && role === 'buyer' && order.status === 'CONFIRMED' && (
         <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4">
           <p className="text-xs font-medium text-[var(--text-primary)] mb-2">
             Choose how to pay online:
           </p>
           <div className="flex flex-wrap gap-2">
-            {order.seller.sellerType === 'BUSINESS' && (
-              <>
-                <PaymentOption label="Stripe" onClick={() => handlePay('STRIPE')} disabled={busy} />
-                <PaymentOption label="Square" onClick={() => handlePay('SQUARE')} disabled={busy} />
-              </>
+            {order.seller.paymentAccounts.some((a) => a.provider === 'STRIPE') && (
+              <PaymentOption label="Stripe" onClick={() => handlePay('STRIPE')} disabled={busy} />
             )}
-            <PaymentOption label="PayPal" onClick={() => handlePay('PAYPAL')} disabled={busy} />
+            {order.seller.paymentAccounts.some((a) => a.provider === 'SQUARE') && (
+              <PaymentOption label="Square" onClick={() => handlePay('SQUARE')} disabled={busy} />
+            )}
             <button
               onClick={() => setShowPayPicker(false)}
               disabled={busy}
@@ -541,10 +541,18 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
               Cancel
             </button>
           </div>
-          <p className="mt-2 text-xs text-[var(--text-muted)]">
-            Or arrange cash / bank transfer with the seller directly through the messages
-            below. They&apos;ll mark the order as paid once payment is received.
-          </p>
+          {order.seller.paymentAccounts.length === 0 ? (
+            <p className="mt-2 text-xs text-[var(--text-muted)]">
+              This seller hasn&apos;t enabled online payments yet. Arrange cash
+              or bank transfer with them through the messages below — they&apos;ll
+              mark the order as paid once payment is received.
+            </p>
+          ) : (
+            <p className="mt-2 text-xs text-[var(--text-muted)]">
+              Or arrange cash / bank transfer with the seller directly through the messages
+              below. They&apos;ll mark the order as paid once payment is received.
+            </p>
+          )}
         </div>
       )}
 

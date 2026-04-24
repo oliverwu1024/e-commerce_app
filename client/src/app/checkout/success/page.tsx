@@ -148,8 +148,9 @@ function CheckoutSuccess() {
           <ol className="space-y-2 list-decimal list-inside">
             <li>The seller reviews your request and confirms the sale.</li>
             <li>
-              Once confirmed, you can pay online (PayPal, Stripe or Square for business
-              sellers) or arrange cash / bank transfer directly with the seller.
+              Once confirmed, you can pay online (Stripe or Square, depending
+              on what the seller has connected) or arrange cash / bank transfer
+              directly with the seller.
             </li>
             <li>Message the seller through the order page if you need to coordinate.</li>
           </ol>

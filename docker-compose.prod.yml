@@ -61,9 +61,6 @@ services:
       SQUARE_ENV: ${SQUARE_ENV:-production}
       SQUARE_WEBHOOK_SIGNATURE_KEY: ${SQUARE_WEBHOOK_SIGNATURE_KEY:-}
       SQUARE_WEBHOOK_URL: ${SQUARE_WEBHOOK_URL:-}
-      PAYPAL_CLIENT_ID: ${PAYPAL_CLIENT_ID:-}
-      PAYPAL_CLIENT_SECRET: ${PAYPAL_CLIENT_SECRET:-}
-      PAYPAL_ENV: ${PAYPAL_ENV:-production}
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/api/health"]
       interval: 15s

@@ -108,20 +108,18 @@ function Dashboard() {
     setActiveTab(resolveTab(searchParams.get('tab')));
   }, [searchParams]);
 
-  // Payment return banner + PayPal capture handler
+  // Payment return banner + Square confirm handler
   const paymentStatus = searchParams.get('payment');
   const paymentOrderId = searchParams.get('order');
-  const paypalToken = searchParams.get('token');
   const [paymentBanner, setPaymentBanner] = useState<
     { type: 'success' | 'error' | 'info'; message: string } | null
   >(null);
-  const [capturingPayPal, setCapturingPayPal] = useState(false);
-  // Bumped whenever a server-side order state change completes (e.g., PayPal
-  // capture). PurchasesTab subscribes to this via a prop and re-fetches.
+  // Bumped whenever a server-side order state change completes (e.g., Square
+  // confirm). PurchasesTab subscribes to this via a prop and re-fetches.
   const [ordersRefreshKey, setOrdersRefreshKey] = useState(0);
-  // Prevents a double-capture in React StrictMode (dev) or a user refreshing
-  // mid-return. PayPal's `captureOrder` is not idempotent at the API level,
-  // so a second call after a successful one returns ORDER_ALREADY_CAPTURED.
+  // Prevents a double-confirm in React StrictMode (dev) or a user refreshing
+  // mid-return. markOrderPaid is idempotent but the extra round-trip is
+  // wasteful.
   const captureFiredRef = useRef(false);
 
   useEffect(() => {
@@ -129,7 +127,7 @@ function Dashboard() {
 
     if (paymentStatus === 'cancelled') {
       // Release the server-side PENDING lock so Pay Now works again — the
-      // provider (Stripe / Square / PayPal cancel URL) has told us the user
+      // provider (Stripe / Square cancel URL) has told us the user
       // explicitly backed out, which means no capture is coming. Best-effort
       // only: if it 409s we've hit a race (webhook already won) and the
       // order is in the right state regardless.
@@ -150,37 +148,52 @@ function Dashboard() {
       return;
     }
 
-    if (paymentStatus === 'success' && paymentOrderId && paypalToken) {
+    // Square flow: connected-account Square doesn't give us auto webhooks,
+    // so after the buyer returns we poll /pay/square/confirm which queries
+    // the seller's Square orders API with their OAuth token. Server may
+    // respond with 202 {pending: true} if Square hasn't surfaced the
+    // payment yet — retry once with a short delay.
+    const provider = searchParams.get('provider');
+    if (paymentStatus === 'success' && paymentOrderId && provider === 'square') {
       if (captureFiredRef.current) return;
       captureFiredRef.current = true;
-      setCapturingPayPal(true);
-      api<{ order: Order }>(
-        `/api/orders/${paymentOrderId}/pay/paypal/capture`,
-        {
-          method: 'POST',
-          body: JSON.stringify({ paypalOrderId: paypalToken }),
-        },
-      )
-        .then(() => {
+
+      async function confirmSquare() {
+        const doConfirm = () =>
+          fetch(
+            `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000'}/api/orders/${paymentOrderId}/pay/square/confirm`,
+            { method: 'POST', credentials: 'include' },
+          );
+        try {
+          let resp = await doConfirm();
+          if (resp.status === 202) {
+            // Square is eventually consistent — give it a beat and try again.
+            await new Promise((r) => setTimeout(r, 1500));
+            resp = await doConfirm();
+          }
+          if (!resp.ok) {
+            const text = await resp.text();
+            const parsed = text ? JSON.parse(text) : {};
+            throw new Error(parsed.error || 'Square confirmation failed');
+          }
           setPaymentBanner({
             type: 'success',
             message: 'Payment completed successfully.',
           });
           setOrdersRefreshKey((k) => k + 1);
-        })
-        .catch((err) => {
+        } catch (err) {
           setPaymentBanner({
             type: 'error',
             message:
               err instanceof Error
                 ? err.message
-                : 'Payment capture failed. Please contact support.',
+                : 'Square confirmation failed. Please contact support.',
           });
-        })
-        .finally(() => {
-          setCapturingPayPal(false);
+        } finally {
           router.replace('/dashboard?tab=purchases');
-        });
+        }
+      }
+      confirmSquare();
       return;
     }
 
@@ -190,13 +203,13 @@ function Dashboard() {
         message:
           'Payment submitted. It may take a moment to reflect below.',
       });
-      // Stripe / Square land here. The webhook may have already flipped the
-      // order; refresh so the UI picks up the new state.
+      // Stripe lands here — webhook has already flipped the order (or will
+      // any second). Refresh so the UI picks up the new state.
       setOrdersRefreshKey((k) => k + 1);
       router.replace('/dashboard?tab=purchases');
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [paymentStatus, paymentOrderId, paypalToken]);
+  }, [paymentStatus, paymentOrderId]);
 
   function selectTab(tab: Tab) {
     setActiveTab(tab);
@@ -228,32 +241,24 @@ function Dashboard() {
       <h1 className="text-2xl font-bold text-[var(--text-primary)]">Dashboard</h1>
 
       {/* Payment banner */}
-      {(paymentBanner || capturingPayPal) && (
+      {paymentBanner && (
         <div
           className={`mt-4 rounded-lg border p-3 text-sm flex items-center justify-between ${
-            capturingPayPal
-              ? 'border-[var(--neon-cyan)]/40 bg-[var(--tint-cyan)] text-[var(--neon-cyan)]'
-              : paymentBanner?.type === 'success'
+            paymentBanner.type === 'success'
               ? 'border-[var(--neon-green)]/40 bg-[var(--tint-green)] text-[var(--neon-green)]'
-              : paymentBanner?.type === 'error'
+              : paymentBanner.type === 'error'
               ? 'border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] text-[var(--neon-danger)]'
               : 'border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] text-[var(--text-muted)]'
           }`}
         >
-          <span>
-            {capturingPayPal
-              ? 'Finalising your PayPal payment...'
-              : paymentBanner?.message}
-          </span>
-          {paymentBanner && !capturingPayPal && (
-            <button
-              onClick={() => setPaymentBanner(null)}
-              className="font-medium hover:opacity-70"
-              aria-label="Dismiss"
-            >
-              &times;
-            </button>
-          )}
+          <span>{paymentBanner.message}</span>
+          <button
+            onClick={() => setPaymentBanner(null)}
+            className="font-medium hover:opacity-70"
+            aria-label="Dismiss"
+          >
+            &times;
+          </button>
         </div>
       )}
 

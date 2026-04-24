@@ -1,9 +1,5 @@
 import { Router, Request, Response } from 'express';
 import { randomUUID } from 'node:crypto';
-import {
-  OrdersController,
-  CheckoutPaymentIntent,
-} from '@paypal/paypal-server-sdk';
 import prisma from '../lib/prisma.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { authenticate } from '../middleware/auth.js';
@@ -14,23 +10,20 @@ import {
   messageSchema,
   orderListQuerySchema,
   paySchema,
-  paypalCaptureSchema,
   shipSchema,
 } from '../schemas/orders.js';
 import {
   getStripeClient,
   isStripeConfigured,
 } from '../config/stripe.js';
-import {
-  getSquareClient,
-  getSquareLocationId,
-  isSquareConfigured,
-} from '../config/square.js';
-import {
-  getPaypalClient,
-  isPaypalConfigured,
-} from '../config/paypal.js';
+import { SquareClient, SquareEnvironment } from 'square';
+import { isSquareConfigured } from '../config/square.js';
 import { markOrderPaid } from '../services/orderPayments.js';
+import {
+  canAcceptPayments,
+  findAccount,
+} from '../services/sellerPaymentAccounts.js';
+import { platformFeeForCents } from '../config/platformConnect.js';
 import { createNotification } from '../services/notifications.js';
 import { sendOrderPlacedEmail, sendNewMessageEmail } from '../utils/email.js';
 
@@ -84,7 +77,20 @@ const ORDER_SUMMARY_SELECT = {
   },
   buyer: { select: { id: true, username: true, location: true, avatarUrl: true } },
   seller: {
-    select: { id: true, username: true, location: true, avatarUrl: true, sellerType: true },
+    select: {
+      id: true,
+      username: true,
+      location: true,
+      avatarUrl: true,
+      sellerType: true,
+      // Only the providers the seller actively accepts. Used by the buyer-side
+      // OrderRow to gate which payment buttons render. Filtered server-side
+      // so a DISCONNECTED / RESTRICTED account never reaches the client.
+      paymentAccounts: {
+        where: { status: 'ACTIVE', chargesEnabled: true },
+        select: { provider: true },
+      },
+    },
   },
   review: { select: { id: true, rating: true } },
 } satisfies Prisma.OrderSelect;
@@ -661,9 +667,9 @@ router.put(
 );
 
 // ---------------------------------------------------------------------------
-// PUT /api/orders/:id/complete — seller marks a confirmed order as completed
-// Day 16(a): CASH and BANK_TRANSFER only. Online payment methods (Stripe/
-// Square/PayPal) are added in Day 16(b) once sandbox accounts are set up.
+// PUT /api/orders/:id/complete — seller manually records an offline payment
+// (CASH or BANK_TRANSFER). Online providers (Stripe, Square) flip the order
+// to PAID automatically via webhook/confirm and never hit this path.
 // Listing moves ON_HOLD → SOLD atomically.
 // ---------------------------------------------------------------------------
 router.put(
@@ -940,12 +946,14 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
-// POST /api/orders/:id/pay — buyer initiates online payment
-// - PERSONAL sellers: PAYPAL only
-// - BUSINESS sellers: STRIPE, SQUARE, or PAYPAL
+// POST /api/orders/:id/pay — buyer initiates online payment.
+// Any seller (PERSONAL or BUSINESS) may accept Stripe or Square provided
+// they've connected a `SellerPaymentAccount` for it — the gate is per-
+// provider connection status, not sellerType.
 // Creates a session with the provider and returns the redirect URL.
-// Stripe completes via webhook; Square + PayPal complete via capture endpoints.
-// Order is not moved to COMPLETED here — it stays CONFIRMED until the provider
+// Stripe completes via webhook; Square completes via `/pay/square/confirm`
+// polling (per-seller OAuth has no auto-webhook).
+// Order is not moved to PAID here — it stays CONFIRMED until the provider
 // confirms payment.
 // ---------------------------------------------------------------------------
 router.post(
@@ -976,7 +984,6 @@ router.post(
           buyerId: true,
           sellerId: true,
           listing: { select: { title: true } },
-          seller: { select: { sellerType: true } },
         },
       });
 
@@ -995,16 +1002,7 @@ router.post(
         return;
       }
 
-      // Seller-type gate
-      if (order.seller.sellerType === 'PERSONAL' && paymentMethod !== 'PAYPAL') {
-        res.status(400).json({
-          error: 'This seller only accepts PayPal for online payment',
-        });
-        return;
-      }
-
-      const amountAud = Number(order.amount);
-      const amountCents = Math.round(amountAud * 100);
+      const amountCents = Math.round(Number(order.amount) * 100);
       const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
       const successUrl = `${clientUrl}/dashboard?tab=purchases&payment=success&order=${order.id}`;
       const cancelUrl = `${clientUrl}/dashboard?tab=purchases&payment=cancelled&order=${order.id}`;
@@ -1062,9 +1060,21 @@ router.post(
         }
       }
 
+      // Common gate: online payment requires the seller to have connected
+      // their own provider account. Platform no longer holds funds — if
+      // the seller hasn't onboarded, the buyer must arrange cash/bank
+      // transfer directly (manual completion path, not this endpoint).
+      const NOT_CONNECTED_MESSAGE =
+        'Seller has not enabled this payment method. Ask them to cash or bank transfer, or wait for them to connect a payment provider.';
+
       if (paymentMethod === 'STRIPE') {
         if (!isStripeConfigured()) {
           res.status(503).json({ error: 'Stripe is not configured on this server' });
+          return;
+        }
+        const sellerAccount = await findAccount(order.sellerId, 'STRIPE');
+        if (!canAcceptPayments(sellerAccount)) {
+          res.status(503).json({ error: NOT_CONNECTED_MESSAGE });
           return;
         }
         {
@@ -1075,23 +1085,35 @@ router.post(
           }
         }
         try {
-          const session = await getStripeClient().checkout.sessions.create({
-            mode: 'payment',
-            line_items: [
-              {
-                price_data: {
-                  currency: 'aud',
-                  product_data: { name: order.listing.title },
-                  unit_amount: amountCents,
+          // Connect direct charge: the session is created ON the seller's
+          // account (via stripeAccount header), so funds settle to THEIR
+          // bank. application_fee_amount routes the platform's cut back
+          // to our account during the same charge.
+          const feeCents = platformFeeForCents(amountCents);
+          const session = await getStripeClient().checkout.sessions.create(
+            {
+              mode: 'payment',
+              line_items: [
+                {
+                  price_data: {
+                    currency: 'aud',
+                    product_data: { name: order.listing.title },
+                    unit_amount: amountCents,
+                  },
+                  quantity: 1,
                 },
-                quantity: 1,
+              ],
+              client_reference_id: order.id,
+              metadata: { orderId: order.id, sellerId: order.sellerId },
+              payment_intent_data: {
+                application_fee_amount: feeCents,
+                metadata: { orderId: order.id, sellerId: order.sellerId },
               },
-            ],
-            client_reference_id: order.id,
-            metadata: { orderId: order.id },
-            success_url: successUrl,
-            cancel_url: cancelUrl,
-          });
+              success_url: successUrl,
+              cancel_url: cancelUrl,
+            },
+            { stripeAccount: sellerAccount!.accountId },
+          );
           res.json({ provider: 'STRIPE', url: session.url, sessionId: session.id });
         } catch (err) {
           await revertSessionPending();
@@ -1105,6 +1127,11 @@ router.post(
           res.status(503).json({ error: 'Square is not configured on this server' });
           return;
         }
+        const sellerAccount = await findAccount(order.sellerId, 'SQUARE');
+        if (!canAcceptPayments(sellerAccount) || !sellerAccount?.accessToken || !sellerAccount?.locationId) {
+          res.status(503).json({ error: NOT_CONNECTED_MESSAGE });
+          return;
+        }
         {
           const failure = await markSessionPending();
           if (failure) {
@@ -1113,12 +1140,26 @@ router.post(
           }
         }
         try {
-          // Use the `order` shape (not quickPay) so we can pass referenceId;
-          // referenceId becomes our correlation key on the payment webhook.
-          const resp = await getSquareClient().checkout.paymentLinks.create({
+          // Build a one-off SquareClient with the seller's OAuth access
+          // token — the platform's SquareClient is retained for legacy
+          // webhook config only. Each call uses the seller's token so the
+          // payment lives in the seller's merchant account, not ours.
+          const sellerSquare = new SquareClient({
+            token: sellerAccount.accessToken,
+            environment:
+              process.env.SQUARE_ENV === 'production'
+                ? SquareEnvironment.Production
+                : SquareEnvironment.Sandbox,
+          });
+          // Confirm completion happens via the buyer-side /pay/square/confirm
+          // call once Square redirects back, since per-seller Square webhook
+          // subscriptions aren't automatic. redirectUrl carries order.id
+          // through the round-trip.
+          const squareRedirect = `${successUrl}&provider=square`;
+          const resp = await sellerSquare.checkout.paymentLinks.create({
             idempotencyKey: randomUUID(),
             order: {
-              locationId: getSquareLocationId(),
+              locationId: sellerAccount.locationId,
               referenceId: order.id,
               lineItems: [
                 {
@@ -1128,7 +1169,7 @@ router.post(
                 },
               ],
             },
-            checkoutOptions: { redirectUrl: successUrl },
+            checkoutOptions: { redirectUrl: squareRedirect },
           });
           const paymentLink = resp.paymentLink;
           if (!paymentLink?.url) {
@@ -1140,56 +1181,6 @@ router.post(
             provider: 'SQUARE',
             url: paymentLink.url,
             paymentLinkId: paymentLink.id,
-          });
-        } catch (err) {
-          await revertSessionPending();
-          throw err;
-        }
-        return;
-      }
-
-      if (paymentMethod === 'PAYPAL') {
-        if (!isPaypalConfigured()) {
-          res.status(503).json({ error: 'PayPal is not configured on this server' });
-          return;
-        }
-        {
-          const failure = await markSessionPending();
-          if (failure) {
-            res.status(failure.status).json({ error: failure.error });
-            return;
-          }
-        }
-        try {
-          const ordersController = new OrdersController(getPaypalClient());
-          const paypalResp = await ordersController.createOrder({
-            body: {
-              intent: CheckoutPaymentIntent.Capture,
-              purchaseUnits: [
-                {
-                  amount: { currencyCode: 'AUD', value: amountAud.toFixed(2) },
-                  customId: order.id,
-                  description: order.listing.title.slice(0, 127),
-                },
-              ],
-              applicationContext: {
-                returnUrl: successUrl,
-                cancelUrl: cancelUrl,
-              },
-            },
-            prefer: 'return=representation',
-          });
-          const paypalOrder = paypalResp.result;
-          const approveLink = paypalOrder.links?.find((l) => l.rel === 'approve');
-          if (!paypalOrder.id || !approveLink?.href) {
-            await revertSessionPending();
-            res.status(502).json({ error: 'PayPal did not return an approval URL' });
-            return;
-          }
-          res.json({
-            provider: 'PAYPAL',
-            url: approveLink.href,
-            paypalOrderId: paypalOrder.id,
           });
         } catch (err) {
           await revertSessionPending();
@@ -1210,7 +1201,7 @@ router.post(
 // ---------------------------------------------------------------------------
 // POST /api/orders/:id/pay/abandon — buyer releases the PENDING payment lock
 // without completing. Fires automatically from the client when the user
-// clicks Cancel in the provider's UI (Stripe / Square / PayPal cancel URL)
+// clicks Cancel in the provider's UI (Stripe / Square cancel URL)
 // — at that point no capture will happen — and also via an explicit
 // "Release lock" button for the tab-close case.
 //
@@ -1280,12 +1271,14 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
-// POST /api/orders/:id/pay/paypal/capture — called by the client after the
-// buyer returns from PayPal with an approved order. Captures the payment via
-// PayPal and flips our order to COMPLETED.
+// POST /api/orders/:id/pay/square/confirm — called by the client after the
+// buyer returns from Square's hosted checkout. Connected-account Square
+// doesn't give us an automatic platform webhook per merchant, so we poll the
+// seller's Square orders API with their OAuth token to verify the payment
+// completed. markOrderPaid is idempotent, so repeated confirm calls are safe.
 // ---------------------------------------------------------------------------
 router.post(
-  '/:id/pay/paypal/capture',
+  '/:id/pay/square/confirm',
   authenticate,
   orderMutationLimiter,
   async (req: Request<{ id: string }>, res: Response) => {
@@ -1295,128 +1288,85 @@ router.post(
         res.status(400).json({ error: 'Invalid order ID' });
         return;
       }
-
-      const parsed = paypalCaptureSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({ error: parsed.error.issues[0].message });
-        return;
-      }
-      const { paypalOrderId } = parsed.data;
-
       const order = await prisma.order.findUnique({
         where: { id },
-        select: { buyerId: true, status: true },
+        select: { id: true, buyerId: true, sellerId: true, status: true },
       });
       if (!order) {
         res.status(404).json({ error: 'Order not found' });
         return;
       }
       if (order.buyerId !== req.userId) {
-        res.status(403).json({ error: 'Only the buyer can capture this payment' });
+        res.status(403).json({ error: 'Only the buyer can confirm this payment' });
         return;
       }
-
-      if (!isPaypalConfigured()) {
-        res.status(503).json({ error: 'PayPal is not configured on this server' });
+      const sellerAccount = await findAccount(order.sellerId, 'SQUARE');
+      if (!sellerAccount?.accessToken || !sellerAccount?.locationId) {
+        res.status(503).json({ error: 'Seller has not connected Square' });
         return;
       }
-
-      const ordersController = new OrdersController(getPaypalClient());
-
-      // Inspect PayPal's current view of the order before capturing. If it is
-      // already COMPLETED (a prior capture — e.g., the buyer double-submitted,
-      // or the client re-fired after a refresh), skip captureOrder so PayPal
-      // doesn't respond with ORDER_ALREADY_CAPTURED (which would bubble up as
-      // a 500 here). markOrderPaid downstream is idempotent.
-      const existing = await ordersController.getOrder({ id: paypalOrderId });
-      const existingOrder = existing.result;
-
-      let captured;
-      if (existingOrder.status === 'COMPLETED') {
-        captured = existingOrder;
-      } else if (existingOrder.status === 'APPROVED') {
-        const capture = await ordersController.captureOrder({ id: paypalOrderId });
-        captured = capture.result;
-      } else {
-        res.status(409).json({
-          error: `PayPal order is in ${existingOrder.status ?? 'unknown'} state and cannot be captured`,
-        });
+      const sellerSquare = new SquareClient({
+        token: sellerAccount.accessToken,
+        environment:
+          process.env.SQUARE_ENV === 'production'
+            ? SquareEnvironment.Production
+            : SquareEnvironment.Sandbox,
+      });
+      // Square's Orders.search filters by referenceId to find our order.
+      // We pass the seller's location so the query is scoped to their
+      // merchant (their token wouldn't give us access to anyone else's
+      // anyway, but scoping reduces noise).
+      const search = await sellerSquare.orders.search({
+        locationIds: [sellerAccount.locationId],
+        query: {
+          filter: {
+            stateFilter: { states: ['COMPLETED'] },
+          },
+        },
+      });
+      const matching = search.orders?.find((o) => o.referenceId === id);
+      if (!matching) {
+        // Either the buyer never paid, or Square is eventually-consistent
+        // and hasn't surfaced the order yet. Tell the client to retry.
+        res.status(202).json({ pending: true });
         return;
       }
-
-      // Verify the PayPal order's custom_id matches OUR order — prevents a
-      // malicious client from capturing someone else's approved order against
-      // our record.
-      const customId = captured.purchaseUnits?.[0]?.payments?.captures?.[0]?.customId
-        ?? captured.purchaseUnits?.[0]?.customId;
-      if (customId !== id) {
-        // Do NOT log raw purchaseUnits — they contain payer email + address + name.
-        console.error('PayPal customId mismatch:', {
-          ourOrderId: id,
-          capturedCustomId: customId,
-          paypalOrderId,
-          paypalStatus: captured.status,
-        });
-        res.status(400).json({ error: 'PayPal order does not belong to this order' });
+      const tender = matching.tenders?.find((t) => t.type === 'CARD');
+      const amountMoney = matching.totalMoney;
+      if (!amountMoney?.amount || !amountMoney?.currency) {
+        res.status(502).json({ error: 'Square order missing amount/currency' });
         return;
       }
-
-      if (captured.status !== 'COMPLETED') {
-        res.status(409).json({
-          error: `PayPal capture did not complete (status: ${captured.status})`,
-        });
-        return;
-      }
-
-      // Extract what PayPal says was actually captured, so we can cross-check
-      // against order.amount. Buyer could have altered the approval URL.
-      const captureDetail = captured.purchaseUnits?.[0]?.payments?.captures?.[0];
-      const captureAmount = captureDetail?.amount;
-      if (!captureAmount?.value || !captureAmount?.currencyCode) {
-        console.error('[paypal capture] missing amount/currency on capture:', {
-          ourOrderId: id,
-          paypalOrderId,
-        });
-        res.status(502).json({ error: 'PayPal capture missing amount/currency' });
-        return;
-      }
-      const reportedCents = new Prisma.Decimal(captureAmount.value).mul(100).toFixed(0);
-
-      const result = await markOrderPaid(id, 'PAYPAL', {
-        amountCents: reportedCents,
-        currency: captureAmount.currencyCode,
+      const result = await markOrderPaid(id, 'SQUARE', {
+        amountCents: String(amountMoney.amount),
+        currency: amountMoney.currency,
       });
       if (result.status === 'not_found') {
         res.status(404).json({ error: 'Order not found' });
         return;
       }
       if (result.status === 'not_confirmed') {
-        // Could happen if the order was cancelled between approval and capture.
-        res.status(409).json({
-          error: 'Order is no longer in a confirmable state',
-        });
+        res.status(409).json({ error: 'Order is no longer in a confirmable state' });
         return;
       }
       if (result.status === 'amount_mismatch') {
-        console.error('[paypal capture] amount mismatch — NOT marking paid', {
+        console.error('[square confirm] amount mismatch — NOT marking paid', {
           ourOrderId: id,
-          paypalOrderId,
+          squareOrderId: matching.id,
+          tenderId: tender?.id,
           expected: result.expected,
           reported: result.reported,
         });
-        res.status(409).json({
-          error: 'Payment amount does not match order amount',
-        });
+        res.status(409).json({ error: 'Payment amount does not match order amount' });
         return;
       }
-
       const updated = await prisma.order.findUnique({
         where: { id },
         select: ORDER_SUMMARY_SELECT,
       });
       res.json({ order: updated, idempotent: result.status === 'already_completed' });
     } catch (err) {
-      console.error('PayPal capture error:', err);
+      console.error('Square confirm error:', err);
       res.status(500).json({ error: 'Internal server error' });
     }
   },

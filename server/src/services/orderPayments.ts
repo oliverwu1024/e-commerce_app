@@ -28,8 +28,8 @@ export const EXPECTED_CURRENCY = 'AUD';
  * or a tampered client-side amount. A mismatch returns 'amount_mismatch'
  * without mutating the order; callers should ack (200) and alert-log.
  *
- * Called by webhook handlers (Stripe, Square) and synchronous capture handlers
- * (PayPal) after payment confirmation.
+ * Called by webhook handlers (Stripe) and synchronous confirm handlers
+ * (Square) after payment confirmation.
  */
 export async function markOrderPaid(
   orderId: string,

@@ -60,8 +60,16 @@ async function processWithDedupe<T>(
 // Mounted with express.raw — req.body is a Buffer so the signature verifier
 // can see the exact bytes Stripe signed.
 //
-// Local dev: run `stripe listen --forward-to localhost:5000/api/webhooks/stripe`
-// and copy the printed whsec_... into STRIPE_WEBHOOK_SECRET.
+// Connected-accounts model: in the Stripe Dashboard → Developers → Webhooks,
+// the endpoint to subscribe here is the **Connect** endpoint (not the
+// platform one). STRIPE_WEBHOOK_SECRET is that Connect endpoint's signing
+// secret. Connect events include `event.account` identifying the connected
+// account — we don't need to read it since we route by `metadata.orderId`,
+// but it's there for auditing.
+//
+// Local dev: `stripe listen --forward-connect --forward-to
+// localhost:5000/api/webhooks/stripe` (note `--forward-connect`). Copy the
+// printed whsec_... into STRIPE_WEBHOOK_SECRET.
 // ---------------------------------------------------------------------------
 router.post('/stripe', async (req: Request, res: Response) => {
   const sig = req.headers['stripe-signature'];
@@ -92,6 +100,10 @@ router.post('/stripe', async (req: Request, res: Response) => {
         amount_total?: number | null;
         currency?: string | null;
       };
+      // event.account is populated for Connect events (i.e., every session
+      // under the new flow). Logged for audit only — metadata.orderId is
+      // the authoritative link back to our record.
+      const stripeAccountId = (event as unknown as { account?: string }).account ?? null;
       const orderId = session.metadata?.orderId ?? session.client_reference_id ?? null;
       if (!orderId) {
         // Unrelated session (e.g. a manual test). Ack and move on.
@@ -104,6 +116,7 @@ router.post('/stripe', async (req: Request, res: Response) => {
         console.error('[stripe webhook] session missing amount/currency', {
           sessionId: session.id,
           orderId,
+          stripeAccountId,
         });
         res.json({ received: true, note: 'missing amount/currency' });
         return;
@@ -146,13 +159,15 @@ router.post('/stripe', async (req: Request, res: Response) => {
 
 // ---------------------------------------------------------------------------
 // POST /api/webhooks/square
-// Square sends payment.updated events; we extract reference_id from the
-// underlying order (set when the payment link was created) to map back to
-// our order UUID.
+// LEGACY: Square webhooks tied to the platform access token. Connected-
+// account Square (per-seller OAuth) doesn't register webhooks automatically
+// per merchant — new orders confirm payment via the polling endpoint
+// POST /api/orders/:id/pay/square/confirm instead. This handler is left in
+// place to resolve any in-flight legacy orders; safe to remove once all
+// pre-migration orders have finalized.
 //
-// Local dev: expose port 5000 via ngrok or similar and set the webhook URL in
-// the Square Developer Dashboard → Webhooks → Add subscription. Copy the
-// signature key into SQUARE_WEBHOOK_SIGNATURE_KEY.
+// Local dev (legacy only): expose port 5000 via ngrok and set the webhook
+// URL in the Square Developer Dashboard → Webhooks → Add subscription.
 // ---------------------------------------------------------------------------
 router.post('/square', async (req: Request, res: Response) => {
   const signatureHeader = req.headers['x-square-hmacsha256-signature'];

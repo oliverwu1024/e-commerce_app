@@ -1,7 +1,8 @@
 import { z } from 'zod';
 
-// Day 16(a) supports manual payment paths only (CASH/BANK_TRANSFER).
-// PAYPAL/SQUARE/STRIPE land with Day 16(b) when sandbox keys are in place.
+// Manual completion (seller records that the buyer paid offline). Online
+// providers (Stripe, Square) mark orders paid automatically via webhook/
+// confirm; only cash / bank transfer use this path.
 export const completeOrderSchema = z.object({
   paymentMethod: z.enum(['CASH', 'BANK_TRANSFER'], {
     message: 'Payment method must be CASH or BANK_TRANSFER',
@@ -44,21 +45,13 @@ export const shipSchema = z.object({
 
 export type ShipInput = z.infer<typeof shipSchema>;
 
-// Day 16(b) — buyer-initiated online payment. Seller-type gating is enforced
-// in the route handler (PERSONAL sellers are restricted to PAYPAL only).
+// Buyer-initiated online payment. Only STRIPE + SQUARE are supported; sellers
+// who want another channel (cash / bank transfer / arranged-by-message) use
+// the manual completion path instead.
 export const paySchema = z.object({
-  paymentMethod: z.enum(['STRIPE', 'SQUARE', 'PAYPAL'], {
-    message: 'Payment method must be STRIPE, SQUARE, or PAYPAL',
+  paymentMethod: z.enum(['STRIPE', 'SQUARE'], {
+    message: 'Payment method must be STRIPE or SQUARE',
   }),
 });
 
 export type PayInput = z.infer<typeof paySchema>;
-
-export const paypalCaptureSchema = z.object({
-  paypalOrderId: z
-    .string({ message: 'paypalOrderId is required' })
-    .min(1, 'paypalOrderId is required')
-    .max(64, 'paypalOrderId is too long'),
-});
-
-export type PaypalCaptureInput = z.infer<typeof paypalCaptureSchema>;

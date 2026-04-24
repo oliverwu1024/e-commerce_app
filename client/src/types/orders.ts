@@ -74,6 +74,10 @@ type OrderParty = {
 
 type OrderSeller = OrderParty & {
   sellerType: 'PERSONAL' | 'BUSINESS';
+  // Online providers the seller is currently set up to accept. Server filters
+  // to only ACTIVE + chargesEnabled rows, so presence here is a green light
+  // to show the corresponding payment button.
+  paymentAccounts: { provider: 'STRIPE' | 'SQUARE' }[];
 };
 
 export type OrderListing = {

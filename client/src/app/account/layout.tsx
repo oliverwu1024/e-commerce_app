@@ -20,6 +20,7 @@ type NavItem = {
 const NAV_ITEMS: NavItem[] = [
   { href: '/account/settings', label: 'Settings' },
   { href: '/account/verification', label: 'Verification' },
+  { href: '/account/payments', label: 'Payments' },
   { href: '/account/notifications', label: 'Notifications', badge: 'notifications' },
   { href: '/account/messages', label: 'Messages', badge: 'orderMessages', matchTab: null },
   { href: '/account/messages?tab=inquiries', label: 'Inquiries', badge: 'inquiryMessages', matchTab: 'inquiries' },

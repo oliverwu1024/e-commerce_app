@@ -414,11 +414,14 @@ async function main() {
     const seller = users.find((u) => u.id === listing.sellerId)!;
     const isBizSeller = seller.sellerType === SellerType.BUSINESS;
 
-    const personalMethods = [PaymentMethod.CASH, PaymentMethod.BANK_TRANSFER, PaymentMethod.PAYPAL];
-    const businessMethods = [...personalMethods, PaymentMethod.SQUARE, PaymentMethod.STRIPE];
+    // Connected-accounts model: any seller can accept Stripe or Square if
+    // they've onboarded, plus the always-available offline methods.
+    const offlineMethods = [PaymentMethod.CASH, PaymentMethod.BANK_TRANSFER];
+    const onlineMethods = [PaymentMethod.STRIPE, PaymentMethod.SQUARE];
+    const allMethods = [...offlineMethods, ...onlineMethods];
 
     const paymentMethod = faker.helpers.arrayElement(
-      isBizSeller ? businessMethods : personalMethods,
+      isBizSeller ? allMethods : offlineMethods,
     );
 
     const order = await prisma.order.create({
