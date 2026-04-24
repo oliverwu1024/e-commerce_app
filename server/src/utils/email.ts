@@ -1,5 +1,5 @@
 import crypto from 'crypto';
-import { transporter, EMAIL_CONFIG } from '../config/email.js';
+import { sendMail, EMAIL_CONFIG } from '../config/email.js';
 
 export function generateVerificationToken(): string {
   return crypto.randomBytes(32).toString('hex');
@@ -9,7 +9,7 @@ export async function sendVerificationEmail(email: string, token: string): Promi
   const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
   const verifyUrl = `${clientUrl}/verify-email?token=${token}`;
 
-  await transporter.sendMail({
+  await sendMail({
     from: EMAIL_CONFIG.from,
     to: email,
     subject: 'Verify your ElectroMarket email',
@@ -36,7 +36,7 @@ export async function sendIdApprovedEmail(email: string, username: string): Prom
   const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
   const listingsUrl = `${clientUrl}/listings/new`;
 
-  await transporter.sendMail({
+  await sendMail({
     from: EMAIL_CONFIG.from,
     to: email,
     subject: 'Your ID has been approved',
@@ -65,7 +65,7 @@ export async function sendIdRejectedEmail(
   const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
   const resubmitUrl = `${clientUrl}/account/verification`;
 
-  await transporter.sendMail({
+  await sendMail({
     from: EMAIL_CONFIG.from,
     to: email,
     subject: 'Your ID submission needs attention',
@@ -112,7 +112,7 @@ export async function sendOrderPlacedEmail(
   const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
   const url = `${clientUrl}/dashboard?tab=sales&order=${orderId}`;
 
-  await transporter.sendMail({
+  await sendMail({
     from: EMAIL_CONFIG.from,
     to: sellerEmail,
     subject: `New order for "${listingTitle}"`,
@@ -152,7 +152,7 @@ export async function sendNewMessageEmail(
   // to be a "there's a new message, come read it" nudge.
   const shortPreview = preview.length > 140 ? preview.slice(0, 140) + '…' : preview;
 
-  await transporter.sendMail({
+  await sendMail({
     from: EMAIL_CONFIG.from,
     to: receiverEmail,
     subject: `${senderUsername} sent you a message about "${listingTitle}"`,
