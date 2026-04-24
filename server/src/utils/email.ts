@@ -280,3 +280,61 @@ export async function sendNewMessageEmail(
     `,
   });
 }
+
+// One-shot announcement for the connected-accounts cutover (sent 2026-04-25
+// via scripts/announce-connected-accounts.ts). Kept here rather than inlined
+// in the script so the HTML lives next to the other email templates.
+export async function sendConnectedAccountsAnnouncement(
+  email: string,
+  name: string,
+): Promise<void> {
+  const clientUrl = process.env.CLIENT_URL?.split(',')[0]?.trim() || 'http://localhost:3000';
+  const paymentsUrl = `${clientUrl}/account/payments`;
+  const termsUrl = `${clientUrl}/terms`;
+
+  await sendMail({
+    from: EMAIL_CONFIG.from,
+    to: email,
+    subject: 'Action needed — connect your own payment account',
+    html: `
+      <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
+        <h2 style="margin: 0 0 16px;">Hi ${escapeHtml(name)},</h2>
+        <p>We just changed how money flows on ElectroMarket. From now on, when a buyer pays online, the funds go <strong>directly to your bank</strong> — ElectroMarket never holds your money along the way. This is better for you (faster payouts, tax forms come direct to you, no platform float) and keeps us out of money-transmitter territory.</p>
+
+        <h3 style="margin: 24px 0 8px;">What you need to do</h3>
+        <p>Visit your payment settings and connect at least one of:</p>
+        <ul>
+          <li><strong>Stripe</strong> — credit cards, Apple Pay, Google Pay. Best for most sellers. Funds in your bank in 2 business days.</li>
+          <li><strong>Square</strong> — useful if you already sell in person with a Square reader.</li>
+        </ul>
+        <p style="margin: 16px 0;">
+          <a href="${paymentsUrl}"
+             style="display: inline-block; background: #2563eb; color: #fff; padding: 12px 24px;
+                    border-radius: 8px; text-decoration: none; font-weight: 600;">
+            Connect a payment account
+          </a>
+        </p>
+        <p>Takes about 5 minutes. You can connect both if you want to give buyers a choice.</p>
+
+        <h3 style="margin: 24px 0 8px;">Until you connect</h3>
+        <p>Buyers of your listings can only pay you via cash or bank transfer (arranged through the order's message thread). Unchanged if you were already using cash or bank transfer.</p>
+
+        <h3 style="margin: 24px 0 8px;">Heads up on fees</h3>
+        <p>ElectroMarket keeps 5% of each online payment as a platform fee, deducted automatically at the time of payment — you never need to send us anything separately. Cash and bank transfer remain fee-free.</p>
+
+        <h3 style="margin: 24px 0 8px;">A few things we also just shipped</h3>
+        <ul>
+          <li>A <strong>Refund</strong> button on your paid orders.</li>
+          <li>An <strong>Earnings</strong> card on your sales dashboard, showing gross / fees / net.</li>
+          <li><strong>Disputes</strong>: buyers can now formally flag issues with an order. You'll be notified if it happens.</li>
+        </ul>
+
+        <p style="margin-top: 24px; color: #6b7280; font-size: 14px;">
+          Full details: <a href="${termsUrl}">${termsUrl}</a><br/>
+          Reply to this email if anything doesn't work.
+        </p>
+        <p style="color: #6b7280; font-size: 14px;">— The ElectroMarket team</p>
+      </div>
+    `,
+  });
+}
