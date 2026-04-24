@@ -18,6 +18,7 @@ import inboxRoutes from './routes/inbox.js';
 import inquiryRoutes from './routes/inquiries.js';
 import webhookRoutes from './routes/webhooks.js';
 import { validateSquareWebhookConfig } from './config/square.js';
+import { verifySmtpAtStartup } from './config/email.js';
 import { csrfOriginGuard } from './middleware/csrf.js';
 import { requestLogger } from './middleware/requestLogger.js';
 import { logger } from './utils/logger.js';
@@ -38,6 +39,7 @@ function validateEnv(): void {
 }
 validateEnv();
 validateSquareWebhookConfig();
+verifySmtpAtStartup();
 
 const app = express();
 const PORT = process.env.PORT || 5000;
