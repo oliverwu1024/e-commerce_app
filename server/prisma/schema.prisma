@@ -87,37 +87,37 @@ enum InquiryStatus {
 
 model User {
   id             String   @id @default(uuid())
-  email          String   @unique
-  username       String   @unique
-  password       String
-  name           String
+  email          String   @unique @db.VarChar(255)
+  username       String   @unique @db.VarChar(50)
+  password       String   @db.VarChar(100) // bcrypt hash is fixed-length 60
+  name           String   @db.VarChar(100)
   role           UserRole @default(USER)
-  location       String?
-  bio            String?
-  phone          String?
+  location       String?  @db.VarChar(100)
+  bio            String?  @db.VarChar(500)
+  phone          String?  @db.VarChar(20)
   // Public profile picture. S3 URL under avatars/<userId>/. Public-read
   // (same policy as listings/*). Null = render initial-letter fallback.
-  avatarUrl      String?
+  avatarUrl      String?  @db.VarChar(500)
   emailVerified           Boolean   @default(false)
-  emailVerificationToken  String?   @unique
+  emailVerificationToken  String?   @unique @db.VarChar(128)
   emailVerificationExpires DateTime?
   // Two-phase email change: the new address sits here until the user clicks
   // the verification link sent to it. On verify, email ← pendingEmail and
   // pendingEmail is cleared. Keeps the old inbox live until the new one is
   // proven controlled by the same person (blocks session-steal lockout).
-  pendingEmail             String?
+  pendingEmail             String?  @db.VarChar(255)
   phoneVerified           Boolean   @default(false)
-  phoneVerificationCode     String?   // bcrypt-hashed 6-digit OTP
+  phoneVerificationCode     String?   @db.VarChar(100) // bcrypt hash of 6-digit OTP
   phoneVerificationExpires  DateTime?
   phoneVerificationAttempts Int       @default(0)
   sellerType     SellerType @default(PERSONAL)
-  businessName   String?    // only for BUSINESS sellers
-  abn            String?    // Australian Business Number — BUSINESS only
+  businessName   String?    @db.VarChar(100) // only for BUSINESS sellers
+  abn            String?    @db.VarChar(11)  // Australian Business Number — 11 digits
   abnVerified    Boolean    @default(false)
-  idDocumentUrl  String?    // S3 URL — PERSONAL sellers only
+  idDocumentUrl  String?    @db.VarChar(500) // S3 URL — PERSONAL sellers only
   idVerification VerificationStatus @default(NOT_SUBMITTED)
   idSubmittedAt  DateTime? // set when user POSTs /verify-id; admin queue orders by this (not updatedAt, which is bumped by unrelated profile edits)
-  idRejectionReason String? // set when admin rejects; cleared on re-submit
+  idRejectionReason String? @db.VarChar(500) // set when admin rejects; cleared on re-submit
   // Bumped on password change / logout-everywhere so JWTs issued before the
   // bump fail authentication. Added via `db push` in Day 19 — migration
   // history cleanup is a Day 21 item.
@@ -151,13 +151,13 @@ model User {
 
 model Listing {
   id          String        @id @default(uuid())
-  title       String
-  description String
-  price       Decimal @db.Decimal(10, 2)
-  category    String
-  subcategory String?
-  platform    String?
-  brand       String?
+  title       String        @db.VarChar(200)
+  description String        @db.VarChar(5000)
+  price       Decimal       @db.Decimal(10, 2)
+  category    String        @db.VarChar(50)
+  subcategory String?       @db.VarChar(50)
+  platform    String?       @db.VarChar(50)
+  brand       String?       @db.VarChar(50)
   condition   Condition
   status      ListingStatus @default(ACTIVE)
   createdAt   DateTime      @default(now())
@@ -180,7 +180,7 @@ model Listing {
 
 model ListingImage {
   id           String  @id @default(uuid())
-  url          String
+  url          String  @db.VarChar(500)
   displayOrder Int
 
   listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
@@ -215,7 +215,7 @@ model CartItem {
 
 model Order {
   id            String        @id @default(uuid())
-  amount        Decimal @db.Decimal(10, 2)
+  amount        Decimal       @db.Decimal(10, 2)
   status        OrderStatus   @default(PENDING_CONFIRMATION)
   paymentMethod PaymentMethod?
   // Online-payment session tracking. Independent of `status`. Gates cancel
@@ -225,7 +225,7 @@ model Order {
   // Fulfillment timestamps (nullable; set when seller/buyer click the
   // corresponding action). Used to render "Awaiting shipment" / "In transit"
   // / "Received on …" badges and for the dashboard in-progress filter.
-  trackingNumber String?
+  trackingNumber String?   @db.VarChar(100)
   shippedAt      DateTime?
   deliveredAt    DateTime?
   createdAt     DateTime      @default(now())
@@ -253,7 +253,7 @@ model Order {
 model Review {
   id        String   @id @default(uuid())
   rating    Int
-  comment   String?
+  comment   String?  @db.VarChar(2000)
   createdAt DateTime @default(now())
 
   order   Order  @relation(fields: [orderId], references: [id])
@@ -283,7 +283,7 @@ model SavedListing {
 
 model Message {
   id        String    @id @default(uuid())
-  content   String
+  content   String    @db.VarChar(2000)
   createdAt DateTime  @default(now())
   // Set when the receiver fetches the thread. Lets the inbox show unread
   // counts per thread + the Navbar envelope badge sum.
@@ -311,8 +311,8 @@ model Message {
 model Notification {
   id        String           @id @default(uuid())
   type      NotificationType
-  title     String           // short summary rendered in the UI
-  body      String           // detail line under the title
+  title     String           @db.VarChar(200) // short summary rendered in the UI
+  body      String           @db.VarChar(500) // detail line under the title
   readAt    DateTime?
   createdAt DateTime         @default(now())
 
@@ -337,8 +337,8 @@ model Notification {
 // so the audit trail survives even if an order row were ever removed.
 model ProcessedWebhookEvent {
   id        String   @id @default(uuid())
-  provider  String
-  eventId   String
+  provider  String   @db.VarChar(20)
+  eventId   String   @db.VarChar(100)
   orderId   String?
   createdAt DateTime @default(now())
 
@@ -378,7 +378,7 @@ model Inquiry {
 
 model InquiryMessage {
   id        String    @id @default(uuid())
-  content   String
+  content   String    @db.VarChar(2000)
   createdAt DateTime  @default(now())
   readAt    DateTime?
 

@@ -18,6 +18,10 @@ import inboxRoutes from './routes/inbox.js';
 import inquiryRoutes from './routes/inquiries.js';
 import webhookRoutes from './routes/webhooks.js';
 import { validateSquareWebhookConfig } from './config/square.js';
+import { csrfOriginGuard } from './middleware/csrf.js';
+import { requestLogger } from './middleware/requestLogger.js';
+import { logger } from './utils/logger.js';
+import { startOrderSweep, stopOrderSweep } from './services/orderSweep.js';
 
 // Fail fast at boot on missing required env — the alternative is a service
 // that reports "ok" and 500s on the first real request. JWT_SECRET is already
@@ -66,14 +70,20 @@ app.use(cors({
   credentials: true,
 }));
 
+// Request logger — mounted before webhooks so webhook calls are logged too.
+app.use(requestLogger);
+
 // Webhook routes get the raw body (Stripe/Square signatures are computed
 // over the exact bytes sent). Mount BEFORE express.json() so they aren't
-// parsed into objects that lose the original bytes.
+// parsed into objects that lose the original bytes. Webhooks are NOT
+// browser-originated and are signature-verified — exempt from csrfOriginGuard.
 app.use('/api/webhooks', express.raw({ type: 'application/json' }), webhookRoutes);
 
 app.use(express.json({ limit: '200kb' }));
 app.use(cookieParser());
 
+// Health is a plain GET from load balancers / uptime monitors — exempt from
+// both requestLogger (handled inside it) and csrfOriginGuard (GET is safe).
 app.get('/api/health', async (_req, res) => {
   try {
     await prisma.$queryRaw`SELECT 1`;
@@ -82,6 +92,11 @@ app.get('/api/health', async (_req, res) => {
     res.status(500).json({ status: 'error', database: 'disconnected' });
   }
 });
+
+// CSRF defence: browser-originated mutations must declare an Origin in the
+// CORS allowlist. Covers every /api route below. Webhooks + health are above
+// this line so they bypass.
+app.use('/api', csrfOriginGuard);
 
 app.use('/api/auth', authRoutes);
 app.use('/api/listings', listingRoutes);
@@ -97,17 +112,22 @@ app.use('/api/inbox', inboxRoutes);
 app.use('/api/inquiries', inquiryRoutes);
 
 const server = app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+  logger.info('server.start', { port: Number(PORT) });
 });
+
+// Background sweeps — kicked off after the server is listening so a crash on
+// the first run doesn't prevent the process from being debuggable.
+startOrderSweep();
 
 // Graceful shutdown: stop accepting new connections, let in-flight requests
 // finish, then close the Prisma pool. Without this, SIGTERM (docker stop,
 // k8s evict) kills mid-transaction writes. The 15-second cap is the same
 // grace window Kubernetes defaults to — matching it avoids surprise SIGKILLs.
 function shutdown(signal: string): void {
-  console.log(`${signal} received, shutting down...`);
+  logger.info('server.shutdown.start', { signal });
+  stopOrderSweep();
   const timeout = setTimeout(() => {
-    console.error('Shutdown timed out; forcing exit.');
+    logger.error('server.shutdown.timeout');
     process.exit(1);
   }, 15000);
   server.close(async () => {
@@ -115,7 +135,7 @@ function shutdown(signal: string): void {
     try {
       await prisma.$disconnect();
     } catch (err) {
-      console.error('Error disconnecting Prisma:', err);
+      logger.error('server.shutdown.prisma_disconnect_failed', { err: String(err) });
     }
     process.exit(0);
   });

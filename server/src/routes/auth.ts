@@ -222,6 +222,25 @@ router.post('/logout', (_req: Request, res: Response) => {
   res.json({ message: 'Logged out' });
 });
 
+// POST /api/auth/logout-all — "sign out of all devices". Bumps
+// tokenVersion so every JWT issued before this moment fails the middleware's
+// version check and 401s. Differs from /logout which just clears the cookie
+// on this one browser — a JWT copied off the wire could still be replayed
+// until its 7-day expiry without this.
+router.post('/logout-all', authenticate, async (req: Request, res: Response) => {
+  try {
+    await prisma.user.update({
+      where: { id: req.userId },
+      data: { tokenVersion: { increment: 1 } },
+    });
+    clearTokenCookie(res);
+    res.json({ message: 'Signed out of all devices' });
+  } catch (err) {
+    console.error('Logout-all error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/auth/verify-email/:token
 router.get('/verify-email/:token', authLimiter, async (req: Request<{ token: string }>, res: Response) => {
   try {

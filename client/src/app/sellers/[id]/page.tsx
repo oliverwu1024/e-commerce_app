@@ -196,14 +196,28 @@ function SellerProfile({ id }: { id: string }) {
           </div>
         </div>
 
+        {/*
+          Both tabs stay mounted and toggle via `hidden` — switching tabs no
+          longer refetches from scratch. The inner components keep their own
+          state (page, fetched listings/reviews) across tab switches.
+        */}
         <div
           role="tabpanel"
-          id={`seller-panel-${activeTab}`}
-          aria-labelledby={`seller-tab-${activeTab}`}
+          id="seller-panel-listings"
+          aria-labelledby="seller-tab-listings"
           className="mt-6"
+          hidden={activeTab !== 'listings'}
         >
-          {activeTab === 'listings' && <SellerListingsTab sellerId={id} />}
-          {activeTab === 'reviews' && <SellerReviewsTab sellerId={id} />}
+          <SellerListingsTab sellerId={id} />
+        </div>
+        <div
+          role="tabpanel"
+          id="seller-panel-reviews"
+          aria-labelledby="seller-tab-reviews"
+          className="mt-6"
+          hidden={activeTab !== 'reviews'}
+        >
+          <SellerReviewsTab sellerId={id} />
         </div>
       </div>
     </main>

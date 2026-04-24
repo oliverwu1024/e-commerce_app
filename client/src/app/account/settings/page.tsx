@@ -74,6 +74,16 @@ export default function AccountSettingsPage() {
         }}
       />
       <div className="border-t border-[var(--border-subtle)]" />
+      <SignOutEverywhere
+        onDone={async () => {
+          try {
+            await useAuthStore.getState().logout();
+          } finally {
+            router.push('/login');
+          }
+        }}
+      />
+      <div className="border-t border-[var(--border-subtle)]" />
       <DangerZone
         onDeleted={async () => {
           // Server has soft-deleted the row, bumped tokenVersion and
@@ -711,6 +721,50 @@ function PasswordForm({ onChanged }: { onChanged: () => void }) {
 // ---------------------------------------------------------------------------
 
 const DELETE_ACCOUNT_PHRASE = 'I confirm the deletion of account';
+
+function SignOutEverywhere({ onDone }: { onDone: () => void }) {
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState('');
+
+  async function handleClick() {
+    if (submitting) return;
+    if (!confirm('Sign out of every device and browser? You’ll need to sign back in.')) return;
+    setSubmitting(true);
+    setError('');
+    try {
+      await api<{ message: string }>('/api/auth/logout-all', { method: 'POST' });
+      onDone();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to sign out everywhere');
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <section className="space-y-3">
+      <div>
+        <h2 className="text-lg font-semibold text-[var(--text-primary)]">Security</h2>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
+          Revoke every active session for this account. Use if you suspect a
+          device was stolen or a session was hijacked.
+        </p>
+      </div>
+      <button
+        type="button"
+        onClick={handleClick}
+        disabled={submitting}
+        className="btn-cyber-outline"
+      >
+        {submitting ? 'Signing out…' : 'Sign out of all devices'}
+      </button>
+      {error && (
+        <p className="text-sm text-[var(--neon-danger)]" role="alert">
+          {error}
+        </p>
+      )}
+    </section>
+  );
+}
 
 function DangerZone({ onDeleted }: { onDeleted: () => void }) {
   const [expanded, setExpanded] = useState(false);
