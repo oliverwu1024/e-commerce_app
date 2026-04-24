@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express';
 import { z } from 'zod';
+import prisma from '../lib/prisma.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { sendContactFormEmail } from '../utils/email.js';
 import { logger } from '../utils/logger.js';
@@ -48,9 +49,34 @@ router.post('/', contactLimiter, async (req: Request, res: Response) => {
       return;
     }
 
-    await sendContactFormEmail(adminEmail, name, email, subject, message);
+    // Persist FIRST so we still have a record if the email send fails — the
+    // admin can then reply through /admin/contact even if Resend was down at
+    // intake time. Email is best-effort notification; the row is the truth.
+    const submission = await prisma.contactSubmission.create({
+      data: {
+        fromName: name,
+        fromEmail: email,
+        subject,
+        message,
+      },
+    });
 
-    logger.info('contact.sent', { fromEmail: email, subject: subject.slice(0, 60) });
+    try {
+      await sendContactFormEmail(adminEmail, name, email, subject, message);
+    } catch (mailErr) {
+      // Log but still return success — the row is in the DB and the admin
+      // will see it in /admin/contact even without the email notification.
+      logger.error('contact.notify_failed', {
+        submissionId: submission.id,
+        err: mailErr instanceof Error ? mailErr.message : String(mailErr),
+      });
+    }
+
+    logger.info('contact.sent', {
+      submissionId: submission.id,
+      fromEmail: email,
+      subject: subject.slice(0, 60),
+    });
     res.json({ message: "Thanks — we've got your message and will reply soon." });
   } catch (err) {
     logger.error('contact.failed', { err: err instanceof Error ? err.message : String(err) });

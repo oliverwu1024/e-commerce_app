@@ -113,19 +113,24 @@ async function main(): Promise<void> {
     orderBy: { createdAt: 'asc' },
   });
 
-  // Test mode: keep only the matching address (still has to exist in the
-  // sellers list — guards against fat-finger to a random email).
-  let recipients = sellers;
+  // Test mode: send to a single arbitrary address. Used for previewing the
+  // rendered email before the real broadcast — the address does NOT need
+  // to be an existing seller. Name defaults to the local-part of the email.
+  let recipients: { email: string; name: string; sellerType?: string }[] = sellers;
   if (args.test) {
-    const t = args.test.toLowerCase();
-    recipients = sellers.filter((s) => s.email.toLowerCase() === t);
-    if (recipients.length === 0) {
-      console.error(
-        `No active seller with email ${args.test} found. Aborting test send.`,
-      );
+    const t = args.test.trim();
+    if (!t.includes('@')) {
+      console.error(`--test must be an email address, got: ${args.test}`);
       await prisma.$disconnect();
       process.exit(1);
     }
+    // Reuse the existing seller's name if they happen to be in the audience
+    // (so the test render matches what they'd actually receive); otherwise
+    // synthesise a friendly name from the local-part for the salutation.
+    const existing = sellers.find((s) => s.email.toLowerCase() === t.toLowerCase());
+    recipients = [
+      existing ?? { email: t, name: t.split('@')[0] || 'there', sellerType: 'TEST' },
+    ];
   }
 
   const alreadySent = loadSentSet(args.logPath);

@@ -369,6 +369,45 @@ function QuickLinks({ pendingVerifications }: { pendingVerifications: number }) 
             </p>
           </div>
         </Link>
+        <Link
+          href="/admin/contact"
+          className="panel clip-corner flex items-center justify-between p-4 hover:border-[var(--neon-cyan)] hover:shadow-sm transition"
+        >
+          <div>
+            <p className="text-sm font-semibold text-[var(--text-primary)]">
+              Support inbox
+            </p>
+            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+              Reply to contact-form submissions from inside the app.
+            </p>
+          </div>
+        </Link>
+        <Link
+          href="/admin/users"
+          className="panel clip-corner flex items-center justify-between p-4 hover:border-[var(--neon-cyan)] hover:shadow-sm transition"
+        >
+          <div>
+            <p className="text-sm font-semibold text-[var(--text-primary)]">
+              Users
+            </p>
+            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+              Browse and search every account by email or username.
+            </p>
+          </div>
+        </Link>
+        <Link
+          href="/admin/broadcasts"
+          className="panel clip-corner flex items-center justify-between p-4 hover:border-[var(--neon-cyan)] hover:shadow-sm transition"
+        >
+          <div>
+            <p className="text-sm font-semibold text-[var(--text-primary)]">
+              Broadcasts
+            </p>
+            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
+              Send announcements via email + in-app to subgroups or specific users.
+            </p>
+          </div>
+        </Link>
       </div>
     </section>
   );

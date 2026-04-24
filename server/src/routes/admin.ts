@@ -10,8 +10,14 @@ import {
   adminReviewSchema,
   pendingVerificationsQuerySchema,
 } from '../schemas/users.js';
-import { sendIdApprovedEmail, sendIdRejectedEmail } from '../utils/email.js';
+import {
+  sendAdminContactReply,
+  sendIdApprovedEmail,
+  sendIdRejectedEmail,
+} from '../utils/email.js';
 import { createNotification } from '../services/notifications.js';
+import { sendBroadcast } from '../services/broadcasts.js';
+import { z } from 'zod';
 
 const router = Router();
 
@@ -326,6 +332,264 @@ router.get('/orders/stuck', async (req: Request, res: Response) => {
     console.error('Admin stuck orders error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
+});
+
+// ===========================================================================
+// USERS — admin browser
+// ===========================================================================
+
+router.get('/users', async (req: Request, res: Response) => {
+  const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 25));
+
+  const where: Prisma.UserWhereInput = {
+    deletedAt: null,
+    ...(q
+      ? {
+          OR: [
+            { email: { contains: q, mode: 'insensitive' as const } },
+            { username: { contains: q, mode: 'insensitive' as const } },
+            { name: { contains: q, mode: 'insensitive' as const } },
+            { businessName: { contains: q, mode: 'insensitive' as const } },
+          ],
+        }
+      : {}),
+  };
+
+  const [users, total] = await Promise.all([
+    prisma.user.findMany({
+      where,
+      select: {
+        id: true,
+        email: true,
+        username: true,
+        name: true,
+        role: true,
+        sellerType: true,
+        businessName: true,
+        emailVerified: true,
+        phoneVerified: true,
+        idVerification: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+    }),
+    prisma.user.count({ where }),
+  ]);
+
+  res.json({
+    users,
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  });
+});
+
+// ===========================================================================
+// CONTACT SUBMISSIONS — list + reply + close
+// ===========================================================================
+
+router.get('/contact', async (req: Request, res: Response) => {
+  const status = typeof req.query.status === 'string' ? req.query.status : '';
+  const page = Math.max(1, Number(req.query.page) || 1);
+  const limit = Math.min(50, Math.max(1, Number(req.query.limit) || 25));
+
+  const where: Prisma.ContactSubmissionWhereInput =
+    status === 'NEW' || status === 'REPLIED' || status === 'CLOSED'
+      ? { status }
+      : {};
+
+  const [submissions, total] = await Promise.all([
+    prisma.contactSubmission.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: (page - 1) * limit,
+      take: limit,
+      include: {
+        replies: {
+          orderBy: { sentAt: 'asc' },
+          include: { admin: { select: { id: true, username: true } } },
+        },
+        closedBy: { select: { id: true, username: true } },
+      },
+    }),
+    prisma.contactSubmission.count({ where }),
+  ]);
+  res.json({
+    submissions,
+    pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
+  });
+});
+
+const replyContactSchema = z.object({
+  body: z.string().trim().min(1, 'Reply cannot be empty').max(5000),
+});
+
+router.post(
+  '/contact/:id/reply',
+  async (req: Request<{ id: string }>, res: Response) => {
+    const { id } = req.params;
+    if (!uuidSchema.safeParse(id).success) {
+      res.status(400).json({ error: 'Invalid submission ID' });
+      return;
+    }
+    const parsed = replyContactSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+    const submission = await prisma.contactSubmission.findUnique({
+      where: { id },
+    });
+    if (!submission) {
+      res.status(404).json({ error: 'Submission not found' });
+      return;
+    }
+    try {
+      await sendAdminContactReply(
+        submission.fromEmail,
+        submission.fromName,
+        submission.subject,
+        parsed.data.body,
+      );
+    } catch (err) {
+      console.error('[admin contact reply] send failed:', err);
+      res.status(502).json({ error: 'Failed to send reply email' });
+      return;
+    }
+    // Record reply + flip status to REPLIED only after the email actually
+    // landed at Resend — otherwise we'd show "replied" in the UI for a
+    // message the customer never received.
+    const reply = await prisma.contactReply.create({
+      data: {
+        submissionId: id,
+        body: parsed.data.body,
+        adminId: req.userId!,
+      },
+    });
+    await prisma.contactSubmission.update({
+      where: { id },
+      data: {
+        status: submission.status === 'CLOSED' ? 'CLOSED' : 'REPLIED',
+      },
+    });
+    res.json({ reply });
+  },
+);
+
+router.post(
+  '/contact/:id/close',
+  async (req: Request<{ id: string }>, res: Response) => {
+    const { id } = req.params;
+    if (!uuidSchema.safeParse(id).success) {
+      res.status(400).json({ error: 'Invalid submission ID' });
+      return;
+    }
+    const updated = await prisma.contactSubmission.updateMany({
+      where: { id },
+      data: {
+        status: 'CLOSED',
+        closedAt: new Date(),
+        closedById: req.userId!,
+      },
+    });
+    if (updated.count === 0) {
+      res.status(404).json({ error: 'Submission not found' });
+      return;
+    }
+    res.json({ ok: true });
+  },
+);
+
+// ===========================================================================
+// BROADCASTS — admin announcements (email + in-app notification fan-out)
+// ===========================================================================
+
+const audienceEnum = z.enum([
+  'ALL_VERIFIED',
+  'ALL_SELLERS',
+  'BUSINESS_SELLERS',
+  'PERSONAL_SELLERS',
+  'SELLERS_NO_PAYMENT',
+  'CUSTOM_EMAILS',
+]);
+
+const broadcastSchema = z
+  .object({
+    subject: z.string().trim().min(3).max(200),
+    body: z.string().trim().min(1).max(20000),
+    audience: audienceEnum,
+    targetEmails: z
+      .string()
+      .trim()
+      .max(5000)
+      .optional(),
+    channelEmail: z.boolean().default(true),
+    channelInApp: z.boolean().default(true),
+  })
+  .refine((v) => v.channelEmail || v.channelInApp, {
+    message: 'At least one channel (email or in-app) must be enabled',
+  })
+  .refine(
+    (v) => v.audience !== 'CUSTOM_EMAILS' || (v.targetEmails && v.targetEmails.length > 0),
+    {
+      message: 'targetEmails is required when audience=CUSTOM_EMAILS',
+      path: ['targetEmails'],
+    },
+  );
+
+router.post('/broadcasts', async (req: Request, res: Response) => {
+  const parsed = broadcastSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0].message });
+    return;
+  }
+  try {
+    const result = await sendBroadcast({
+      sentById: req.userId!,
+      subject: parsed.data.subject,
+      body: parsed.data.body,
+      audience: parsed.data.audience,
+      targetEmails: parsed.data.targetEmails ?? null,
+      channelEmail: parsed.data.channelEmail,
+      channelInApp: parsed.data.channelInApp,
+    });
+    res.json(result);
+  } catch (err) {
+    console.error('Broadcast send failed:', err);
+    res.status(500).json({
+      error: err instanceof Error ? err.message : 'Broadcast failed',
+    });
+  }
+});
+
+router.get('/broadcasts', async (_req: Request, res: Response) => {
+  const broadcasts = await prisma.broadcast.findMany({
+    orderBy: { createdAt: 'desc' },
+    take: 50,
+    include: {
+      sentBy: { select: { id: true, username: true } },
+    },
+  });
+  res.json({ broadcasts });
+});
+
+// Audience preview — admin asks "how many people would this hit?" before
+// hitting send. Reuses the same resolver as the actual send so they can't
+// drift.
+router.post('/broadcasts/preview', async (req: Request, res: Response) => {
+  const parsed = broadcastSchema.safeParse(req.body);
+  if (!parsed.success) {
+    res.status(400).json({ error: parsed.error.issues[0].message });
+    return;
+  }
+  const { resolveAudience } = await import('../services/broadcasts.js');
+  const recipients = await resolveAudience(parsed.data.audience, parsed.data.targetEmails ?? null);
+  res.json({
+    count: recipients.length,
+    sample: recipients.slice(0, 10).map((r) => ({ email: r.email, name: r.name })),
+  });
 });
 
 export default router;

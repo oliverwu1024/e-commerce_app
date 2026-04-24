@@ -281,6 +281,71 @@ export async function sendNewMessageEmail(
   });
 }
 
+// Admin replying to a customer support inquiry from inside the app. Sent
+// from the platform's noreply address with replyTo=ADMIN_EMAIL so any
+// follow-up from the customer comes back to the same admin inbox the
+// original /api/contact email landed in. From: never exposes the admin's
+// personal email — that was the whole point of building this flow.
+export async function sendAdminContactReply(
+  toEmail: string,
+  toName: string,
+  originalSubject: string,
+  body: string,
+): Promise<void> {
+  const adminEmail = process.env.ADMIN_EMAIL;
+  // Strip an existing "Re:" so reply chains don't grow "Re: Re: Re:".
+  const cleaned = originalSubject.replace(/^(re:\s*)+/i, '').trim();
+  const subject = `Re: ${cleaned}`;
+
+  await sendMail({
+    from: EMAIL_CONFIG.from,
+    to: toEmail,
+    replyTo: adminEmail || undefined,
+    subject,
+    html: `
+      <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
+        <p>Hi ${escapeHtml(toName)},</p>
+        <div style="white-space: pre-wrap; line-height: 1.5; margin: 16px 0;">${escapeHtml(body)}</div>
+        <p style="margin-top: 24px; color: #6b7280; font-size: 14px;">
+          — ElectroMarket Support
+        </p>
+        <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;"/>
+        <p style="color: #9ca3af; font-size: 12px;">
+          Reply to this email and your message will reach us at the same place
+          your original enquiry went.
+        </p>
+      </div>
+    `,
+  });
+}
+
+// Admin-initiated broadcast email. Used by the /admin/broadcasts send
+// pipeline to push a single subject + body to many recipients (one call
+// per recipient — Resend batches up to 100 in a single API call but we
+// keep it simple). Body is pre-formatted HTML; admin is trusted, no
+// escape pass on the body itself, but the salutation IS escaped.
+export async function sendBroadcastEmail(
+  toEmail: string,
+  toName: string,
+  subject: string,
+  bodyHtml: string,
+): Promise<void> {
+  await sendMail({
+    from: EMAIL_CONFIG.from,
+    to: toEmail,
+    subject,
+    html: `
+      <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
+        <p>Hi ${escapeHtml(toName)},</p>
+        <div style="line-height: 1.5; margin: 16px 0;">${bodyHtml}</div>
+        <p style="margin-top: 24px; color: #6b7280; font-size: 14px;">
+          — The ElectroMarket team
+        </p>
+      </div>
+    `,
+  });
+}
+
 // One-shot announcement for the connected-accounts cutover (sent 2026-04-25
 // via scripts/announce-connected-accounts.ts). Kept here rather than inlined
 // in the script so the HTML lives next to the other email templates.

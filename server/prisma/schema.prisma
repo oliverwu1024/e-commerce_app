@@ -98,6 +98,24 @@ enum DisputeReason {
   OTHER              // free-text in `description`
 }
 
+enum ContactStatus {
+  NEW       // arrived, no admin action
+  REPLIED   // at least one admin reply sent
+  CLOSED    // admin marked done; no more replies expected
+}
+
+// Audience preset for a broadcast. KEEP IN SYNC with resolveAudience() in
+// services/broadcasts.ts — adding a value here without a server-side handler
+// will silently send to nobody.
+enum BroadcastAudience {
+  ALL_VERIFIED          // every user with emailVerified=true
+  ALL_SELLERS           // anyone marked as a seller
+  BUSINESS_SELLERS      // sellerType=BUSINESS only
+  PERSONAL_SELLERS      // sellerType=PERSONAL only
+  SELLERS_NO_PAYMENT    // sellers with zero ACTIVE SellerPaymentAccount rows
+  CUSTOM_EMAILS         // explicit list in Broadcast.targetEmails
+}
+
 enum InquiryStatus {
   OPEN    // active conversation
   CLOSED  // either party manually archived (still readable, just hidden by default)
@@ -195,6 +213,9 @@ model User {
   buyerDisputes  Dispute[] @relation("disputeBuyer")
   sellerDisputes Dispute[] @relation("disputeSeller")
   resolvedDisputes Dispute[] @relation("disputeResolver")
+  contactReplies ContactReply[]    @relation("contactReplyAdmin")
+  closedContacts ContactSubmission[] @relation("contactClosedBy")
+  sentBroadcasts Broadcast[]       @relation("broadcastSender")
 
   @@index([deletedAt])
 }
@@ -491,6 +512,79 @@ model Dispute {
   // Backs the admin queue ("show me OPEN disputes oldest-first").
   @@index([status, createdAt])
   @@index([sellerId])
+}
+
+// Inbound contact-form submission. Persisted so admins can reply from inside
+// the app (instead of from their personal email) and so we have a history /
+// re-contact log rather than relying on an inbox search. The original email
+// notification still fires — this row is the canonical record.
+model ContactSubmission {
+  id        String        @id @default(uuid())
+  fromName  String        @db.VarChar(100)
+  fromEmail String        @db.VarChar(255)
+  subject   String        @db.VarChar(150)
+  message   String        @db.VarChar(3000)
+  status    ContactStatus @default(NEW)
+  createdAt DateTime      @default(now())
+  updatedAt DateTime      @updatedAt
+
+  closedAt    DateTime?
+  closedBy    User?     @relation("contactClosedBy", fields: [closedById], references: [id])
+  closedById  String?
+
+  replies ContactReply[]
+
+  // Inbox view: NEW first, then by createdAt desc.
+  @@index([status, createdAt])
+  // For the admin to look up submissions by a sender's email (e.g., when the
+  // same person opens multiple tickets).
+  @@index([fromEmail])
+}
+
+// One row per admin reply on a contact submission. Stored so we can render
+// the conversation history in /admin/contact and so we know which admin
+// answered (audit). Reply content is sent via Resend at write time; this is
+// the local record of what we sent.
+model ContactReply {
+  id           String  @id @default(uuid())
+  body         String  @db.VarChar(5000)
+  sentAt       DateTime @default(now())
+
+  submission   ContactSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  submissionId String
+
+  admin   User   @relation("contactReplyAdmin", fields: [adminId], references: [id])
+  adminId String
+
+  @@index([submissionId, sentAt])
+}
+
+// Admin-initiated broadcast (announcement to many users at once). Each row
+// is one send event — re-running the same announcement creates a new row.
+// audience + targetEmails define WHO; channelEmail / channelInApp define HOW;
+// sentCount + failedCount + sentAt prove WHAT happened. Body stored so the
+// admin can re-send the same content if needed.
+model Broadcast {
+  id              String           @id @default(uuid())
+  subject         String           @db.VarChar(200)
+  body            String           @db.VarChar(20000)
+  audience        BroadcastAudience
+  // Comma-separated list when audience=CUSTOM_EMAILS; null otherwise.
+  targetEmails    String?          @db.VarChar(5000)
+  channelEmail    Boolean          @default(true)
+  channelInApp    Boolean          @default(true)
+  // Snapshot of audience size at send time.
+  audienceCount   Int
+  sentCount       Int              @default(0)
+  failedCount     Int              @default(0)
+  status          String           @default("SENDING") @db.VarChar(20) // SENDING | DONE | FAILED
+  createdAt       DateTime         @default(now())
+  finishedAt      DateTime?
+
+  sentBy   User   @relation("broadcastSender", fields: [sentById], references: [id])
+  sentById String
+
+  @@index([createdAt])
 }
 
 // A seller's linked payment provider account. Per-seller credentials replace
