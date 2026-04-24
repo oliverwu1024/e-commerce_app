@@ -102,6 +102,41 @@ function escapeHtml(s: string): string {
     .replace(/'/g, '&#39;');
 }
 
+export async function sendPasswordResetEmail(
+  email: string,
+  username: string,
+  token: string,
+): Promise<void> {
+  const clientUrl = (process.env.CLIENT_URL || 'http://localhost:3000').split(',')[0].trim();
+  const resetUrl = `${clientUrl}/reset-password?token=${token}`;
+
+  await sendMail({
+    from: EMAIL_CONFIG.from,
+    to: email,
+    subject: 'Reset your ElectroMarket password',
+    html: `
+      <div style="font-family: sans-serif; max-width: 480px; margin: 0 auto;">
+        <h2>Hi ${escapeHtml(username)},</h2>
+        <p>We received a request to reset the password on your ElectroMarket account.</p>
+        <p>Click the button below to set a new password. This link expires in 1 hour.</p>
+        <a href="${resetUrl}"
+           style="display: inline-block; background: #2563eb; color: #fff; padding: 12px 24px;
+                  border-radius: 8px; text-decoration: none; font-weight: 600;">
+          Reset password
+        </a>
+        <p style="margin-top: 16px; color: #666; font-size: 14px;">
+          Or copy and paste this link into your browser:<br/>
+          <a href="${resetUrl}">${resetUrl}</a>
+        </p>
+        <p style="margin-top: 16px; color: #999; font-size: 12px;">
+          If you didn't request a password reset, you can safely ignore this email —
+          your password won't change.
+        </p>
+      </div>
+    `,
+  });
+}
+
 export async function sendIdSubmittedEmail(
   adminEmail: string,
   username: string,

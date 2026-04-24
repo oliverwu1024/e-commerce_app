@@ -5,11 +5,20 @@ import { Prisma } from '../generated/prisma/client.js';
 import prisma from '../lib/prisma.js';
 import { AUTH_CONFIG } from '../config/auth.js';
 import { EMAIL_CONFIG } from '../config/email.js';
-import { registerSchema, loginSchema } from '../schemas/auth.js';
+import {
+  registerSchema,
+  loginSchema,
+  forgotPasswordSchema,
+  resetPasswordSchema,
+} from '../schemas/auth.js';
 import { authenticate, JwtPayload } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { clearTokenCookie } from '../utils/cookies.js';
-import { generateVerificationToken, sendVerificationEmail } from '../utils/email.js';
+import {
+  generateVerificationToken,
+  sendVerificationEmail,
+  sendPasswordResetEmail,
+} from '../utils/email.js';
 
 const router = Router();
 
@@ -358,6 +367,114 @@ router.post('/resend-verification', authenticate, authLimiter, async (req: Reque
     });
   } catch (err) {
     console.error('Resend verification error:', err);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/forgot-password
+// Always responds 200 with the same message regardless of whether the email
+// exists. Without this the endpoint is a free email-enumeration oracle: an
+// attacker pings it and infers "email X has an account here" from a 404 vs
+// 200 difference. The rate limiter still caps overall abuse per IP.
+// ---------------------------------------------------------------------------
+router.post('/forgot-password', authLimiter, async (req: Request, res: Response) => {
+  const GENERIC_OK = {
+    message:
+      "If that email is linked to an account, we've sent a password reset link. Check your inbox.",
+  };
+  try {
+    const parsed = forgotPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+    const { email } = parsed.data;
+
+    const user = await prisma.user.findUnique({ where: { email } });
+
+    // Bail silently if the account doesn't exist, is deleted, or hasn't
+    // verified its email yet — but return the same 200 body so the caller
+    // can't distinguish. Skipping the unverified case blocks an attacker from
+    // using an email they don't control to hijack an account that the real
+    // owner hasn't set up yet.
+    if (!user || user.deletedAt || !user.emailVerified) {
+      res.json(GENERIC_OK);
+      return;
+    }
+
+    const token = generateVerificationToken();
+    const oneHour = 60 * 60 * 1000;
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordResetToken: token,
+        passwordResetExpires: new Date(Date.now() + oneHour),
+      },
+    });
+
+    // Fire-and-log: if the email send fails we still respond 200 so we don't
+    // leak "this email exists but our mailer is broken" to the caller. The
+    // user can retry and admins see the error in logs.
+    try {
+      await sendPasswordResetEmail(user.email, user.username, token);
+    } catch (err) {
+      console.error('Failed to send password reset email:', err);
+    }
+
+    res.json(GENERIC_OK);
+  } catch (err) {
+    console.error('Forgot password error:', err);
+    // Still return the generic OK to avoid leaking stack info via 500.
+    res.json(GENERIC_OK);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/auth/reset-password
+// Consumes the one-time token + sets a new password. Bumps tokenVersion so
+// any existing JWT (including an attacker's stolen one) stops working the
+// moment the reset completes.
+// ---------------------------------------------------------------------------
+router.post('/reset-password', authLimiter, async (req: Request, res: Response) => {
+  try {
+    const parsed = resetPasswordSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+    const { token, password } = parsed.data;
+
+    const user = await prisma.user.findUnique({
+      where: { passwordResetToken: token },
+    });
+
+    if (
+      !user ||
+      !user.passwordResetExpires ||
+      user.passwordResetExpires < new Date() ||
+      user.deletedAt
+    ) {
+      res.status(400).json({ error: 'Invalid or expired reset link. Please request a new one.' });
+      return;
+    }
+
+    const passwordHash = await bcrypt.hash(password, AUTH_CONFIG.bcryptRounds);
+
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        password: passwordHash,
+        passwordResetToken: null,
+        passwordResetExpires: null,
+        tokenVersion: { increment: 1 },
+      },
+    });
+
+    res.json({ message: 'Password reset successfully. You can now log in with your new password.' });
+  } catch (err) {
+    console.error('Reset password error:', err);
     res.status(500).json({ error: 'Internal server error' });
   }
 });

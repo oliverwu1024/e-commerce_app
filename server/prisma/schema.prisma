@@ -101,6 +101,11 @@ model User {
   emailVerified           Boolean   @default(false)
   emailVerificationToken  String?   @unique @db.VarChar(128)
   emailVerificationExpires DateTime?
+  // Password-reset token: random 32-byte hex (64 chars), short 1h expiry.
+  // Cleared on successful use, and tokenVersion is bumped so any JWTs issued
+  // before the reset (including attacker-held ones) stop authenticating.
+  passwordResetToken       String?   @unique @db.VarChar(128)
+  passwordResetExpires     DateTime?
   // Two-phase email change: the new address sits here until the user clicks
   // the verification link sent to it. On verify, email ← pendingEmail and
   // pendingEmail is cleared. Keeps the old inbox live until the new one is
