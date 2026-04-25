@@ -288,10 +288,11 @@ export async function sendNewMessageEmail(
 // webhook (POST /api/webhooks/email) extracts it to thread the response back
 // onto the same ContactSubmission instead of opening a new ticket.
 //
-// We deliberately do NOT set Reply-To = ADMIN_EMAIL anymore — that header
-// was visible to the recipient and leaked the admin's personal address.
-// Instead, replies go to From: (noreply@electromarket-app.com) and our
-// inbound parsing picks them up from the support inbox via the webhook.
+// From: is `SUPPORT_EMAIL_FROM` (defaults to support@<your-domain>) — this
+// is what the customer sees as the recipient when they hit Reply. We do
+// NOT set Reply-To: that header was recipient-visible and leaked the
+// admin's personal email. Instead the inbound provider forwards anything
+// landing at support@ to our /api/webhooks/email endpoint.
 export async function sendAdminContactReply(
   submissionId: string,
   toEmail: string,
@@ -308,12 +309,16 @@ export async function sendAdminContactReply(
   const tag = `[#${submissionId.slice(0, 12)}]`;
   const subject = `Re: ${cleaned} ${tag}`;
 
+  // Use SUPPORT_EMAIL_FROM if configured, else fall back to the platform's
+  // default From. Configure as: `Electromarket Support <support@electromarket-app.com>`
+  const supportFrom = process.env.SUPPORT_EMAIL_FROM || EMAIL_CONFIG.from;
+
   await sendMail({
-    from: EMAIL_CONFIG.from,
+    from: supportFrom,
     to: toEmail,
-    // No replyTo — Reply-To headers are recipient-visible. Replies route
-    // back through the From: address (noreply@) which our inbound webhook
-    // is configured to receive at the email provider.
+    // No replyTo — Reply-To is recipient-visible. Replies hit From:, i.e.
+    // support@<domain>, which our inbound provider is configured to forward
+    // to /api/webhooks/email.
     subject,
     html: `
       <div style="font-family: sans-serif; max-width: 560px; margin: 0 auto; color: #111827;">
