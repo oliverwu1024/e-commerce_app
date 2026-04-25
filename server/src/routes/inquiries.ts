@@ -10,6 +10,7 @@ import {
   inquiryListQuerySchema,
 } from '../schemas/inquiries.js';
 import { createNotification } from '../services/notifications.js';
+import { PUBLIC_LOCATION_SELECT, projectPublicSeller } from '../services/publicLocation.js';
 
 const router = Router();
 
@@ -41,12 +42,28 @@ const INQUIRY_SUMMARY_SELECT = {
     },
   },
   buyer: {
-    select: { id: true, username: true, avatarUrl: true, location: true },
+    select: { id: true, username: true, avatarUrl: true, ...PUBLIC_LOCATION_SELECT },
   },
   seller: {
-    select: { id: true, username: true, avatarUrl: true, location: true },
+    select: { id: true, username: true, avatarUrl: true, ...PUBLIC_LOCATION_SELECT },
   },
 } satisfies Prisma.InquirySelect;
+
+// Apply public-location projection to both parties on an inquiry. Mirrors
+// the rule used in listings/orders so we never leak structured address
+// fields through the inquiry surface.
+function projectInquiryParties<
+  T extends {
+    buyer: Parameters<typeof projectPublicSeller>[0];
+    seller: Parameters<typeof projectPublicSeller>[0];
+  },
+>(inq: T) {
+  return {
+    ...inq,
+    buyer: projectPublicSeller(inq.buyer),
+    seller: projectPublicSeller(inq.seller),
+  };
+}
 
 const INQUIRY_MESSAGE_SELECT = {
   id: true,
@@ -157,7 +174,7 @@ router.post(
         where: { id: inquiry.id },
         select: INQUIRY_SUMMARY_SELECT,
       });
-      res.status(201).json({ inquiry: full });
+      res.status(201).json({ inquiry: full ? projectInquiryParties(full) : full });
     } catch (err) {
       console.error('Create inquiry error:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -208,7 +225,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
 
     res.json({
       inquiries: inquiries.map((inq) => ({
-        ...inq,
+        ...projectInquiryParties(inq),
         unreadCount: unreadMap.get(inq.id) ?? 0,
         // Convenience flag so the client doesn't have to compare currentUserId
         // every render to know which side of the conversation it's on.
@@ -272,7 +289,7 @@ router.get(
 
       res.json({
         inquiry: {
-          ...summary,
+          ...projectInquiryParties(summary),
           viewerRole: inquiry.buyerId === userId ? 'buyer' : 'seller',
         },
         messages,

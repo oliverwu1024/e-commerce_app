@@ -7,6 +7,7 @@ import { authenticate } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { getSellerStats } from '../services/sellerStats.js';
 import { FEATURES } from '../config/features.js';
+import { PUBLIC_LOCATION_SELECT, projectPublicSeller } from '../services/publicLocation.js';
 
 const router = Router();
 
@@ -108,8 +109,8 @@ router.get('/', browseLimiter, async (req: Request, res: Response) => {
             select: {
               id: true,
               username: true,
-              location: true,
               avatarUrl: true,
+              ...PUBLIC_LOCATION_SELECT,
             },
           },
           images: {
@@ -126,7 +127,7 @@ router.get('/', browseLimiter, async (req: Request, res: Response) => {
     ]);
 
     res.json({
-      listings,
+      listings: listings.map((l) => ({ ...l, seller: projectPublicSeller(l.seller) })),
       pagination: {
         page,
         limit,
@@ -228,6 +229,10 @@ router.post('/', authenticate, createListingLimiter, async (req: Request, res: R
         phoneVerified: true,
         abnVerified: true,
         idVerification: true,
+        addressLine1: true,
+        suburb: true,
+        postcode: true,
+        state: true,
       },
     });
     if (!seller) {
@@ -245,6 +250,19 @@ router.post('/', authenticate, createListingLimiter, async (req: Request, res: R
       }
     } else if (!seller.abnVerified) {
       missing.push('abn');
+    }
+    // Address gate. Postcode + state are public on listings; line1 + suburb
+    // are needed because PICKUP listings will share the address through the
+    // order chat, and POST listings need the full address for return labels
+    // / disputes. All four are required regardless of fulfillmentMethod so
+    // sellers can switch a listing's fulfillment later without re-prompting.
+    if (
+      !seller.addressLine1 ||
+      !seller.suburb ||
+      !seller.postcode ||
+      !seller.state
+    ) {
+      missing.push('address');
     }
     if (missing.length > 0) {
       res.status(403).json({
@@ -272,11 +290,15 @@ router.post('/', authenticate, createListingLimiter, async (req: Request, res: R
       },
       include: {
         images: { orderBy: { displayOrder: 'asc' } },
-        seller: { select: { id: true, username: true, location: true } },
+        seller: {
+          select: { id: true, username: true, ...PUBLIC_LOCATION_SELECT },
+        },
       },
     });
 
-    res.status(201).json({ listing });
+    res.status(201).json({
+      listing: { ...listing, seller: projectPublicSeller(listing.seller) },
+    });
   } catch (err) {
     console.error('Create listing error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -342,7 +364,9 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
         data: updateData,
         include: {
           images: { orderBy: { displayOrder: 'asc' } },
-          seller: { select: { id: true, username: true, location: true } },
+          seller: {
+          select: { id: true, username: true, ...PUBLIC_LOCATION_SELECT },
+        },
         },
       });
     });
@@ -352,7 +376,9 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
       return;
     }
 
-    res.json({ listing });
+    res.json({
+      listing: { ...listing, seller: projectPublicSeller(listing.seller) },
+    });
   } catch (err) {
     console.error('Update listing error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -455,9 +481,9 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
           select: {
             id: true,
             username: true,
-            location: true,
             avatarUrl: true,
             createdAt: true,
+            ...PUBLIC_LOCATION_SELECT,
           },
         },
         images: {
@@ -478,11 +504,12 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
 
     const stats = await getSellerStats(listing.seller.id);
 
+    const publicSeller = projectPublicSeller(listing.seller);
     res.json({
       listing: {
         ...listing,
         seller: {
-          ...listing.seller,
+          ...publicSeller,
           avgRating: stats.avgRating,
           totalReviews: stats.totalReviews,
           totalSales: stats.totalSales,

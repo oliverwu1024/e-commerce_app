@@ -28,6 +28,7 @@ import {
 import { platformFeeForCents } from '../config/platformConnect.js';
 import { createNotification } from '../services/notifications.js';
 import { sendOrderPlacedEmail, sendNewMessageEmail } from '../utils/email.js';
+import { PUBLIC_LOCATION_SELECT, projectPublicSeller } from '../services/publicLocation.js';
 
 const router = Router();
 
@@ -80,14 +81,13 @@ const ORDER_SUMMARY_SELECT = {
       },
     },
   },
-  buyer: { select: { id: true, username: true, location: true, avatarUrl: true } },
+  buyer: { select: { id: true, username: true, avatarUrl: true, ...PUBLIC_LOCATION_SELECT } },
   seller: {
     select: {
       id: true,
       username: true,
-      location: true,
       avatarUrl: true,
-      sellerType: true,
+      ...PUBLIC_LOCATION_SELECT,
       // Only the providers the seller actively accepts. Used by the buyer-side
       // OrderRow to gate which payment buttons render. Filtered server-side
       // so a DISCONNECTED / RESTRICTED account never reaches the client.
@@ -99,6 +99,22 @@ const ORDER_SUMMARY_SELECT = {
   },
   review: { select: { id: true, rating: true } },
 } satisfies Prisma.OrderSelect;
+
+// Strip structured address fields from both parties before sending an
+// order over the wire. Mirrors the projection applied to listings/seller
+// pages so the order surface can't leak a private street address.
+function projectOrderParties<
+  T extends {
+    buyer: Parameters<typeof projectPublicSeller>[0];
+    seller: Parameters<typeof projectPublicSeller>[0];
+  },
+>(order: T) {
+  return {
+    ...order,
+    buyer: projectPublicSeller(order.buyer),
+    seller: projectPublicSeller(order.seller),
+  };
+}
 
 const MESSAGE_SELECT = {
   id: true,
@@ -335,7 +351,7 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
           console.error('Failed to fetch seller emails for notifications:', err);
         });
 
-      res.status(201).json({ orders });
+      res.status(201).json({ orders: orders.map(projectOrderParties) });
     } catch (err) {
       if (err instanceof CheckoutConflict) {
         // CheckoutConflict.message is set for fulfillment-mismatch cases.
@@ -405,7 +421,7 @@ async function listOrders(
     ]);
 
     res.json({
-      orders,
+      orders: orders.map(projectOrderParties),
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (err) {
@@ -631,7 +647,7 @@ router.put(
           listingId: updated.listing.id,
         });
       }
-      res.json({ order: updated });
+      res.json({ order: updated ? projectOrderParties(updated) : updated });
     } catch (err) {
       console.error('Confirm order error:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -745,7 +761,7 @@ router.put(
           listingId: updated.listing.id,
         });
       }
-      res.json({ order: updated });
+      res.json({ order: updated ? projectOrderParties(updated) : updated });
     } catch (err) {
       console.error('Cancel order error:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -866,7 +882,7 @@ router.put(
           listingId: updated.listing.id,
         });
       }
-      res.json({ order: updated });
+      res.json({ order: updated ? projectOrderParties(updated) : updated });
     } catch (err) {
       console.error('Complete order error:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -951,7 +967,7 @@ router.post(
           listingId: updated.listing.id,
         });
       }
-      res.json({ order: updated });
+      res.json({ order: updated ? projectOrderParties(updated) : updated });
     } catch (err) {
       console.error('Ship order error:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -1024,7 +1040,7 @@ router.post(
           listingId: updated.listing.id,
         });
       }
-      res.json({ order: updated });
+      res.json({ order: updated ? projectOrderParties(updated) : updated });
     } catch (err) {
       console.error('Receive order error:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -1539,7 +1555,10 @@ router.post(
         where: { id },
         select: ORDER_SUMMARY_SELECT,
       });
-      res.json({ order: updated, idempotent: result.status === 'already_completed' });
+      res.json({
+        order: updated ? projectOrderParties(updated) : updated,
+        idempotent: result.status === 'already_completed',
+      });
     } catch (err) {
       console.error('Square confirm error:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -1722,7 +1741,10 @@ router.post(
         where: { id },
         select: ORDER_SUMMARY_SELECT,
       });
-      res.json({ order: updated, refundProviderId });
+      res.json({
+        order: updated ? projectOrderParties(updated) : updated,
+        refundProviderId,
+      });
     } catch (err) {
       console.error('Refund error:', err);
       res.status(500).json({ error: 'Internal server error' });
@@ -1755,7 +1777,7 @@ router.get(
         return;
       }
 
-      res.json({ order });
+      res.json({ order: projectOrderParties(order) });
     } catch (err) {
       console.error('Get order error:', err);
       res.status(500).json({ error: 'Internal server error' });

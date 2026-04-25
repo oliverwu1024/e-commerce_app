@@ -4,6 +4,7 @@ import { Prisma } from '../generated/prisma/client.js';
 import { uuidSchema } from '../schemas/common.js';
 import { paginationSchema } from '../schemas/listings.js';
 import { authenticate } from '../middleware/auth.js';
+import { PUBLIC_LOCATION_SELECT, projectPublicSeller } from '../services/publicLocation.js';
 
 const router = Router();
 
@@ -48,7 +49,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
                 select: {
                   id: true,
                   username: true,
-                  location: true,
+                  ...PUBLIC_LOCATION_SELECT,
                 },
               },
               images: {
@@ -65,6 +66,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
 
     const listings = items.map((item) => ({
       ...item.listing,
+      seller: projectPublicSeller(item.listing.seller),
       savedAt: item.createdAt,
     }));
 

@@ -12,7 +12,19 @@ export type SelfProfile = {
   username: string;
   name: string;
   role: 'USER' | 'ADMIN';
+  // Legacy free-form location ("Sydney, Australia"). Superseded by the
+  // structured fields below; new profile UI doesn't surface this anymore.
   location: string | null;
+  // Structured address. All nullable until the user fills them in.
+  // Public exposure is gated server-side: only postcode + state are shown
+  // publicly unless the user is a BUSINESS with showFullAddressPublicly=true.
+  addressLine1: string | null;
+  addressLine2: string | null;
+  suburb: string | null;
+  postcode: string | null;
+  state: string | null;
+  country: string | null;
+  showFullAddressPublicly: boolean;
   bio: string | null;
   phone: string | null;
   avatarUrl: string | null;
@@ -31,6 +43,11 @@ export type SelfProfile = {
   createdAt: string;
   updatedAt: string;
 };
+
+// Australian states/territories. Mirrors AU_STATES in
+// server/src/schemas/users.ts — keep in sync.
+export const AU_STATES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'] as const;
+export type AuState = (typeof AU_STATES)[number];
 
 export type ProfileResponse = {
   user: SelfProfile;

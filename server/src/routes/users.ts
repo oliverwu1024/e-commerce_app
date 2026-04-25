@@ -31,6 +31,7 @@ import {
 import { firebaseAuth, FIREBASE_ENABLED } from '../config/firebase.js';
 import { getStripeClient, isStripeConfigured } from '../config/stripe.js';
 import { FEATURES } from '../config/features.js';
+import { PUBLIC_LOCATION_SELECT, projectPublicSeller } from '../services/publicLocation.js';
 
 const DEV_EMAIL_ENABLED = process.env.ENABLE_DEV_EMAIL === '1';
 
@@ -74,6 +75,16 @@ const PROFILE_SELECT = {
   name: true,
   role: true,
   location: true,
+  // Structured address — exposed in full to the user themselves so they can
+  // edit it. Public projections (browse / seller pages) build a derived
+  // location string instead of returning these raw fields.
+  addressLine1: true,
+  addressLine2: true,
+  suburb: true,
+  postcode: true,
+  state: true,
+  country: true,
+  showFullAddressPublicly: true,
   bio: true,
   phone: true,
   avatarUrl: true,
@@ -96,6 +107,10 @@ type UserProfile = {
   phoneVerified: boolean;
   abnVerified: boolean;
   idVerification: 'NOT_SUBMITTED' | 'PENDING_REVIEW' | 'APPROVED' | 'REJECTED';
+  addressLine1: string | null;
+  suburb: string | null;
+  postcode: string | null;
+  state: string | null;
 };
 
 function computeCanSell(u: UserProfile): { canSell: boolean; missing: string[] } {
@@ -111,6 +126,11 @@ function computeCanSell(u: UserProfile): { canSell: boolean; missing: string[] }
     }
   } else {
     if (!u.abnVerified) missing.push('abn');
+  }
+  // Mirror the listing-create gate so the dashboard checklist can prompt
+  // the user to fill in their address before they hit the create page.
+  if (!u.addressLine1 || !u.suburb || !u.postcode || !u.state) {
+    missing.push('address');
   }
   return { canSell: missing.length === 0, missing };
 }
@@ -169,6 +189,23 @@ router.put('/profile', authenticate, profileLimiter, async (req: Request, res: R
     // businessName only applies to BUSINESS sellers; silently ignored otherwise.
     if (parsed.data.businessName !== undefined && current.sellerType === 'BUSINESS') {
       data.businessName = parsed.data.businessName;
+    }
+    // Structured address — accepted from any user. Listing-create gates the
+    // required-fields check; we don't reject partial address edits here.
+    if (parsed.data.addressLine1 !== undefined) data.addressLine1 = parsed.data.addressLine1;
+    if (parsed.data.addressLine2 !== undefined) data.addressLine2 = parsed.data.addressLine2;
+    if (parsed.data.suburb !== undefined) data.suburb = parsed.data.suburb;
+    if (parsed.data.postcode !== undefined) data.postcode = parsed.data.postcode;
+    if (parsed.data.state !== undefined) data.state = parsed.data.state;
+    if (parsed.data.country !== undefined) data.country = parsed.data.country;
+    // showFullAddressPublicly only honoured for BUSINESS sellers — silently
+    // ignored for PERSONAL even if sent. Public projection rechecks
+    // sellerType too as a defence-in-depth.
+    if (
+      parsed.data.showFullAddressPublicly !== undefined &&
+      current.sellerType === 'BUSINESS'
+    ) {
+      data.showFullAddressPublicly = parsed.data.showFullAddressPublicly;
     }
 
     const user = await prisma.user.update({
@@ -981,12 +1018,11 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
         id: true,
         username: true,
         bio: true,
-        location: true,
         avatarUrl: true,
-        sellerType: true,
         businessName: true,
         createdAt: true,
         deletedAt: true,
+        ...PUBLIC_LOCATION_SELECT,
       },
     });
     if (!user || user.deletedAt) {
@@ -1004,11 +1040,11 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
       return;
     }
 
-    const { deletedAt: _deletedAt, ...publicUser } = user;
+    const { deletedAt: _deletedAt, ...withAddress } = user;
     void _deletedAt;
     res.json({
       user: {
-        ...publicUser,
+        ...projectPublicSeller(withAddress),
         avgRating: stats.avgRating,
         totalReviews: stats.totalReviews,
         totalSales: stats.totalSales,

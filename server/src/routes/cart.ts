@@ -5,6 +5,7 @@ import { uuidSchema } from '../schemas/common.js';
 import { addCartItemSchema } from '../schemas/cart.js';
 import { authenticate } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
+import { PUBLIC_LOCATION_SELECT, projectPublicSeller } from '../services/publicLocation.js';
 
 const router = Router();
 
@@ -29,7 +30,7 @@ const CART_ITEM_SELECT = {
       condition: true,
       status: true,
       seller: {
-        select: { id: true, username: true, location: true },
+        select: { id: true, username: true, ...PUBLIC_LOCATION_SELECT },
       },
       images: {
         orderBy: { displayOrder: 'asc' },
@@ -84,7 +85,10 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
 
     res.json({
       cart: {
-        items: cart.items,
+        items: cart.items.map((it) => ({
+          ...it,
+          listing: { ...it.listing, seller: projectPublicSeller(it.listing.seller) },
+        })),
         subtotal: subtotal.toFixed(2),
         itemCount: cart.items.length,
         checkoutableCount: checkoutable.length,

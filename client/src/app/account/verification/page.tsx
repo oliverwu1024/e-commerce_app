@@ -91,6 +91,13 @@ export default function VerificationPage() {
   const phoneStatus: Status = profile.phoneVerified ? 'done' : 'todo';
   const idStatus: Status = idStepStatus(profile.idVerification);
   const abnStatus: Status = profile.abnVerified ? 'done' : 'todo';
+  const addressComplete = !!(
+    profile.addressLine1 &&
+    profile.suburb &&
+    profile.postcode &&
+    profile.state
+  );
+  const addressStatus: Status = addressComplete ? 'done' : 'todo';
 
   return (
     <div className="space-y-6">
@@ -134,6 +141,7 @@ export default function VerificationPage() {
 
       <EmailStep status={emailStatus} />
       <PhoneStep profile={profile} status={phoneStatus} onChange={refresh} />
+      <AddressStep profile={profile} status={addressStatus} />
       {profile.sellerType === 'PERSONAL' ? (
         idVerificationEnabled ? (
           <IdStep profile={profile} status={idStatus} onChange={refresh} />
@@ -144,6 +152,45 @@ export default function VerificationPage() {
         <AbnStep profile={profile} status={abnStatus} onChange={refresh} />
       )}
     </div>
+  );
+}
+
+// Address step. We don't collect the address inline here — that happens on
+// /account/settings (where the structured fields live alongside the rest of
+// the profile). This step just summarises status and links across.
+function AddressStep({
+  profile,
+  status,
+}: {
+  profile: SelfProfile;
+  status: Status;
+}) {
+  const summary =
+    status === 'done'
+      ? `${profile.suburb}, ${profile.postcode} ${profile.state}`
+      : null;
+  return (
+    <StepCard title="Address" status={status}>
+      {summary ? (
+        <p className="text-sm text-[var(--text-muted)]">
+          {summary}.{' '}
+          <Link href="/account/settings" className="underline hover:brightness-110">
+            Edit
+          </Link>
+          .
+        </p>
+      ) : (
+        <div className="space-y-3">
+          <p className="text-sm text-[var(--text-muted)]">
+            Required if you want to sell. Only your postcode + state are shown
+            publicly; the rest stays private.
+          </p>
+          <Link href="/account/settings" className="btn-cyber-primary text-sm">
+            Add address
+          </Link>
+        </div>
+      )}
+    </StepCard>
   );
 }
 

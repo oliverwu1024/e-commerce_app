@@ -174,7 +174,27 @@ model User {
   password       String   @db.VarChar(100) // bcrypt hash is fixed-length 60
   name           String   @db.VarChar(100)
   role           UserRole @default(USER)
+  // Legacy free-form location ("Sydney, Australia"). Superseded by the
+  // structured address fields below — kept nullable for back-compat with
+  // pre-2026-04-29 data and not surfaced in any new UI.
   location       String?  @db.VarChar(100)
+  // Structured address. All nullable so non-sellers don't have to fill them
+  // in. Sellers are gated at listing-create time on having
+  // addressLine1 + suburb + postcode + state.
+  //  - addressLine1/2 are private by default; only revealed publicly when
+  //    sellerType=BUSINESS && showFullAddressPublicly=true.
+  //  - suburb is private (used in shipping address echo, not public).
+  //  - postcode + state are always public on listings/seller pages.
+  addressLine1   String?  @db.VarChar(200)
+  addressLine2   String?  @db.VarChar(200)
+  suburb         String?  @db.VarChar(100)
+  postcode       String?  @db.VarChar(10)
+  state          String?  @db.VarChar(50)
+  country        String?  @db.VarChar(100)
+  // Opt-in: BUSINESS sellers can flip this to true to show their full
+  // street address publicly (storefronts that want walk-in customers).
+  // PERSONAL sellers' addresses are never public, even if this is true.
+  showFullAddressPublicly Boolean @default(false)
   bio            String?  @db.VarChar(500)
   phone          String?  @db.VarChar(20)
   // Public profile picture. S3 URL under avatars/<userId>/. Public-read

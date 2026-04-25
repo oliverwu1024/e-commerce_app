@@ -6,11 +6,42 @@ const emptyToNull = z
   .optional()
   .transform((v) => (v === undefined || v.trim() === '' ? null : v.trim()));
 
+// Australian states + territories. Used for the `state` field. Postcode
+// is validated as 4 digits; we don't enforce a state↔postcode crosscheck
+// since AU postcodes overlap regional borders in places.
+export const AU_STATES = ['NSW', 'VIC', 'QLD', 'WA', 'SA', 'TAS', 'ACT', 'NT'] as const;
+export type AuState = (typeof AU_STATES)[number];
+
 export const updateProfileSchema = z.object({
   name: z.string().min(1, 'Name is required').max(100).optional(),
   bio: emptyToNull.pipe(z.string().max(500).nullable()),
+  // Legacy free-form location; superseded by the structured fields below.
+  // Accepted but not actively used in any UI.
   location: emptyToNull.pipe(z.string().max(100).nullable()),
   businessName: emptyToNull.pipe(z.string().max(200).nullable()),
+  // Structured address. All optional in the schema — the listings-create
+  // route enforces `addressLine1 + suburb + postcode + state` for sellers.
+  addressLine1: emptyToNull.pipe(z.string().max(200).nullable()),
+  addressLine2: emptyToNull.pipe(z.string().max(200).nullable()),
+  suburb: emptyToNull.pipe(z.string().max(100).nullable()),
+  postcode: emptyToNull.pipe(
+    z
+      .string()
+      .regex(/^\d{4}$/, 'Postcode must be 4 digits')
+      .nullable(),
+  ),
+  state: emptyToNull.pipe(
+    z
+      .string()
+      .refine((v) => v === null || AU_STATES.includes(v as AuState), {
+        message: 'State must be NSW/VIC/QLD/WA/SA/TAS/ACT/NT',
+      })
+      .nullable(),
+  ),
+  country: emptyToNull.pipe(z.string().max(100).nullable()),
+  // Opt-in flag for BUSINESS sellers wanting their full address public.
+  // Server ignores it for PERSONAL sellers regardless of value.
+  showFullAddressPublicly: z.boolean().optional(),
 });
 
 export const changePasswordSchema = z.object({

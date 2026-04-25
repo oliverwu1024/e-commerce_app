@@ -6,7 +6,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import Avatar from '@/components/Avatar';
-import type { ProfileResponse, SelfProfile } from '@/types/users';
+import { AU_STATES, type ProfileResponse, type SelfProfile } from '@/types/users';
 
 export default function AccountSettingsPage() {
   const router = useRouter();
@@ -499,8 +499,19 @@ function ProfileForm({
 }) {
   const [name, setName] = useState(profile.name);
   const [bio, setBio] = useState(profile.bio ?? '');
-  const [location, setLocation] = useState(profile.location ?? '');
   const [businessName, setBusinessName] = useState(profile.businessName ?? '');
+  // Structured address fields. addressLine1 + suburb + postcode + state are
+  // required before the user can post a listing (server enforces); the UI
+  // doesn't gate saving them so partial profiles are fine.
+  const [addressLine1, setAddressLine1] = useState(profile.addressLine1 ?? '');
+  const [addressLine2, setAddressLine2] = useState(profile.addressLine2 ?? '');
+  const [suburb, setSuburb] = useState(profile.suburb ?? '');
+  const [postcode, setPostcode] = useState(profile.postcode ?? '');
+  const [stateCode, setStateCode] = useState(profile.state ?? '');
+  const [country, setCountry] = useState(profile.country ?? 'Australia');
+  const [showFullAddressPublicly, setShowFullAddressPublicly] = useState(
+    profile.showFullAddressPublicly,
+  );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
@@ -514,9 +525,19 @@ function ProfileForm({
       const body: Record<string, unknown> = {
         name: name.trim(),
         bio,
-        location,
+        // Structured address — empty strings round-trip to NULL on the
+        // server so a user can clear a field by blanking it.
+        addressLine1,
+        addressLine2,
+        suburb,
+        postcode,
+        state: stateCode,
+        country,
       };
-      if (profile.sellerType === 'BUSINESS') body.businessName = businessName;
+      if (profile.sellerType === 'BUSINESS') {
+        body.businessName = businessName;
+        body.showFullAddressPublicly = showFullAddressPublicly;
+      }
 
       const res = await api<ProfileResponse>('/api/users/profile', {
         method: 'PUT',
@@ -564,18 +585,6 @@ function ProfileForm({
       </div>
 
       <div>
-        <label className="block text-sm font-medium text-[var(--text-primary)]">Location</label>
-        <input
-          type="text"
-          value={location}
-          onChange={(e) => setLocation(e.target.value)}
-          maxLength={100}
-          placeholder="Sydney, NSW"
-          className="input-cyber mt-1 block w-full px-3 py-2 text-sm"
-        />
-      </div>
-
-      <div>
         <label className="flex items-center justify-between text-sm font-medium text-[var(--text-primary)]">
           <span>Bio</span>
           <span className="text-xs font-normal text-[var(--text-dim)]">{bio.length} / 500</span>
@@ -602,6 +611,131 @@ function ProfileForm({
           />
         </div>
       )}
+
+      {/* --- Address (required before selling) --- */}
+      <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4">
+        <h3 className="text-sm font-semibold text-[var(--text-primary)]">
+          Address
+        </h3>
+        <p className="mt-1 text-xs text-[var(--text-muted)]">
+          Required if you want to sell. Only your <strong>postcode and state</strong>{' '}
+          are shown publicly on listings — your street address stays private.
+          {profile.sellerType === 'BUSINESS' && (
+            <> Businesses can opt to show the full address (toggle below).</>
+          )}
+        </p>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-[var(--text-primary)]">
+              Address line 1
+            </label>
+            <input
+              type="text"
+              value={addressLine1}
+              onChange={(e) => setAddressLine1(e.target.value)}
+              autoComplete="address-line1"
+              maxLength={200}
+              placeholder="123 George St"
+              className="input-cyber mt-1 block w-full px-3 py-2 text-sm"
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-[var(--text-primary)]">
+              Address line 2 <span className="text-[var(--text-dim)]">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={addressLine2}
+              onChange={(e) => setAddressLine2(e.target.value)}
+              autoComplete="address-line2"
+              maxLength={200}
+              placeholder="Apt / Suite / Floor"
+              className="input-cyber mt-1 block w-full px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-primary)]">
+              Suburb
+            </label>
+            <input
+              type="text"
+              value={suburb}
+              onChange={(e) => setSuburb(e.target.value)}
+              autoComplete="address-level2"
+              maxLength={100}
+              placeholder="Sydney"
+              className="input-cyber mt-1 block w-full px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-primary)]">
+              State
+            </label>
+            <select
+              value={stateCode}
+              onChange={(e) => setStateCode(e.target.value)}
+              autoComplete="address-level1"
+              className="input-cyber mt-1 block w-full px-3 py-2 text-sm"
+            >
+              <option value="">Select…</option>
+              {AU_STATES.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-primary)]">
+              Postcode
+            </label>
+            <input
+              type="text"
+              value={postcode}
+              onChange={(e) => {
+                const v = e.target.value.replace(/\D/g, '').slice(0, 4);
+                setPostcode(v);
+              }}
+              autoComplete="postal-code"
+              inputMode="numeric"
+              maxLength={4}
+              placeholder="2000"
+              className="input-cyber mt-1 block w-full px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-[var(--text-primary)]">
+              Country
+            </label>
+            <input
+              type="text"
+              value={country}
+              onChange={(e) => setCountry(e.target.value)}
+              autoComplete="country-name"
+              maxLength={100}
+              className="input-cyber mt-1 block w-full px-3 py-2 text-sm"
+            />
+          </div>
+        </div>
+
+        {profile.sellerType === 'BUSINESS' && (
+          <label className="mt-4 flex items-start gap-3 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={showFullAddressPublicly}
+              onChange={(e) => setShowFullAddressPublicly(e.target.checked)}
+              className="mt-0.5 h-4 w-4 border-[var(--border-hi)] text-[var(--neon-cyan)] focus:ring-[var(--neon-cyan)]"
+            />
+            <span className="text-sm text-[var(--text-primary)]">
+              Show full street address publicly
+              <span className="block text-xs text-[var(--text-muted)]">
+                Useful for storefronts that want walk-in customers. Off by default.
+              </span>
+            </span>
+          </label>
+        )}
+      </div>
 
       <div>
         <button
