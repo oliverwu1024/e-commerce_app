@@ -1,0 +1,20 @@
+name = "electromarket-inbound-email"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+
+# This worker is bound to Cloudflare Email Routing routes (configured in
+# the dashboard, not here). Anything Email Routing forwards to this worker
+# arrives at the `email` handler in src/index.ts.
+
+# Secrets — set via:
+#   wrangler secret put EMAIL_WEBHOOK_SECRET
+# Variables — set via:
+#   wrangler deploy   (uses [vars] below)
+#   OR dashboard → Worker → Settings → Variables → add encrypted vars
+
+[vars]
+WEBHOOK_URL = "https://api.electromarket-app.com/api/webhooks/email"
+# FORWARD_TO is optional. Set it to your personal Gmail during the cutover
+# so you keep a backup of inbound mail. Remove (or unset) once you trust
+# the webhook path.
+# FORWARD_TO = "oliverwu1024@users.noreply.github.com"
