@@ -201,11 +201,16 @@ model User {
   businessName   String?    @db.VarChar(100) // only for BUSINESS sellers
   abn            String?    @db.VarChar(11)  // Australian Business Number — 11 digits
   abnVerified    Boolean    @default(false)
-  idDocumentUrl     String? @db.VarChar(500) // S3 URL — PERSONAL sellers only, front of ID
-  idDocumentBackUrl String? @db.VarChar(500) // S3 URL — PERSONAL sellers only, back of ID
+  idDocumentUrl     String? @db.VarChar(500) // S3 URL — legacy manual flow (front), still kept for in-flight reviews
+  idDocumentBackUrl String? @db.VarChar(500) // S3 URL — legacy manual flow (back)
+  // Stripe Identity verification session id (vs_...). Set when the user
+  // clicks "Verify with Stripe"; webhook (`identity.verification_session.*`)
+  // flips idVerification on completion. Cleared once verification reaches
+  // a terminal state.
+  idVerificationSessionId String? @db.VarChar(200)
   idVerification VerificationStatus @default(NOT_SUBMITTED)
   idSubmittedAt  DateTime? // set when user POSTs /verify-id; admin queue orders by this (not updatedAt, which is bumped by unrelated profile edits)
-  idRejectionReason String? @db.VarChar(500) // set when admin rejects; cleared on re-submit
+  idRejectionReason String? @db.VarChar(500) // set when admin rejects (or by Stripe Identity webhook); cleared on re-submit
   // Bumped on password change / logout-everywhere so JWTs issued before the
   // bump fail authentication. Added via `db push` in Day 19 — migration
   // history cleanup is a Day 21 item.

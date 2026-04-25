@@ -6,6 +6,7 @@ import { Prisma } from '../generated/prisma/client.js';
 import {
   getStripeClient,
   getStripeWebhookSecret,
+  getStripeIdentityWebhookSecret,
 } from '../config/stripe.js';
 import {
   getSquareClient,
@@ -193,6 +194,113 @@ router.post('/stripe', async (req: Request, res: Response) => {
   } catch (err) {
     console.error('Stripe webhook handler error:', err);
     // Return 500 so Stripe retries on transient failures (DB blips etc.).
+    res.status(500).json({ error: 'Webhook handler failed' });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/webhooks/stripe/identity
+// Stripe Identity events fire on the platform-level webhook endpoint, not
+// the Connect endpoint above. They use a SEPARATE signing secret per the
+// Stripe Dashboard's per-endpoint whsec_. Subscribe this endpoint to
+// `identity.verification_session.*` events.
+//
+// Local dev: `stripe listen --forward-to localhost:5000/api/webhooks/stripe/identity`
+// (no `--forward-connect` — Identity is platform, not Connect). Copy the
+// printed whsec_... into STRIPE_IDENTITY_WEBHOOK_SECRET.
+// ---------------------------------------------------------------------------
+router.post('/stripe/identity', async (req: Request, res: Response) => {
+  const sig = req.headers['stripe-signature'];
+  if (!sig || typeof sig !== 'string') {
+    res.status(400).json({ error: 'Missing stripe-signature header' });
+    return;
+  }
+
+  let event;
+  try {
+    event = getStripeClient().webhooks.constructEvent(
+      req.body as Buffer,
+      sig,
+      getStripeIdentityWebhookSecret(),
+    );
+  } catch (err) {
+    console.error('Stripe Identity signature verification failed:', err);
+    res.status(400).json({ error: 'Invalid signature' });
+    return;
+  }
+
+  try {
+    // All identity events carry the VerificationSession as data.object.
+    // metadata.userId was set when /verify-id/stripe-session created the
+    // session, and is the authoritative link back to our user row.
+    const session = event.data.object as {
+      id?: string;
+      status?: string;
+      metadata?: Record<string, string | null> | null;
+      last_error?: { code?: string | null; reason?: string | null } | null;
+    };
+    const userId = session.metadata?.userId ?? null;
+    if (!userId) {
+      // A session we didn't create (manual test, leftover, mis-configured
+      // dashboard endpoint). Ack and ignore.
+      res.json({ received: true, note: 'no userId metadata' });
+      return;
+    }
+
+    // Conditional updates so we don't fight an admin who already approved/
+    // rejected manually, or stomp on a different user's session via a
+    // mis-configured webhook.
+    if (event.type === 'identity.verification_session.verified') {
+      const { count } = await prisma.user.updateMany({
+        where: { id: userId, idVerificationSessionId: session.id ?? null },
+        data: {
+          idVerification: 'APPROVED',
+          idRejectionReason: null,
+          idVerificationSessionId: null,
+        },
+      });
+      res.json({ received: true, updated: count });
+      return;
+    }
+
+    if (event.type === 'identity.verification_session.requires_input') {
+      // The buyer's submission failed (blurry photo, ID mismatch,
+      // unsupported document). Stripe's last_error.reason is human-
+      // readable and safe to surface.
+      const reason =
+        session.last_error?.reason ?? 'Stripe could not verify your ID. Please try again.';
+      const { count } = await prisma.user.updateMany({
+        where: { id: userId, idVerificationSessionId: session.id ?? null },
+        data: {
+          idVerification: 'REJECTED',
+          idRejectionReason: reason.slice(0, 500),
+          // Clear the session so the next attempt creates a fresh one
+          // rather than reusing the rejected session.
+          idVerificationSessionId: null,
+        },
+      });
+      res.json({ received: true, updated: count });
+      return;
+    }
+
+    if (event.type === 'identity.verification_session.canceled') {
+      // User dismissed the flow before submitting. Roll back to
+      // NOT_SUBMITTED so they can retry without an admin nudge.
+      const { count } = await prisma.user.updateMany({
+        where: { id: userId, idVerificationSessionId: session.id ?? null },
+        data: {
+          idVerification: 'NOT_SUBMITTED',
+          idVerificationSessionId: null,
+        },
+      });
+      res.json({ received: true, updated: count });
+      return;
+    }
+
+    // processing / created / etc. acked but not processed.
+    res.json({ received: true, ignored: event.type });
+  } catch (err) {
+    console.error('Stripe Identity webhook handler error:', err);
     res.status(500).json({ error: 'Webhook handler failed' });
   }
 });

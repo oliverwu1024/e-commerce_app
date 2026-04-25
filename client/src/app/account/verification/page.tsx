@@ -54,6 +54,25 @@ export default function VerificationPage() {
     refresh();
   }, [refresh]);
 
+  // When the user returns from Stripe Identity (?id=stripe), poll for the
+  // webhook to land. Most decisions arrive in seconds; we cap at ~30s of
+  // polling so we don't loop forever if the webhook is delayed.
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('id') !== 'stripe') return;
+    if (!profile || profile.idVerification !== 'PENDING_REVIEW') return;
+    const start = Date.now();
+    const handle = window.setInterval(() => {
+      if (Date.now() - start > 30_000) {
+        window.clearInterval(handle);
+        return;
+      }
+      refresh();
+    }, 3000);
+    return () => window.clearInterval(handle);
+  }, [profile, refresh]);
+
   if (loading) return <VerificationSkeleton />;
   if (error) {
     return (
@@ -488,12 +507,20 @@ function IdStep({
   status: Status;
   onChange: () => void;
 }) {
+  // Manual upload state (kept as a fallback path when Stripe Identity
+  // doesn't support a buyer's document type or the user prefers admin
+  // review).
+  const [showManual, setShowManual] = useState(false);
   const [frontFile, setFrontFile] = useState<File | null>(null);
   const [backFile, setBackFile] = useState<File | null>(null);
   const [uploading, setUploading] = useState(false);
-  const [error, setError] = useState('');
+  const [manualError, setManualError] = useState('');
   const frontRef = useRef<HTMLInputElement>(null);
   const backRef = useRef<HTMLInputElement>(null);
+
+  // Stripe Identity state.
+  const [startingStripe, setStartingStripe] = useState(false);
+  const [stripeError, setStripeError] = useState('');
 
   // Upload a single file to S3 via a presigned URL and return the canonical
   // S3 URL the server will record. Shared by front + back.
@@ -520,15 +547,12 @@ function IdStep({
     return presign.fileUrl;
   }
 
-  async function handleSubmit(e: React.FormEvent) {
+  async function handleManualSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!frontFile || !backFile) return;
-    setError('');
+    setManualError('');
     setUploading(true);
     try {
-      // Upload front and back in parallel — they hit different presigned URLs
-      // so there's no coordination needed. On any failure neither state flips
-      // because we call verify-id only after both have succeeded.
       const [frontUrl, backUrl] = await Promise.all([
         uploadOne(frontFile),
         uploadOne(backFile),
@@ -545,9 +569,28 @@ function IdStep({
       if (backRef.current) backRef.current.value = '';
       onChange();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to upload documents');
+      setManualError(err instanceof Error ? err.message : 'Failed to upload documents');
     } finally {
       setUploading(false);
+    }
+  }
+
+  async function handleStripeStart() {
+    setStripeError('');
+    setStartingStripe(true);
+    try {
+      const res = await api<{ url: string; sessionId: string }>(
+        '/api/users/verify-id/stripe-session',
+        { method: 'POST' },
+      );
+      // Leave the app — Stripe's hosted page handles capture, OCR, selfie
+      // and liveness. The webhook flips our user state as soon as Stripe
+      // resolves the session; the buyer is redirected back to
+      // /account/verification?id=stripe to see the result.
+      window.location.href = res.url;
+    } catch (err) {
+      setStripeError(err instanceof Error ? err.message : 'Failed to start verification');
+      setStartingStripe(false);
     }
   }
 
@@ -558,56 +601,101 @@ function IdStep({
       )}
       {status === 'pending' && (
         <p className="text-sm text-[var(--text-muted)]">
-          Your documents are under review. This usually takes 1–2 business days.
+          Verification in progress. If you started a Stripe Identity session, the
+          result usually arrives within a minute. If you uploaded manually, an admin
+          will review within 1–2 business days.
         </p>
       )}
       {status === 'rejected' && (
         <div className="mb-3 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
           <strong className="font-medium">Rejected.</strong>{' '}
-          {profile.idRejectionReason ?? 'No reason provided.'} Please upload clearer documents.
+          {profile.idRejectionReason ?? 'No reason provided.'} Try again with a different
+          document or clearer photos.
         </div>
       )}
 
       {(status === 'todo' || status === 'rejected') && (
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {error && (
-            <div className="rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
-              {error}
-            </div>
-          )}
-          <p className="text-sm text-[var(--text-muted)]">
-            Upload clear photos of the <strong>front and back</strong> of your driver's
-            licence, passport card or other government-issued ID.
-          </p>
+        <div className="space-y-5">
+          {/* Stripe Identity — primary path. Hosted flow on stripe.com:
+              document capture, OCR, MRZ check, selfie + liveness. Result
+              comes back via webhook in seconds, not days. */}
+          <div>
+            {stripeError && (
+              <div className="mb-3 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
+                {stripeError}
+              </div>
+            )}
+            <p className="text-sm text-[var(--text-muted)]">
+              Verify with{' '}
+              <span className="font-medium text-[var(--text-primary)]">Stripe Identity</span>{' '}
+              — scan a passport, driver&apos;s licence or national ID and take a quick
+              selfie. Most decisions arrive in under a minute. Foreign passports are
+              supported.
+            </p>
+            <button
+              type="button"
+              onClick={handleStripeStart}
+              disabled={startingStripe}
+              className="btn-cyber-primary mt-3"
+            >
+              {startingStripe ? 'Starting…' : 'Verify with Stripe'}
+            </button>
+          </div>
 
-          <IdFileInput
-            label="Front of ID"
-            file={frontFile}
-            inputRef={frontRef}
-            onChange={(f, msg) => {
-              setError(msg ?? '');
-              setFrontFile(f);
-            }}
-          />
-          <IdFileInput
-            label="Back of ID"
-            file={backFile}
-            inputRef={backRef}
-            onChange={(f, msg) => {
-              setError(msg ?? '');
-              setBackFile(f);
-            }}
-          />
+          {/* Manual upload — fallback. Hidden behind a disclosure so
+              Stripe is the obvious choice. */}
+          <div className="border-t border-[var(--border-subtle)] pt-4">
+            <button
+              type="button"
+              onClick={() => setShowManual((v) => !v)}
+              className="text-xs font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+            >
+              {showManual ? 'Hide manual upload' : 'Upload manually instead (admin review, 1–2 days)'}
+            </button>
 
-          <p className="text-xs text-[var(--text-dim)]">{ID_ACCEPT_LABEL}</p>
-          <button
-            type="submit"
-            disabled={!frontFile || !backFile || uploading}
-            className="btn-cyber-primary"
-          >
-            {uploading ? 'Uploading...' : 'Submit for review'}
-          </button>
-        </form>
+            {showManual && (
+              <form onSubmit={handleManualSubmit} className="mt-3 space-y-4">
+                {manualError && (
+                  <div className="rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
+                    {manualError}
+                  </div>
+                )}
+                <p className="text-sm text-[var(--text-muted)]">
+                  Upload clear photos of the <strong>front and back</strong> of your
+                  driver&apos;s licence, passport card or other government-issued ID.
+                </p>
+
+                <IdFileInput
+                  label="Front of ID"
+                  file={frontFile}
+                  inputRef={frontRef}
+                  onChange={(f, msg) => {
+                    setManualError(msg ?? '');
+                    setFrontFile(f);
+                  }}
+                />
+                <IdFileInput
+                  label="Back of ID"
+                  file={backFile}
+                  inputRef={backRef}
+                  onChange={(f, msg) => {
+                    setManualError(msg ?? '');
+                    setBackFile(f);
+                  }}
+                />
+
+                <p className="text-xs text-[var(--text-dim)]">{ID_ACCEPT_LABEL}</p>
+                <button
+                  type="submit"
+                  disabled={!frontFile || !backFile || uploading}
+                  className="btn-cyber-outline"
+                >
+                  {uploading ? 'Uploading...' : 'Submit for admin review'}
+                </button>
+              </form>
+            )}
+          </div>
+        </div>
       )}
     </StepCard>
   );

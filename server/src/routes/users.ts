@@ -29,6 +29,7 @@ import {
   sendIdSubmittedEmail,
 } from '../utils/email.js';
 import { firebaseAuth, FIREBASE_ENABLED } from '../config/firebase.js';
+import { getStripeClient, isStripeConfigured } from '../config/stripe.js';
 
 const DEV_EMAIL_ENABLED = process.env.ENABLE_DEV_EMAIL === '1';
 
@@ -422,6 +423,117 @@ router.post('/verify-id', authenticate, profileLimiter, async (req: Request, res
     res.status(500).json({ error: 'Internal server error' });
   }
 });
+
+// ---------------------------------------------------------------------------
+// POST /api/users/verify-id/stripe-session — start a Stripe Identity flow
+// Creates a `VerificationSession` with type=document (passport, ID, licence)
+// + selfie matching, stores the session id on the user, and returns the
+// hosted-page URL so the client can redirect. Webhook handler at
+// /api/webhooks/stripe/identity flips idVerification to APPROVED/REJECTED
+// when the session reaches a terminal state.
+//
+// Idempotency: if the user already has an active session that hasn't
+// resolved, return its existing URL instead of creating a new one. Stripe
+// charges per session even when abandoned, so we don't want a button-mash
+// to rack up cost.
+// ---------------------------------------------------------------------------
+router.post(
+  '/verify-id/stripe-session',
+  authenticate,
+  profileLimiter,
+  async (req: Request, res: Response) => {
+    try {
+      if (!isStripeConfigured()) {
+        res.status(503).json({ error: 'Stripe is not configured on this server.' });
+        return;
+      }
+
+      const current = await prisma.user.findUnique({
+        where: { id: req.userId },
+        select: {
+          sellerType: true,
+          idVerification: true,
+          idVerificationSessionId: true,
+          username: true,
+          email: true,
+        },
+      });
+      if (!current) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+      if (current.sellerType !== 'PERSONAL') {
+        res.status(400).json({
+          error: 'ID verification is for personal sellers only. Business sellers verify via ABN.',
+        });
+        return;
+      }
+      if (current.idVerification === 'APPROVED') {
+        res.status(409).json({ error: 'ID is already approved.' });
+        return;
+      }
+
+      const stripe = getStripeClient();
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+      const returnUrl = `${clientUrl}/account/verification?id=stripe`;
+
+      // If we already started a session, see whether it's reusable.
+      // requires_input / processing → reuse the same hosted URL so the
+      // buyer's reload doesn't burn another paid session. canceled /
+      // verified → fall through and create a new one.
+      if (current.idVerificationSessionId) {
+        try {
+          const existing = await stripe.identity.verificationSessions.retrieve(
+            current.idVerificationSessionId,
+          );
+          if (
+            existing.status === 'requires_input' ||
+            existing.status === 'processing'
+          ) {
+            res.json({ url: existing.url, sessionId: existing.id, reused: true });
+            return;
+          }
+        } catch (err) {
+          // Treat retrieve failure (session expired, key rotated, etc.) as
+          // "no existing session" and fall through to create a fresh one.
+          console.warn('[verify-id stripe] retrieve existing session failed:', err);
+        }
+      }
+
+      const session = await stripe.identity.verificationSessions.create({
+        type: 'document',
+        // Selfie + liveness on top of document verification. Matches the
+        // assurance level we previously got from manual review.
+        options: {
+          document: {
+            require_matching_selfie: true,
+            require_live_capture: true,
+          },
+        },
+        metadata: {
+          userId: req.userId!,
+          username: current.username,
+        },
+        return_url: returnUrl,
+      });
+
+      await prisma.user.update({
+        where: { id: req.userId },
+        data: {
+          idVerificationSessionId: session.id,
+          idVerification: 'PENDING_REVIEW',
+          idSubmittedAt: new Date(),
+          idRejectionReason: null,
+        },
+      });
+
+      res.json({ url: session.url, sessionId: session.id, reused: false });
+    } catch (err) {
+      console.error('Verify ID (Stripe) error:', err);
+      res.status(500).json({ error: 'Failed to start ID verification.' });
+    }
+  },
+);
 
 // Australian ABN checksum (ATO algorithm).
 // https://abr.business.gov.au/Help/AbnFormat

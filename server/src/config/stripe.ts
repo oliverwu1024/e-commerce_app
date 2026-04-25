@@ -30,3 +30,16 @@ export function getStripeWebhookSecret(): string {
   }
   return secret;
 }
+
+// Stripe Identity events fire on the platform endpoint, not the Connect
+// endpoint used for charges. They need their own signing secret because
+// each Stripe webhook endpoint has its own whsec_. Configure a second
+// endpoint in the Stripe Dashboard (events:
+// `identity.verification_session.*`) and put its secret here.
+export function getStripeIdentityWebhookSecret(): string {
+  const secret = process.env.STRIPE_IDENTITY_WEBHOOK_SECRET;
+  if (!secret) {
+    throw new Error('STRIPE_IDENTITY_WEBHOOK_SECRET is not set');
+  }
+  return secret;
+}
