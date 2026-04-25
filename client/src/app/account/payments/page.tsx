@@ -3,6 +3,7 @@
 import { Suspense, useCallback, useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
+import { useAuthStore } from '@/stores/auth';
 import type {
   PaymentProvider,
   SellerPaymentAccount,
@@ -40,12 +41,19 @@ export default function SellerPaymentsPage() {
 
 function SellerPaymentsInner() {
   const searchParams = useSearchParams();
+  const user = useAuthStore((s) => s.user);
   const [summary, setSummary] = useState<SellerPaymentsSummary | null>(null);
   const [loadError, setLoadError] = useState('');
   const [banner, setBanner] = useState<
     | { kind: 'success' | 'error'; message: string }
     | null
   >(null);
+  // Personal sellers rarely have a Square merchant account. Hide the Square
+  // card by default for them (collapsed under a disclosure) — Business
+  // sellers see both providers prominently. If a Personal user has already
+  // connected Square (e.g. before this change), we always render the card
+  // so they can see and manage the connection.
+  const [showSquareForPersonal, setShowSquareForPersonal] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -130,7 +138,13 @@ function SellerPaymentsInner() {
   const accountsByProvider = new Map<PaymentProvider, SellerPaymentAccount>(
     summary.accounts.map((a) => [a.provider, a]),
   );
-  const providers: PaymentProvider[] = ['STRIPE', 'SQUARE'];
+  const squareAccount = accountsByProvider.get('SQUARE') ?? null;
+  // Square is hidden behind a disclosure for Personal sellers UNLESS they've
+  // already connected it (don't hide configured state) or they've manually
+  // opened the disclosure this session. Business sellers always see both.
+  const isBusiness = user?.sellerType === 'BUSINESS';
+  const squareCollapsed =
+    !isBusiness && !squareAccount && !showSquareForPersonal;
 
   return (
     <div className="space-y-6">
@@ -139,8 +153,9 @@ function SellerPaymentsInner() {
           Payment accounts
         </h2>
         <p className="text-sm text-[var(--text-muted)]">
-          Connect your own Stripe or Square account so money from your sales
-          goes directly into your bank. ElectroMarket never holds your funds.
+          Connect your own {isBusiness ? 'Stripe or Square' : 'Stripe'} account
+          so money from your sales goes directly into your bank. ElectroMarket
+          never holds your funds.
         </p>
       </header>
 
@@ -165,15 +180,39 @@ function SellerPaymentsInner() {
       )}
 
       <div className="space-y-4">
-        {providers.map((provider) => (
+        <ProviderCard
+          provider="STRIPE"
+          account={accountsByProvider.get('STRIPE') ?? null}
+          onChanged={load}
+          onBanner={setBanner}
+        />
+
+        {squareCollapsed ? (
+          <button
+            type="button"
+            onClick={() => setShowSquareForPersonal(true)}
+            className="flex w-full items-center justify-between rounded-lg border border-dashed border-[var(--border-hi)] bg-[var(--bg-panel)]/60 px-4 py-3 text-left text-sm text-[var(--text-muted)] transition-colors hover:border-[var(--neon-cyan)]/50 hover:text-[var(--text-primary)]"
+            aria-expanded="false"
+          >
+            <span>
+              <span className="font-semibold text-[var(--text-primary)]">
+                Already use Square?
+              </span>{' '}
+              Connect it too — useful only if you&apos;re already a Square
+              merchant.
+            </span>
+            <span aria-hidden className="text-[var(--neon-cyan)]">
+              + Show
+            </span>
+          </button>
+        ) : (
           <ProviderCard
-            key={provider}
-            provider={provider}
-            account={accountsByProvider.get(provider) ?? null}
+            provider="SQUARE"
+            account={squareAccount}
             onChanged={load}
             onBanner={setBanner}
           />
-        ))}
+        )}
       </div>
     </div>
   );

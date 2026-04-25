@@ -84,7 +84,10 @@ export default function OnboardingChecklist() {
     },
     {
       id: 'payments',
-      title: 'Connect Stripe (or Square)',
+      title:
+        user.sellerType === 'BUSINESS'
+          ? 'Connect Stripe (or Square)'
+          : 'Connect Stripe',
       body: 'Money from your sales goes straight to your bank. Without this, buyers can only arrange cash or bank transfer.',
       href: '/account/payments',
       cta: 'Connect now',
