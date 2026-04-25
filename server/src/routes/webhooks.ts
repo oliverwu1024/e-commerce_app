@@ -435,11 +435,17 @@ router.post('/email', async (req: Request, res: Response) => {
     return;
   }
 
-  // Subject thread tag: [#<12-char-prefix>]. Inserted by sendAdminContactReply
-  // on every outbound, preserved by mail clients in the reply. Match
-  // case-insensitively because some clients lowercase header values.
-  const tagMatch = subject.match(/\[#([a-z0-9]+)\]/i);
-  const idPrefix = tagMatch ? tagMatch[1].toLowerCase() : null;
+  // Subject thread tag: [#<8-char-prefix>]. Inserted by sendAdminContactReply
+  // on every outbound, preserved by mail clients in the reply. Allow hyphens
+  // in the regex for backwards-compat with old 12-char tags (which crossed
+  // the first UUID hyphen — `[#bc078490-b77]`); we strip them before matching.
+  const tagMatch = subject.match(/\[#([a-z0-9-]+)\]/i);
+  // Drop hyphens, take the first 8 hex chars — that's how new tags look
+  // and that's also what `startsWith` on a UUID matches cleanly (UUIDs
+  // start with 8 hex chars before the first hyphen).
+  const idPrefix = tagMatch
+    ? tagMatch[1].toLowerCase().replace(/-/g, '').slice(0, 8)
+    : null;
 
   try {
     if (idPrefix) {
@@ -481,8 +487,9 @@ router.post('/email', async (req: Request, res: Response) => {
     // "Hi <name>," salutation in the admin UI.
     const fromName = (payload.fromName || fromEmail.split('@')[0] || 'Unknown').slice(0, 100);
     // Strip our own subject tag from the persisted subject so it doesn't
-    // visibly carry forward in the admin UI.
-    const cleanedSubject = subject.replace(/\s*\[#[a-z0-9]+\]\s*/gi, ' ').trim().slice(0, 150);
+    // visibly carry forward in the admin UI. Allow hyphens for back-compat
+    // with old 12-char tags that included the first UUID hyphen.
+    const cleanedSubject = subject.replace(/\s*\[#[a-z0-9-]+\]\s*/gi, ' ').trim().slice(0, 150);
     const fresh = await prisma.contactSubmission.create({
       data: {
         fromName,

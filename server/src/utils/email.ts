@@ -301,12 +301,18 @@ export async function sendAdminContactReply(
   body: string,
 ): Promise<void> {
   // Strip an existing "Re:" or our own "[#xxx]" tag so reply chains don't
-  // grow "Re: Re: Re:" or "[#abc] [#abc]".
+  // grow "Re: Re: Re:" or "[#abc] [#abc]". Allow hyphens in the cleaning
+  // regex for backwards-compat with in-flight emails that used a 12-char
+  // tag (which spanned the first UUID hyphen).
   const cleaned = originalSubject
     .replace(/^(re:\s*)+/i, '')
-    .replace(/\s*\[#[a-z0-9]+\]\s*/gi, ' ')
+    .replace(/\s*\[#[a-z0-9-]+\]\s*/gi, ' ')
     .trim();
-  const tag = `[#${submissionId.slice(0, 12)}]`;
+  // Use the first 8 chars of the UUID — this is the first hyphen-free
+  // segment, so the tag stays clean (`[#bc078490]`) and our inbound regex
+  // doesn't have to deal with hyphens. 8 hex chars = ~4B values, well
+  // beyond collision risk for a support inbox.
+  const tag = `[#${submissionId.slice(0, 8)}]`;
   const subject = `Re: ${cleaned} ${tag}`;
 
   // Use SUPPORT_EMAIL_FROM if configured, else fall back to the platform's
