@@ -2,13 +2,29 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
+import {
+  signInWithPhoneNumber,
+  RecaptchaVerifier,
+  type ConfirmationResult,
+} from 'firebase/auth';
 import { api } from '@/lib/api';
+import { getFirebaseAuth, FIREBASE_CONFIGURED } from '@/lib/firebase';
 import { useAuthStore } from '@/stores/auth';
 import type {
   IdVerificationStatus,
   ProfileResponse,
   SelfProfile,
 } from '@/types/users';
+
+// AU mobile/landline → E.164. Returns null on invalid. Mirrors the server's
+// phoneSchema in server/src/schemas/users.ts.
+function normalizeAuPhone(raw: string): string | null {
+  const stripped = raw.replace(/[\s\-()]/g, '');
+  if (/^\+61[2-478][0-9]{8}$/.test(stripped)) return stripped;
+  if (/^61[2-478][0-9]{8}$/.test(stripped)) return `+${stripped}`;
+  if (/^0[2-478][0-9]{8}$/.test(stripped)) return `+61${stripped.slice(1)}`;
+  return null;
+}
 
 type Status = 'todo' | 'pending' | 'done' | 'rejected';
 
@@ -192,8 +208,7 @@ function PhoneStep({
 }) {
   const [phone, setPhone] = useState(profile.phone ?? '');
   const [code, setCode] = useState('');
-  const [codeSent, setCodeSent] = useState(false);
-  const [devCode, setDevCode] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<ConfirmationResult | null>(null);
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState('');
@@ -204,22 +219,81 @@ function PhoneStep({
   // (server clears phoneVerified if phone changed), and we reset editMode.
   const [editMode, setEditMode] = useState(false);
 
+  // Invisible reCAPTCHA — Firebase Phone Auth requires an "app verifier" to
+  // prove the SMS request comes from a human in a real browser. The verifier
+  // attaches to a DOM element and renders nothing visible (size: 'invisible').
+  const recaptchaContainerRef = useRef<HTMLDivElement>(null);
+  const recaptchaVerifierRef = useRef<RecaptchaVerifier | null>(null);
+
+  // Email gate — server enforces this too, but no point asking the user to
+  // enter their phone if they can't proceed.
+  const emailNotVerified = !profile.emailVerified;
+
+  function clearRecaptcha() {
+    if (recaptchaVerifierRef.current) {
+      try {
+        recaptchaVerifierRef.current.clear();
+      } catch {
+        // verifier already torn down — ignore
+      }
+      recaptchaVerifierRef.current = null;
+    }
+  }
+
   async function handleSendCode(e: React.FormEvent) {
     e.preventDefault();
     setError('');
     setInfo('');
-    setDevCode(null);
+
+    if (!FIREBASE_CONFIGURED) {
+      setError('Phone verification isn\'t configured. Please contact support.');
+      return;
+    }
+
+    const normalized = normalizeAuPhone(phone);
+    if (!normalized) {
+      setError('Enter a valid Australian phone number (e.g. 0412 345 678).');
+      return;
+    }
+
     setSending(true);
     try {
-      const res = await api<{ message: string; devCode?: string }>(
-        '/api/users/verify-phone',
-        { method: 'POST', body: JSON.stringify({ phone }) },
+      const auth = getFirebaseAuth();
+      // Always (re)create the verifier — a stale one from a previous failed
+      // attempt can't be reused per Firebase's API.
+      clearRecaptcha();
+      if (!recaptchaContainerRef.current) {
+        throw new Error('Verification widget not ready. Refresh and try again.');
+      }
+      recaptchaVerifierRef.current = new RecaptchaVerifier(
+        auth,
+        recaptchaContainerRef.current,
+        { size: 'invisible' },
       );
-      setCodeSent(true);
+      const result = await signInWithPhoneNumber(
+        auth,
+        normalized,
+        recaptchaVerifierRef.current,
+      );
+      setConfirmation(result);
       setInfo('Verification code sent.');
-      if (res.devCode) setDevCode(res.devCode);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to send code');
+      const code = (err as { code?: string })?.code ?? '';
+      // Map common Firebase error codes to friendlier copy.
+      if (code === 'auth/invalid-phone-number') {
+        setError('That number isn\'t valid. Try +61 412 345 678 format.');
+      } else if (code === 'auth/too-many-requests') {
+        setError('Too many attempts to that number. Try again in a few minutes.');
+      } else if (code === 'auth/quota-exceeded') {
+        setError('Verification quota for today reached. Try again tomorrow.');
+      } else if (code === 'auth/captcha-check-failed') {
+        setError('Bot check failed. Refresh the page and try again.');
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to send code');
+      }
+      // Reset verifier so the next attempt creates a fresh one. Firebase
+      // marks a verifier as consumed even on failure.
+      clearRecaptcha();
     } finally {
       setSending(false);
     }
@@ -229,22 +303,47 @@ function PhoneStep({
     e.preventDefault();
     setError('');
     setInfo('');
+
+    if (!confirmation) {
+      setError('No verification in progress. Send a new code.');
+      return;
+    }
+
     setVerifying(true);
     try {
-      await api<{ message: string }>('/api/users/verify-phone/confirm', {
-        method: 'POST',
-        body: JSON.stringify({ code }),
-      });
+      const credential = await confirmation.confirm(code);
+      const idToken = await credential.user.getIdToken();
+      // Hand the ID token to our server — it verifies the signature and
+      // flips phoneVerified=true on our user row.
+      await api<{ message: string; phone: string }>(
+        '/api/users/verify-phone/confirm',
+        {
+          method: 'POST',
+          body: JSON.stringify({ idToken }),
+        },
+      );
       setCode('');
-      setCodeSent(false);
+      setConfirmation(null);
       setEditMode(false);
+      clearRecaptcha();
       onChange();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to verify code');
+      const fbCode = (err as { code?: string })?.code ?? '';
+      if (fbCode === 'auth/invalid-verification-code') {
+        setError('Incorrect code. Try again.');
+      } else if (fbCode === 'auth/code-expired') {
+        setError('Code expired. Request a new one.');
+        setConfirmation(null);
+      } else {
+        setError(err instanceof Error ? err.message : 'Failed to verify code');
+      }
     } finally {
       setVerifying(false);
     }
   }
+
+  // Cleanup on unmount.
+  useEffect(() => clearRecaptcha, []);
 
   if (status === 'done' && !editMode) {
     return (
@@ -256,7 +355,7 @@ function PhoneStep({
             className="text-xs font-medium text-[var(--neon-cyan)] hover:underline"
             onClick={() => {
               setEditMode(true);
-              setCodeSent(false);
+              setConfirmation(null);
               setCode('');
               setPhone(profile.phone ?? '');
             }}
@@ -264,6 +363,16 @@ function PhoneStep({
             Change number
           </button>
         </div>
+      </StepCard>
+    );
+  }
+
+  if (emailNotVerified) {
+    return (
+      <StepCard title="Phone" status={status}>
+        <p className="text-sm text-[var(--text-muted)]">
+          Verify your email address first, then come back to verify your phone.
+        </p>
       </StepCard>
     );
   }
@@ -278,16 +387,10 @@ function PhoneStep({
       {info && !error && (
         <div className="mb-3 rounded-lg border border-[var(--neon-cyan)]/40 bg-[var(--tint-cyan)] p-3 text-sm text-[var(--neon-cyan)]">
           {info}
-          {devCode && (
-            <>
-              {' '}
-              <span className="font-mono font-bold">(dev code: {devCode})</span>
-            </>
-          )}
         </div>
       )}
 
-      {!codeSent ? (
+      {!confirmation ? (
         <form onSubmit={handleSendCode} className="flex flex-wrap items-end gap-3">
           <div className="flex-1 min-w-[200px]">
             <label className="block text-sm font-medium text-[var(--text-primary)]">Phone number</label>
@@ -312,10 +415,10 @@ function PhoneStep({
               type="button"
               onClick={() => {
                 setEditMode(false);
-                setCodeSent(false);
+                setConfirmation(null);
                 setCode('');
                 setInfo('');
-                setDevCode(null);
+                clearRecaptcha();
               }}
               className="btn-cyber-outline"
             >
@@ -349,9 +452,10 @@ function PhoneStep({
             <button
               type="button"
               onClick={() => {
-                setCodeSent(false);
+                setConfirmation(null);
                 setCode('');
                 setInfo('');
+                clearRecaptcha();
               }}
               className="btn-cyber-outline"
             >
@@ -360,6 +464,10 @@ function PhoneStep({
           </div>
         </form>
       )}
+
+      {/* Invisible reCAPTCHA mount point. Stays in the DOM whenever the
+          form is shown — Firebase needs it before signInWithPhoneNumber. */}
+      <div ref={recaptchaContainerRef} className="hidden" />
     </StepCard>
   );
 }

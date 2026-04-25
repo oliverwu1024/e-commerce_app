@@ -16,7 +16,6 @@ import {
   changePasswordSchema,
   changeUsernameSchema,
   changeEmailSchema,
-  startPhoneVerificationSchema,
   confirmPhoneVerificationSchema,
   verifyIdSchema,
   verifyAbnSchema,
@@ -29,15 +28,9 @@ import {
   sendVerificationEmail,
   sendIdSubmittedEmail,
 } from '../utils/email.js';
-import { sendOtpSms, SMS_LIVE } from '../utils/sms.js';
+import { firebaseAuth, FIREBASE_ENABLED } from '../config/firebase.js';
 
 const DEV_EMAIL_ENABLED = process.env.ENABLE_DEV_EMAIL === '1';
-
-const SMS_DAILY_BUDGET = Math.max(1, Number(process.env.SMS_DAILY_BUDGET) || 100);
-const SMS_PHONE_COOLDOWN_SECONDS = Math.max(
-  0,
-  Number(process.env.SMS_PHONE_COOLDOWN_SECONDS) || 60,
-);
 
 function buildVerificationUrl(token: string): string {
   const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
@@ -58,25 +51,14 @@ const passwordChangeLimiter = createRateLimiter({
   message: { error: 'Too many password change attempts, please try again later' },
 });
 
-// Split the phone limiters so a streak of failed confirms doesn't also block
-// the user from requesting a fresh code on a different bucket.
-const phoneStartLimiter = createRateLimiter({
-  windowMs: 15 * 60 * 1000,
-  max: 6,
-  message: { error: 'Too many code requests, please try again later' },
-});
-
+// Phone verify happens via Firebase Phone Auth on the client; server only
+// sees the resulting ID token. One limiter is enough — the confirm endpoint
+// is the only phone-related write surface now.
 const phoneConfirmLimiter = createRateLimiter({
   windowMs: 15 * 60 * 1000,
   max: 10,
-  message: { error: 'Too many confirmation attempts, please try again later' },
+  message: { error: 'Too many verification attempts, please try again later' },
 });
-
-const PHONE_CODE_TTL_MS = 10 * 60 * 1000; // 10 minutes
-const PHONE_CODE_MAX_ATTEMPTS = 5;
-// Dev-only: expose OTP in responses + stdout. Must be an explicit opt-in —
-// negating NODE_ENV=production leaks codes wherever NODE_ENV is unset.
-const DEV_OTP_ENABLED = process.env.ENABLE_DEV_OTP === '1';
 
 // Private-profile projection — safe to return to the user themselves. Note:
 // we still never return `password`, `emailVerificationToken`,
@@ -242,52 +224,41 @@ router.put('/password', authenticate, passwordChangeLimiter, async (req: Request
 });
 
 // ---------------------------------------------------------------------------
-// POST /api/users/verify-phone — start phone verification
-// Layers (cost-ceiling defences against SMS-toll abuse):
-//  (1) emailVerified gate — stops throwaway-account SMS spray at the door;
-//      account creation itself is gated by Turnstile (see /auth/register).
-//  (2) AU-only E.164 — phoneSchema rejects non-+61 numbers where SMS costs
-//      are 3-10x and the attacker payoff is highest.
-//  (3) Per-phone cooldown — N attacker accounts targeting one handset can
-//      only burn one SMS per SMS_PHONE_COOLDOWN_SECONDS, globally.
-//  (4) Global daily budget — hard UTC-day ceiling bounds worst-case loss
-//      at (budget × per-SMS rate) regardless of any other failure above.
-//  (5) Per-user rate limit — phoneStartLimiter (middleware, above).
-//  (6) Twilio-side USD cap — configured in the console, outside this code.
-// Send-failure policy: if the SMS fails to deliver, we clear the stored OTP
-// state + refund the budget counter so the user can retype a corrected
-// number on the next attempt without their one-and-only hash being pinned.
+// POST /api/users/verify-phone/confirm — finalise phone verification
+//
+// Phone verification runs through Firebase Phone Auth on the client (Firebase
+// handles the SMS send, reCAPTCHA, OTP entry, and code validation). All we
+// see is the resulting Firebase ID token, which carries the verified phone
+// number in its claims. Our job: verify the token signature + freshness,
+// confirm the phone is AU, and flip phoneVerified=true on our user row.
+//
+// Why Firebase: SMS-toll abuse is Google's problem now. The 6 cost-ceiling
+// layers we previously maintained (per-phone cooldown, daily SMS budget,
+// per-user rate limit, AU-only schema, email gate, Turnstile on /register)
+// are mostly subsumed by Firebase's own throttling + reCAPTCHA. We keep the
+// email gate + AU-only check as belt-and-braces.
 // ---------------------------------------------------------------------------
-router.post('/verify-phone', authenticate, phoneStartLimiter, async (req: Request, res: Response) => {
-  const now = new Date();
-  const day = now.toISOString().slice(0, 10);
-  // Flag tracks whether the global SMS budget counter was incremented. Any
-  // error path between reservation and success must refund it — the outer
-  // catch handles the "unexpected throw" cases the inner logic doesn't.
-  let budgetReserved = false;
-
-  const refundBudget = async () => {
-    if (!budgetReserved) return;
-    budgetReserved = false;
-    await prisma.smsUsageDay
-      .update({ where: { day }, data: { count: { decrement: 1 } } })
-      .catch(() => undefined);
-  };
-
+router.post('/verify-phone/confirm', authenticate, phoneConfirmLimiter, async (req: Request, res: Response) => {
   try {
-    const parsed = startPhoneVerificationSchema.safeParse(req.body);
+    const parsed = confirmPhoneVerificationSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues[0].message });
       return;
     }
-    const { phone } = parsed.data;
+    const { idToken } = parsed.data;
 
-    // (1) Email gate. Only users who can receive email can start phone
-    // verification — raises the attacker's cost because SMS spray now
-    // requires email-receiving accounts, not just signups.
+    if (!FIREBASE_ENABLED) {
+      console.error('[verify-phone] Firebase not configured — refusing token');
+      res.status(503).json({ error: 'Phone verification is temporarily unavailable.' });
+      return;
+    }
+
+    // Email gate. Belt-and-braces: client should be checking this before
+    // initiating Firebase, but verify server-side too in case a request
+    // bypasses the UI.
     const current = await prisma.user.findUnique({
       where: { id: req.userId },
-      select: { phone: true, phoneVerified: true, emailVerified: true },
+      select: { emailVerified: true },
     });
     if (!current) {
       res.status(404).json({ error: 'User not found' });
@@ -300,198 +271,49 @@ router.post('/verify-phone', authenticate, phoneStartLimiter, async (req: Reques
       return;
     }
 
-    // (3) Per-phone cooldown. Read-only check — a tiny TOCTOU race can
-    // leak one extra SMS in the worst case, which the global budget (4)
-    // still bounds.
-    const cooldown = await prisma.phoneSmsCooldown.findUnique({ where: { phone } });
-    if (
-      cooldown &&
-      now.getTime() - cooldown.lastSentAt.getTime() < SMS_PHONE_COOLDOWN_SECONDS * 1000
-    ) {
-      const retryAfter = Math.ceil(
-        (SMS_PHONE_COOLDOWN_SECONDS * 1000 - (now.getTime() - cooldown.lastSentAt.getTime())) / 1000,
-      );
-      res.status(429).json({
-        error: `A code was just sent to that number. Try again in ${retryAfter}s.`,
-      });
+    // Verify the Firebase ID token. checkRevoked=true forces a server-side
+    // revocation lookup against Firebase — necessary if you ever revoke a
+    // Firebase user. For phone verification this is largely paranoia, but
+    // the call is cheap and Google caches the public keys.
+    let decoded;
+    try {
+      decoded = await firebaseAuth().verifyIdToken(idToken, true);
+    } catch (err) {
+      console.warn('[verify-phone] Firebase token verification failed:', err);
+      res.status(400).json({ error: 'Invalid or expired verification token.' });
       return;
     }
 
-    // (4) Reserve one SMS from today's budget. Atomic increment, then
-    // compare — the upsert returns the post-increment value so concurrent
-    // calls both see their own new count and only overshooters refund.
-    // Only touched in live-SMS mode; dev-log mode is free.
-    if (SMS_LIVE) {
-      const reserved = await prisma.smsUsageDay.upsert({
-        where: { day },
-        create: { day, count: 1 },
-        update: { count: { increment: 1 } },
-      });
-      budgetReserved = true;
-      if (reserved.count > SMS_DAILY_BUDGET) {
-        await refundBudget();
-        res.status(503).json({
-          error: 'SMS verification is temporarily unavailable. Please try again tomorrow.',
-        });
-        return;
-      }
+    const phone = (decoded.phone_number || '').trim();
+    if (!phone) {
+      res.status(400).json({ error: 'No verified phone number on this token.' });
+      return;
     }
 
-    const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
-    const codeHash = await bcrypt.hash(code, AUTH_CONFIG.bcryptRounds);
-    const phoneChanged = current.phone !== phone;
+    // AU-only check. Defensive — we restrict the country picker on the
+    // client, but Firebase doesn't enforce country-of-origin so we re-check.
+    if (!/^\+61[2-478][0-9]{8}$/.test(phone)) {
+      res.status(400).json({
+        error: 'Only Australian (+61) phone numbers are accepted.',
+      });
+      return;
+    }
 
     await prisma.user.update({
       where: { id: req.userId },
       data: {
         phone,
-        phoneVerificationCode: codeHash,
-        phoneVerificationExpires: new Date(now.getTime() + PHONE_CODE_TTL_MS),
-        phoneVerificationAttempts: 0,
-        // If the phone number changed, clear verified state — they must re-verify.
-        ...(phoneChanged && { phoneVerified: false }),
-      },
-    });
-
-    try {
-      await sendOtpSms(phone, code);
-    } catch (err) {
-      console.error('SMS send failed:', err);
-      // Rollback: clear the OTP so the user isn't stuck with an unusable
-      // hash while their rate-limit budget ticks down, and refund the
-      // daily SMS counter so a Twilio-side failure doesn't eat our ceiling.
-      await prisma.user
-        .update({
-          where: { id: req.userId },
-          data: {
-            phoneVerificationCode: null,
-            phoneVerificationExpires: null,
-            phoneVerificationAttempts: 0,
-          },
-        })
-        .catch(() => undefined);
-      await refundBudget();
-      res.status(502).json({
-        error:
-          "Couldn't deliver the verification code. Double-check the number and try again.",
-      });
-      return;
-    }
-
-    // Record cooldown only after confirmed-sent, so failures above don't
-    // block retries on the same handset.
-    await prisma.phoneSmsCooldown.upsert({
-      where: { phone },
-      create: { phone, lastSentAt: now },
-      update: { lastSentAt: now },
-    });
-    // Budget consumed as intended — clear the flag so the outer catch doesn't
-    // refund a send we already delivered.
-    budgetReserved = false;
-
-    // Dev-log path. Gated by BOTH the env flag AND SMS_LIVE=false — when
-    // Twilio creds are set we NEVER leak the code, even if someone left
-    // ENABLE_DEV_OTP=1 in the prod env by mistake.
-    const leakOk = DEV_OTP_ENABLED && !SMS_LIVE;
-    if (leakOk) {
-      console.log(`[DEV] Phone verification code for user ${req.userId} (${phone}): ${code}`);
-    }
-
-    res.json({
-      message: 'Verification code sent.',
-      devCode: leakOk ? code : undefined,
-    });
-  } catch (err) {
-    console.error('Start phone verification error:', err);
-    // Unexpected failure between budget reserve and send-success — refund
-    // so a bug in this handler can't permanently consume a day's budget.
-    await refundBudget();
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-// ---------------------------------------------------------------------------
-// POST /api/users/verify-phone/confirm — finish phone verification
-// Attempt cap is enforced via a conditional updateMany that increments ONLY
-// when attempts < MAX. The increment happens BEFORE bcrypt.compare so N
-// parallel requests can't each see attempts=0 and burn extra guesses — only
-// the first MAX increments succeed, the rest short-circuit to 429.
-// ---------------------------------------------------------------------------
-router.post('/verify-phone/confirm', authenticate, phoneConfirmLimiter, async (req: Request, res: Response) => {
-  try {
-    const parsed = confirmPhoneVerificationSchema.safeParse(req.body);
-    if (!parsed.success) {
-      res.status(400).json({ error: parsed.error.issues[0].message });
-      return;
-    }
-    const { code } = parsed.data;
-    const now = new Date();
-
-    // Claim one of the remaining attempt slots atomically. If count===0 the
-    // user has no pending code, it expired, or they're out of attempts —
-    // figure out which for a specific error.
-    const claim = await prisma.user.updateMany({
-      where: {
-        id: req.userId!,
-        phoneVerificationCode: { not: null },
-        phoneVerificationExpires: { gt: now },
-        phoneVerificationAttempts: { lt: PHONE_CODE_MAX_ATTEMPTS },
-      },
-      data: { phoneVerificationAttempts: { increment: 1 } },
-    });
-
-    if (claim.count === 0) {
-      const row = await prisma.user.findUnique({
-        where: { id: req.userId },
-        select: {
-          phoneVerificationCode: true,
-          phoneVerificationExpires: true,
-        },
-      });
-      if (!row) {
-        res.status(404).json({ error: 'User not found' });
-        return;
-      }
-      if (!row.phoneVerificationCode) {
-        res.status(400).json({ error: 'No verification in progress. Request a new code.' });
-        return;
-      }
-      if (!row.phoneVerificationExpires || row.phoneVerificationExpires < now) {
-        res.status(400).json({ error: 'Code has expired. Request a new code.' });
-        return;
-      }
-      res.status(429).json({ error: 'Too many attempts. Request a new code.' });
-      return;
-    }
-
-    // Slot claimed. Read the hash (a separate row could be null if another
-    // request raced us to success — treat as "no verification in progress").
-    const row = await prisma.user.findUnique({
-      where: { id: req.userId },
-      select: { phoneVerificationCode: true },
-    });
-    if (!row?.phoneVerificationCode) {
-      res.status(400).json({ error: 'No verification in progress. Request a new code.' });
-      return;
-    }
-
-    const valid = await bcrypt.compare(code, row.phoneVerificationCode);
-    if (!valid) {
-      res.status(400).json({ error: 'Incorrect code.' });
-      return;
-    }
-
-    await prisma.user.update({
-      where: { id: req.userId },
-      data: {
         phoneVerified: true,
+        // Clear any legacy OTP state from the previous server-driven flow —
+        // these columns are dormant under Firebase but worth zeroing out
+        // when a user successfully verifies, so the row is tidy.
         phoneVerificationCode: null,
         phoneVerificationExpires: null,
         phoneVerificationAttempts: 0,
       },
     });
 
-    res.json({ message: 'Phone verified successfully' });
+    res.json({ message: 'Phone verified successfully', phone });
   } catch (err) {
     console.error('Confirm phone verification error:', err);
     res.status(500).json({ error: 'Internal server error' });

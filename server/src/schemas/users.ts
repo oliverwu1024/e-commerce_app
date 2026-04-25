@@ -73,12 +73,12 @@ export const phoneSchema = z
     return `+61${v.slice(1)}`;
   });
 
-export const startPhoneVerificationSchema = z.object({
-  phone: phoneSchema,
-});
-
+// Firebase Phone Auth flow: the client uses Firebase's signInWithPhoneNumber,
+// which does its own SMS send + reCAPTCHA + code prompt + ID token issuance.
+// All we ever see is the resulting ID token — server's job is to verify it
+// (signature + expiry) and pluck the verified phone number out of the claims.
 export const confirmPhoneVerificationSchema = z.object({
-  code: z.string().regex(/^[0-9]{6}$/, 'Code must be 6 digits'),
+  idToken: z.string().min(20).max(8192, 'Invalid ID token'),
 });
 
 export const verifyIdSchema = z.object({
