@@ -5,7 +5,8 @@ import { uuidSchema } from './common.js';
 // Keep in sync with client/src/types/listings.ts CATEGORIES
 const CATEGORIES = [
   'Phones', 'Laptops', 'Desktops', 'Tablets',
-  'Consoles', 'Cameras', 'Audio', 'Accessories', 'PC Parts',
+  'Consoles', 'Cameras', 'Audio',
+  'Computer Accessories', 'Mobile Accessories', 'PC Parts',
 ] as const;
 
 const s3Prefix = S3_BUCKET

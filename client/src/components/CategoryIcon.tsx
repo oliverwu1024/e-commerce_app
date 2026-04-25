@@ -77,17 +77,26 @@ export default function CategoryIcon({ category, className = 'h-8 w-8' }: Props)
         </svg>
       );
 
-    case 'Accessories':
+    case 'Computer Accessories':
       return (
         <svg {...svgProps}>
-          <circle cx="12" cy="12" r="7" />
-          <polyline points="12 9 12 12 14 13" />
-          <path d="M9 2h6" />
-          <path d="M10 2l-1 3" />
-          <path d="M14 2l1 3" />
-          <path d="M10 22l-1-3" />
-          <path d="M14 22l1-3" />
-          <path d="M9 22h6" />
+          <rect x="2" y="6" width="20" height="12" rx="2" />
+          <line x1="6" y1="10" x2="6.01" y2="10" strokeWidth="2.5" />
+          <line x1="10" y1="10" x2="10.01" y2="10" strokeWidth="2.5" />
+          <line x1="14" y1="10" x2="14.01" y2="10" strokeWidth="2.5" />
+          <line x1="18" y1="10" x2="18.01" y2="10" strokeWidth="2.5" />
+          <line x1="7" y1="14" x2="17" y2="14" />
+        </svg>
+      );
+
+    case 'Mobile Accessories':
+      return (
+        <svg {...svgProps}>
+          <rect x="7" y="9" width="10" height="9" rx="1" />
+          <line x1="10" y1="6" x2="10" y2="9" />
+          <line x1="14" y1="6" x2="14" y2="9" />
+          <line x1="12" y1="18" x2="12" y2="21" />
+          <line x1="10" y1="21" x2="14" y2="21" />
         </svg>
       );
 

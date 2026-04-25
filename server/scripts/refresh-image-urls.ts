@@ -14,7 +14,8 @@ const IMAGE_KEYWORDS: Record<string, string> = {
   Consoles: 'game-console',
   Cameras: 'camera',
   Audio: 'headphones',
-  Accessories: 'keyboard',
+  'Computer Accessories': 'keyboard',
+  'Mobile Accessories': 'phone-charger',
   'PC Parts': 'computer-hardware',
 };
 

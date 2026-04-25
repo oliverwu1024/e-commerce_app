@@ -454,16 +454,17 @@ function CategoryBento({
 }) {
   return (
     <>
-      {/* Desktop bento — 4 cols × 3 rows with a 2×2 feature */}
-      <div className="hidden h-[540px] grid-cols-4 grid-rows-3 gap-3 lg:grid">
-        <CategoryTile cat="Phones" size="large" thumb={thumbs['Phones']} className="col-span-2 row-span-2" />
+      {/* Desktop bento — 5 cols × 3 rows with a 2×3 vertical hero */}
+      <div className="hidden h-[540px] grid-cols-5 grid-rows-3 gap-3 lg:grid">
+        <CategoryTile cat="Phones" size="large" thumb={thumbs['Phones']} className="col-span-2 row-span-3" />
         <CategoryTile cat="Laptops" size="med" thumb={thumbs['Laptops']} />
         <CategoryTile cat="Consoles" size="med" thumb={thumbs['Consoles']} />
         <CategoryTile cat="Cameras" size="med" thumb={thumbs['Cameras']} />
         <CategoryTile cat="Audio" size="med" thumb={thumbs['Audio']} />
         <CategoryTile cat="Tablets" size="small" thumb={thumbs['Tablets']} />
         <CategoryTile cat="Desktops" size="small" thumb={thumbs['Desktops']} />
-        <CategoryTile cat="Accessories" size="small" thumb={thumbs['Accessories']} />
+        <CategoryTile cat="Computer Accessories" size="small" thumb={thumbs['Computer Accessories']} />
+        <CategoryTile cat="Mobile Accessories" size="small" thumb={thumbs['Mobile Accessories']} />
         <CategoryTile cat="PC Parts" size="small" thumb={thumbs['PC Parts']} />
       </div>
 
@@ -476,7 +477,8 @@ function CategoryBento({
         <CategoryTile cat="Consoles" size="med" thumb={thumbs['Consoles']} />
         <CategoryTile cat="Cameras" size="med" thumb={thumbs['Cameras']} />
         <CategoryTile cat="Audio" size="small" thumb={thumbs['Audio']} />
-        <CategoryTile cat="Accessories" size="small" thumb={thumbs['Accessories']} />
+        <CategoryTile cat="Computer Accessories" size="small" thumb={thumbs['Computer Accessories']} />
+        <CategoryTile cat="Mobile Accessories" size="small" thumb={thumbs['Mobile Accessories']} />
         <CategoryTile cat="PC Parts" size="small" thumb={thumbs['PC Parts']} />
       </div>
     </>

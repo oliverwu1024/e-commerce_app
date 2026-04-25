@@ -185,21 +185,37 @@ const categories: Record<string, CategoryData> = {
       ])} ${faker.lorem.sentence()}`,
   },
 
-  Accessories: {
+  'Computer Accessories': {
     products: [
-      { title: 'Apple Watch Series 9', brand: 'Apple', basePrice: 550 },
-      { title: 'Samsung Galaxy Watch 6', brand: 'Samsung', basePrice: 350 },
       { title: 'Logitech MX Master 3S', brand: 'Logitech', basePrice: 120 },
       { title: 'Razer BlackWidow V4', brand: 'Razer', basePrice: 180 },
       { title: 'Elgato Stream Deck MK.2', brand: 'Elgato', basePrice: 180 },
-      { title: 'Anker 737 Power Bank', brand: 'Anker', basePrice: 120 },
       { title: 'CalDigit TS4 Thunderbolt Dock', brand: 'CalDigit', basePrice: 400 },
+      { title: 'Brother HL-L2350DW Laser Printer', brand: 'Brother', basePrice: 180 },
+      { title: 'Epson EcoTank ET-2850 Printer/Scanner', brand: 'Epson', basePrice: 350 },
     ],
     descriptionTemplate: (p, cond) =>
       `${p.title} in ${cond.replace('_', ' ').toLowerCase()} condition. ${faker.helpers.arrayElement([
         'Works flawlessly.',
         'Barely used, like new in box.',
         'Great add-on for any setup.',
+        'Selling because I upgraded.',
+      ])} ${faker.lorem.sentence()}`,
+  },
+
+  'Mobile Accessories': {
+    products: [
+      { title: 'Apple Watch Series 9', brand: 'Apple', basePrice: 550 },
+      { title: 'Samsung Galaxy Watch 6', brand: 'Samsung', basePrice: 350 },
+      { title: 'Anker 737 Power Bank', brand: 'Anker', basePrice: 120 },
+      { title: 'Apple MagSafe Charger', brand: 'Apple', basePrice: 50 },
+      { title: 'Spigen Tough Armor iPhone Case', brand: 'Spigen', basePrice: 30 },
+    ],
+    descriptionTemplate: (p, cond) =>
+      `${p.title} in ${cond.replace('_', ' ').toLowerCase()} condition. ${faker.helpers.arrayElement([
+        'Works flawlessly.',
+        'Barely used, like new in box.',
+        'Original packaging included.',
         'Selling because I upgraded.',
       ])} ${faker.lorem.sentence()}`,
   },
@@ -251,7 +267,8 @@ const IMAGE_KEYWORDS: Record<string, string> = {
   Consoles: 'game-console',
   Cameras: 'camera',
   Audio: 'headphones',
-  Accessories: 'keyboard',
+  'Computer Accessories': 'keyboard',
+  'Mobile Accessories': 'phone-charger',
   'PC Parts': 'computer-hardware',
 };
 

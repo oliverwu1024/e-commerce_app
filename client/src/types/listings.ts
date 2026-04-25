@@ -92,7 +92,8 @@ export const CATEGORIES = [
   'Consoles',
   'Cameras',
   'Audio',
-  'Accessories',
+  'Computer Accessories',
+  'Mobile Accessories',
   'PC Parts',
 ] as const;
 
