@@ -5,7 +5,12 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
-import { type ListingDetail, formatPrice, getConditionStyle } from '@/types/listings';
+import {
+  type ListingDetail,
+  FULFILLMENT_LABELS,
+  formatPrice,
+  getConditionStyle,
+} from '@/types/listings';
 import SaveButton from '@/components/SaveButton';
 import AddToCartButton from '@/components/AddToCartButton';
 import Stars from '@/components/Stars';
@@ -227,6 +232,16 @@ export default function ListingDetailClient() {
               <span className={`rounded-md px-2.5 py-1 text-xs font-medium ${condition.bg}`}>
                 {condition.label}
               </span>
+              <span className="rounded-md border border-[var(--border-hi)] bg-[var(--bg-panel-hi)] px-2.5 py-1 text-xs font-medium text-[var(--text-muted)]">
+                {FULFILLMENT_LABELS[listing.fulfillmentMethod]}
+              </span>
+              {listing.shippingPrice != null && (
+                <span className="rounded-md border border-[var(--neon-cyan)]/40 bg-[var(--tint-cyan)] px-2.5 py-1 text-xs font-medium text-[var(--neon-cyan)]">
+                  {parseFloat(listing.shippingPrice) === 0
+                    ? 'Free shipping'
+                    : `+ ${formatPrice(listing.shippingPrice)} shipping`}
+                </span>
+              )}
               {listing.status === 'SOLD' && (
                 <span className="rounded-md bg-[var(--tint-danger)] text-[var(--neon-danger)] border border-[var(--neon-danger)]/40 px-2.5 py-1 text-xs font-medium">
                   Sold
@@ -334,6 +349,19 @@ export default function ListingDetailClient() {
               <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
                 <dt className="text-[var(--text-muted)]">Category</dt>
                 <dd className="text-[var(--text-primary)]">{listing.category}</dd>
+
+                <dt className="text-[var(--text-muted)]">Delivery</dt>
+                <dd className="text-[var(--text-primary)]">
+                  {FULFILLMENT_LABELS[listing.fulfillmentMethod]}
+                  {listing.shippingPrice != null && (
+                    <span className="text-[var(--text-muted)]">
+                      {' '}
+                      ({parseFloat(listing.shippingPrice) === 0
+                        ? 'free shipping'
+                        : `${formatPrice(listing.shippingPrice)} shipping`})
+                    </span>
+                  )}
+                </dd>
 
                 {listing.brand && (
                   <>

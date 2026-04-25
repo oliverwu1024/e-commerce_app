@@ -25,13 +25,64 @@ function imageSchemaForUser(userId: string) {
   });
 }
 
+// Allow 0 for free items. Negative is still rejected. The cross-field
+// refines below enforce shipping rules.
 const priceSchema = z.number()
-  .positive('Price must be greater than 0')
+  .nonnegative('Price cannot be negative')
   .max(999999.99, 'Price too high')
   .refine(v => {
     const decimals = v.toString().split('.')[1];
     return !decimals || decimals.length <= 2;
   }, { message: 'Price can have at most 2 decimal places' });
+
+const shippingPriceSchema = z.number()
+  .nonnegative('Shipping price cannot be negative')
+  .max(999999.99, 'Shipping price too high')
+  .refine(v => {
+    const decimals = v.toString().split('.')[1];
+    return !decimals || decimals.length <= 2;
+  }, { message: 'Shipping price can have at most 2 decimal places' });
+
+const fulfillmentMethodSchema = z.enum(['POST_ONLY', 'PICKUP_ONLY', 'BOTH'], {
+  message: 'Fulfillment method is required',
+});
+
+// Shared cross-field rule: any time fulfillmentMethod is in the payload,
+// shippingPrice must also be explicit (number when post is offered, null
+// for pickup-only). For updates that don't touch fulfillment, both fields
+// can be omitted and the existing DB row is preserved.
+function fulfillmentRefine<
+  T extends { fulfillmentMethod?: 'POST_ONLY' | 'PICKUP_ONLY' | 'BOTH'; shippingPrice?: number | null },
+>(data: T, ctx: z.RefinementCtx) {
+  const fm = data.fulfillmentMethod;
+  if (!fm) return;
+  const postEnabled = fm === 'POST_ONLY' || fm === 'BOTH';
+  const sp = data.shippingPrice;
+  if (sp === undefined) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['shippingPrice'],
+      message: postEnabled
+        ? 'Shipping price is required when post is offered'
+        : 'Shipping price must be set when changing to pickup-only',
+    });
+    return;
+  }
+  if (postEnabled && sp === null) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['shippingPrice'],
+      message: 'Shipping price is required when post is offered',
+    });
+  }
+  if (!postEnabled && sp !== null) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['shippingPrice'],
+      message: 'Shipping price must be empty for pickup-only listings',
+    });
+  }
+}
 
 export const paginationSchema = z.object({
   page: z.coerce.number().int().min(1).optional().default(1),
@@ -44,6 +95,10 @@ export function createListingSchemaForUser(userId: string) {
     title: z.string().min(3, 'Title must be at least 3 characters').max(200),
     description: z.string().min(10, 'Description must be at least 10 characters').max(5000),
     price: priceSchema,
+    fulfillmentMethod: fulfillmentMethodSchema,
+    // Nullable so PICKUP_ONLY can omit it. Refine below enforces presence
+    // when post is enabled.
+    shippingPrice: shippingPriceSchema.nullable().optional(),
     category: z.enum(CATEGORIES, { message: 'Invalid category' }),
     subcategory: z.string().max(100).optional(),
     platform: z.string().max(100).optional(),
@@ -55,7 +110,7 @@ export function createListingSchemaForUser(userId: string) {
       .refine(imgs => new Set(imgs.map(i => i.displayOrder)).size === imgs.length,
         { message: 'Image display orders must be unique' })
       .optional(),
-  });
+  }).superRefine(fulfillmentRefine);
 }
 
 export type CreateListingInput = z.infer<ReturnType<typeof createListingSchemaForUser>>;
@@ -66,6 +121,8 @@ export function updateListingSchemaForUser(userId: string) {
     title: z.string().min(3, 'Title must be at least 3 characters').max(200).optional(),
     description: z.string().min(10, 'Description must be at least 10 characters').max(5000).optional(),
     price: priceSchema.optional(),
+    fulfillmentMethod: fulfillmentMethodSchema.optional(),
+    shippingPrice: shippingPriceSchema.nullable().optional(),
     category: z.enum(CATEGORIES, { message: 'Invalid category' }).optional(),
     subcategory: z.string().max(100).nullable().optional(),
     platform: z.string().max(100).nullable().optional(),
@@ -75,7 +132,7 @@ export function updateListingSchemaForUser(userId: string) {
       .refine(imgs => new Set(imgs.map(i => i.displayOrder)).size === imgs.length,
         { message: 'Image display orders must be unique' })
       .optional(),
-  });
+  }).superRefine(fulfillmentRefine);
 }
 
 export type UpdateListingInput = z.infer<ReturnType<typeof updateListingSchemaForUser>>;

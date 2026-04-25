@@ -1,9 +1,19 @@
 export type ListingStatus = 'ACTIVE' | 'ON_HOLD' | 'SOLD' | 'REMOVED';
 
+export type FulfillmentMethod = 'POST_ONLY' | 'PICKUP_ONLY' | 'BOTH';
+
+export const FULFILLMENT_LABELS: Record<FulfillmentMethod, string> = {
+  POST_ONLY: 'Post only',
+  PICKUP_ONLY: 'Pickup only',
+  BOTH: 'Pickup or post',
+};
+
 export type ListingSummary = {
   id: string;
   title: string;
   price: string;
+  fulfillmentMethod: FulfillmentMethod;
+  shippingPrice: string | null;
   category: string;
   brand: string | null;
   condition: Condition;
@@ -34,6 +44,8 @@ export type ListingDetail = {
   title: string;
   description: string;
   price: string;
+  fulfillmentMethod: FulfillmentMethod;
+  shippingPrice: string | null;
   category: string;
   subcategory: string | null;
   platform: string | null;

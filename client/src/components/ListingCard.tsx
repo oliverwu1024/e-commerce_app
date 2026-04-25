@@ -2,7 +2,12 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { type ListingSummary, formatPrice, getConditionStyle } from '@/types/listings';
+import {
+  type ListingSummary,
+  FULFILLMENT_LABELS,
+  formatPrice,
+  getConditionStyle,
+} from '@/types/listings';
 import SaveButton from '@/components/SaveButton';
 import AddToCartButton from '@/components/AddToCartButton';
 
@@ -72,6 +77,19 @@ export default function ListingCard({ listing }: Props) {
         <p className="mt-1.5 text-lg font-bold tracking-tight text-[var(--neon-cyan)]">
           {formatPrice(listing.price)}
         </p>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-[11px] text-[var(--text-muted)]">
+          <span>{FULFILLMENT_LABELS[listing.fulfillmentMethod]}</span>
+          {listing.shippingPrice != null && (
+            <>
+              <span aria-hidden="true">·</span>
+              <span>
+                {parseFloat(listing.shippingPrice) === 0
+                  ? 'free shipping'
+                  : `+ ${formatPrice(listing.shippingPrice)} ship`}
+              </span>
+            </>
+          )}
+        </div>
         <div className="mt-2 flex items-center gap-1.5 text-xs text-[var(--text-dim)]">
           <span className="text-[var(--text-muted)]">{listing.seller.username}</span>
           {listing.seller.location && (

@@ -162,6 +162,8 @@ function CheckoutSuccess() {
 
 function OrderSummaryRow({ order }: { order: Order }) {
   const imageUrl = order.listing.images[0]?.url;
+  const ship = parseFloat(order.shippingPrice);
+  const isPost = order.fulfillmentMethod === 'POST';
   return (
     <div className="panel clip-corner flex gap-4 p-4">
       <Link
@@ -185,9 +187,15 @@ function OrderSummaryRow({ order }: { order: Order }) {
         <p className="mt-0.5 text-sm text-[var(--text-muted)]">
           Sold by {order.seller.username}
         </p>
-        <p className="mt-1 inline-flex items-center rounded-md bg-[var(--tint-amber)] text-[var(--neon-amber)] border border-[var(--neon-amber)]/40 px-2 py-0.5 text-xs font-medium">
-          Awaiting seller confirmation
-        </p>
+        <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
+          <span className="inline-flex items-center rounded-md bg-[var(--tint-amber)] text-[var(--neon-amber)] border border-[var(--neon-amber)]/40 px-2 py-0.5 font-medium">
+            Awaiting seller confirmation
+          </span>
+          <span className="rounded-md border border-[var(--border-hi)] bg-[var(--bg-panel-hi)] px-2 py-0.5 text-[var(--text-muted)]">
+            {isPost ? 'Post' : 'Pickup'}
+            {isPost && ship > 0 && ` · + ${formatPrice(ship)}`}
+          </span>
+        </div>
       </div>
       <div className="flex-shrink-0 text-right">
         <p className="text-sm font-bold text-[var(--text-primary)]">

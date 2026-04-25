@@ -1,4 +1,49 @@
 import { z } from 'zod';
+import { uuidSchema } from './common.js';
+
+// Buyer-supplied delivery address for POST orders. Server stores this
+// verbatim on the Order as JSON — no normalization beyond trimming and
+// length caps. Validation here protects the DB; the Order API echoes it
+// back unchanged.
+export const shippingAddressSchema = z.object({
+  name: z.string().trim().min(1, 'Recipient name is required').max(100),
+  line1: z.string().trim().min(1, 'Address is required').max(200),
+  line2: z.string().trim().max(200).nullable().optional(),
+  city: z.string().trim().min(1, 'City / suburb is required').max(100),
+  region: z.string().trim().min(1, 'State / region is required').max(100),
+  postcode: z.string().trim().min(1, 'Postcode is required').max(20),
+  country: z.string().trim().min(1, 'Country is required').max(100),
+});
+
+export type ShippingAddressInput = z.infer<typeof shippingAddressSchema>;
+
+// Per-item fulfillment choice the buyer makes at checkout.
+const checkoutItemSchema = z.object({
+  listingId: uuidSchema,
+  fulfillmentMethod: z.enum(['POST', 'PICKUP'], {
+    message: 'Fulfillment method must be POST or PICKUP',
+  }),
+});
+
+// Single shipping address per checkout — applies to every POST item in
+// the cart. Address is required iff at least one item is POST. The route
+// also revalidates against listing.fulfillmentMethod since the client's
+// claim alone isn't authoritative.
+export const checkoutSchema = z.object({
+  items: z.array(checkoutItemSchema).min(1, 'Checkout must include at least one item'),
+  shippingAddress: shippingAddressSchema.nullable().optional(),
+}).superRefine((data, ctx) => {
+  const anyPost = data.items.some((i) => i.fulfillmentMethod === 'POST');
+  if (anyPost && !data.shippingAddress) {
+    ctx.addIssue({
+      code: 'custom',
+      path: ['shippingAddress'],
+      message: 'Shipping address is required when posting any item',
+    });
+  }
+});
+
+export type CheckoutInput = z.infer<typeof checkoutSchema>;
 
 // Manual completion (seller records that the buyer paid offline). Online
 // providers (Stripe, Square) mark orders paid automatically via webhook/

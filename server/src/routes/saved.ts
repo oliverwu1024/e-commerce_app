@@ -37,6 +37,8 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
               id: true,
               title: true,
               price: true,
+              fulfillmentMethod: true,
+              shippingPrice: true,
               category: true,
               brand: true,
               condition: true,

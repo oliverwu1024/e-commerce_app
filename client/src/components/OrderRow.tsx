@@ -734,11 +734,62 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           <div className="text-xs text-[var(--text-muted)] font-mono">
             Order ID: <span className="text-[var(--text-primary)]">{order.id}</span>
           </div>
+
+          <FulfillmentSummary order={order} />
+
           <MessageThread
             endpoint={`/api/orders/${order.id}/messages`}
             currentUserId={currentUserId}
             otherPartyName={otherParty.username}
           />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Show how the buyer chose to receive the item, the shipping price they
+// were charged, and the address (if any). Visible to both buyer and seller
+// in the expanded order view.
+function FulfillmentSummary({ order }: { order: Order }) {
+  const ship = parseFloat(order.shippingPrice);
+  const total = parseFloat(order.amount);
+  const itemPrice = total - ship;
+  const isPost = order.fulfillmentMethod === 'POST';
+
+  return (
+    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel)] p-3 text-xs">
+      <p className="font-semibold text-[var(--text-primary)]">
+        {isPost ? 'Delivery: Post' : 'Delivery: Pickup'}
+      </p>
+      <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-1 text-[var(--text-muted)]">
+        <dt>Item price</dt>
+        <dd className="text-right text-[var(--text-primary)]">{formatPrice(itemPrice)}</dd>
+        <dt>Shipping</dt>
+        <dd className="text-right text-[var(--text-primary)]">
+          {isPost ? formatPrice(ship) : 'Pickup'}
+        </dd>
+        <dt className="font-semibold text-[var(--text-primary)]">Total</dt>
+        <dd className="text-right font-semibold text-[var(--text-primary)]">
+          {formatPrice(total)}
+        </dd>
+      </dl>
+
+      {isPost && order.shippingAddress && (
+        <div className="mt-3 border-t border-[var(--border-subtle)] pt-2">
+          <p className="text-[11px] uppercase tracking-wide text-[var(--text-dim)]">
+            Ship to
+          </p>
+          <address className="mt-1 not-italic text-[var(--text-primary)]">
+            <div>{order.shippingAddress.name}</div>
+            <div>{order.shippingAddress.line1}</div>
+            {order.shippingAddress.line2 && <div>{order.shippingAddress.line2}</div>}
+            <div>
+              {order.shippingAddress.city}, {order.shippingAddress.region}{' '}
+              {order.shippingAddress.postcode}
+            </div>
+            <div>{order.shippingAddress.country}</div>
+          </address>
         </div>
       )}
     </div>

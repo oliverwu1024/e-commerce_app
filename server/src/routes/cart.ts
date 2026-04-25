@@ -22,6 +22,8 @@ const CART_ITEM_SELECT = {
       id: true,
       title: true,
       price: true,
+      fulfillmentMethod: true,
+      shippingPrice: true,
       category: true,
       brand: true,
       condition: true,

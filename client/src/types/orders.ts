@@ -1,4 +1,16 @@
-import type { Condition, ListingStatus } from '@/types/listings';
+import type { Condition, FulfillmentMethod, ListingStatus } from '@/types/listings';
+
+export type OrderFulfillmentMethod = 'POST' | 'PICKUP';
+
+export type ShippingAddress = {
+  name: string;
+  line1: string;
+  line2?: string | null;
+  city: string;
+  region: string;
+  postcode: string;
+  country: string;
+};
 
 export type OrderStatus =
   | 'PENDING_CONFIRMATION'
@@ -98,6 +110,9 @@ export type Order = {
   status: OrderStatus;
   paymentMethod: PaymentMethod | null;
   paymentSessionState: PaymentSessionState;
+  fulfillmentMethod: OrderFulfillmentMethod;
+  shippingPrice: string;
+  shippingAddress: ShippingAddress | null;
   trackingNumber: string | null;
   shippedAt: string | null;
   deliveredAt: string | null;
@@ -135,6 +150,8 @@ export type CartItem = {
     id: string;
     title: string;
     price: string;
+    fulfillmentMethod: FulfillmentMethod;
+    shippingPrice: string | null;
     category: string;
     brand: string | null;
     condition: Condition;

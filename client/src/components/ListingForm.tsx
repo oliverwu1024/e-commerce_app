@@ -5,16 +5,42 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ImageUpload, { type ImageFile } from '@/components/ImageUpload';
 import { api } from '@/lib/api';
-import { CATEGORIES, CONDITIONS, type Condition, type ListingDetail } from '@/types/listings';
+import {
+  CATEGORIES,
+  CONDITIONS,
+  type Condition,
+  type FulfillmentMethod,
+  type ListingDetail,
+} from '@/types/listings';
 
 type FormErrors = {
   title?: string;
   category?: string;
   condition?: string;
   price?: string;
+  fulfillmentMethod?: string;
+  shippingPrice?: string;
   description?: string;
   images?: string;
 };
+
+const FULFILLMENT_OPTIONS: { value: FulfillmentMethod; label: string; hint: string }[] = [
+  {
+    value: 'PICKUP_ONLY',
+    label: 'Pickup only',
+    hint: 'Buyer collects in person — no shipping cost.',
+  },
+  {
+    value: 'POST_ONLY',
+    label: 'Post only',
+    hint: 'You ship to the buyer. Set the shipping cost below.',
+  },
+  {
+    value: 'BOTH',
+    label: 'Pickup or post',
+    hint: 'Buyer chooses at checkout. Set the shipping cost below.',
+  },
+];
 
 const CONDITION_DESCRIPTIONS: Record<Condition, string> = {
   LIKE_NEW: 'Barely used, no visible wear. Includes all original accessories and packaging.',
@@ -36,6 +62,12 @@ export default function ListingForm({ listing }: Props) {
   const [brand, setBrand] = useState(listing?.brand ?? '');
   const [condition, setCondition] = useState<Condition | ''>(listing?.condition ?? '');
   const [price, setPrice] = useState(listing ? parseFloat(listing.price).toString() : '');
+  const [fulfillmentMethod, setFulfillmentMethod] = useState<FulfillmentMethod>(
+    listing?.fulfillmentMethod ?? 'PICKUP_ONLY',
+  );
+  const [shippingPrice, setShippingPrice] = useState(
+    listing?.shippingPrice != null ? parseFloat(listing.shippingPrice).toString() : '',
+  );
   const [description, setDescription] = useState(listing?.description ?? '');
   const [subcategory, setSubcategory] = useState(listing?.subcategory ?? '');
   const [platform, setPlatform] = useState(listing?.platform ?? '');
@@ -71,14 +103,31 @@ export default function ListingForm({ listing }: Props) {
     const priceNum = parseFloat(price);
     if (!price.trim()) {
       errs.price = 'Price is required';
-    } else if (isNaN(priceNum) || priceNum <= 0) {
-      errs.price = 'Price must be greater than $0';
+    } else if (isNaN(priceNum) || priceNum < 0) {
+      errs.price = 'Price cannot be negative';
     } else if (priceNum > 999999.99) {
       errs.price = 'Price must be under $1,000,000';
     } else {
       const decimals = price.split('.')[1];
       if (decimals && decimals.length > 2) {
         errs.price = 'Price can have at most 2 decimal places';
+      }
+    }
+
+    const postEnabled = fulfillmentMethod === 'POST_ONLY' || fulfillmentMethod === 'BOTH';
+    if (postEnabled) {
+      const shipNum = parseFloat(shippingPrice);
+      if (!shippingPrice.trim()) {
+        errs.shippingPrice = 'Shipping price is required';
+      } else if (isNaN(shipNum) || shipNum < 0) {
+        errs.shippingPrice = 'Shipping price cannot be negative';
+      } else if (shipNum > 999999.99) {
+        errs.shippingPrice = 'Shipping price must be under $1,000,000';
+      } else {
+        const decimals = shippingPrice.split('.')[1];
+        if (decimals && decimals.length > 2) {
+          errs.shippingPrice = 'Shipping price can have at most 2 decimal places';
+        }
       }
     }
 
@@ -114,11 +163,15 @@ export default function ListingForm({ listing }: Props) {
         .filter((img) => img.url)
         .map((img, index) => ({ url: img.url!, displayOrder: index }));
 
+      const postEnabled =
+        fulfillmentMethod === 'POST_ONLY' || fulfillmentMethod === 'BOTH';
       const body: Record<string, unknown> = {
         title: title.trim(),
         category,
         condition,
         price: parseFloat(price),
+        fulfillmentMethod,
+        shippingPrice: postEnabled ? parseFloat(shippingPrice) : null,
         description: description.trim(),
       };
 
@@ -367,8 +420,95 @@ export default function ListingForm({ listing }: Props) {
               />
               <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--text-dim)]">AUD</span>
             </div>
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
+              Use $0.00 to give the item away.
+            </p>
             {errors.price && <p className="mt-1 text-sm text-[var(--neon-danger)]">{errors.price}</p>}
           </div>
+        </section>
+
+        <hr className="border-[var(--border-subtle)]" />
+
+        {/* Delivery */}
+        <section>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+            Delivery <span className="text-[var(--neon-danger)]">*</span>
+          </h2>
+          {errors.fulfillmentMethod && (
+            <p className="mt-1 text-sm text-[var(--neon-danger)]">{errors.fulfillmentMethod}</p>
+          )}
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+            {FULFILLMENT_OPTIONS.map((opt) => {
+              const selected = fulfillmentMethod === opt.value;
+              return (
+                <label
+                  key={opt.value}
+                  className={`flex cursor-pointer items-start gap-3 rounded-lg border p-4 transition-colors ${
+                    selected
+                      ? 'border-[var(--neon-cyan)] bg-[var(--tint-cyan)] ring-1 ring-[var(--neon-cyan)]'
+                      : 'border-[var(--border-subtle)] hover:border-[var(--border-hi)] hover:bg-[var(--bg-panel-hi)]'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="fulfillmentMethod"
+                    value={opt.value}
+                    checked={selected}
+                    onChange={() => setFulfillmentMethod(opt.value)}
+                    className="mt-0.5 h-4 w-4 border-[var(--border-hi)] text-[var(--neon-cyan)] focus:ring-[var(--neon-cyan)]"
+                  />
+                  <div>
+                    <span className="block text-sm font-medium text-[var(--text-primary)]">
+                      {opt.label}
+                    </span>
+                    <p className="mt-1 text-xs text-[var(--text-muted)]">{opt.hint}</p>
+                  </div>
+                </label>
+              );
+            })}
+          </div>
+
+          {(fulfillmentMethod === 'POST_ONLY' || fulfillmentMethod === 'BOTH') && (
+            <div className="mt-4">
+              <label
+                htmlFor="shippingPrice"
+                className="block text-sm font-medium text-[var(--text-primary)]"
+              >
+                Shipping price (AUD) <span className="text-[var(--neon-danger)]">*</span>
+              </label>
+              <div className="relative mt-1">
+                <span className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
+                  $
+                </span>
+                <input
+                  id="shippingPrice"
+                  type="text"
+                  inputMode="decimal"
+                  value={shippingPrice}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    if (val === '' || /^\d*\.?\d{0,2}$/.test(val)) setShippingPrice(val);
+                  }}
+                  placeholder="0.00"
+                  className={`w-full rounded-lg border py-2 pl-8 pr-14 focus:outline-none focus:ring-1 ${
+                    errors.shippingPrice
+                      ? 'border-[var(--neon-danger)]/60 bg-[var(--bg-input)] text-[var(--text-primary)] placeholder-[var(--text-dim)] focus:border-[var(--neon-danger)] focus:ring-[var(--neon-danger)]'
+                      : 'input-cyber'
+                  }`}
+                />
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-sm text-[var(--text-dim)]">
+                  AUD
+                </span>
+              </div>
+              <p className="mt-1 text-xs text-[var(--text-muted)]">
+                Charged on top of the item price when the buyer chooses delivery. Use $0.00
+                for free shipping.
+              </p>
+              {errors.shippingPrice && (
+                <p className="mt-1 text-sm text-[var(--neon-danger)]">{errors.shippingPrice}</p>
+              )}
+            </div>
+          )}
         </section>
 
         <hr className="border-[var(--border-subtle)]" />

@@ -21,6 +21,25 @@ enum ListingStatus {
   REMOVED
 }
 
+// What fulfillment options a listing supports. Sellers pick this when
+// creating/editing the listing. PICKUP_ONLY listings can be free
+// (price=0); POST_ONLY / BOTH must specify a shippingPrice (which can
+// itself be 0 for free shipping).
+enum FulfillmentMethod {
+  POST_ONLY
+  PICKUP_ONLY
+  BOTH
+}
+
+// What the buyer chose at checkout. Always one of POST or PICKUP — never
+// BOTH on an order. Constrained by the listing's FulfillmentMethod (a
+// PICKUP_ONLY listing forces PICKUP, POST_ONLY forces POST, BOTH lets the
+// buyer pick).
+enum OrderFulfillmentMethod {
+  POST
+  PICKUP
+}
+
 enum OrderStatus {
   PENDING_CONFIRMATION // buyer checked out, waiting for seller to confirm
   CONFIRMED            // seller confirmed, item on hold, awaiting payment
@@ -236,6 +255,13 @@ model Listing {
   brand       String?       @db.VarChar(50)
   condition   Condition
   status      ListingStatus @default(ACTIVE)
+  // Fulfillment offering. Defaults to PICKUP_ONLY so existing listings
+  // that pre-date this column don't accidentally advertise free shipping.
+  fulfillmentMethod FulfillmentMethod @default(PICKUP_ONLY)
+  // Shipping price the seller charges when the buyer picks POST. Required
+  // (non-null) when fulfillmentMethod is POST_ONLY or BOTH. May be 0
+  // (seller offers free shipping). Null for PICKUP_ONLY.
+  shippingPrice Decimal? @db.Decimal(10, 2)
   createdAt   DateTime      @default(now())
   updatedAt   DateTime      @updatedAt
 
@@ -291,9 +317,22 @@ model CartItem {
 
 model Order {
   id            String        @id @default(uuid())
+  // Total charged to the buyer = listing price + shippingPrice (0 for pickup).
+  // Snapshotted at checkout so price/shipping changes on the listing don't
+  // mutate an in-flight order.
   amount        Decimal       @db.Decimal(10, 2)
   status        OrderStatus   @default(PENDING_CONFIRMATION)
   paymentMethod PaymentMethod?
+  // Buyer's fulfillment choice at checkout. PICKUP for legacy rows
+  // (pre-fulfillment column) — they all settled in person.
+  fulfillmentMethod OrderFulfillmentMethod @default(PICKUP)
+  // Shipping price snapshot from the listing at checkout time. 0 for PICKUP
+  // orders. Stored on the order so per-row totals + receipts are stable
+  // even if the listing's shippingPrice changes later.
+  shippingPrice Decimal @db.Decimal(10, 2) @default(0)
+  // Buyer-supplied delivery address. Set only for fulfillmentMethod=POST.
+  // JSON shape: { name, line1, line2?, city, region, postcode, country }.
+  shippingAddress Json?
   // Online-payment session tracking. Independent of `status`. Gates cancel
   // during a live charge. Manual completions (CASH/BANK_TRANSFER) leave this
   // at NONE and jump straight from status=CONFIRMED to status=COMPLETED.

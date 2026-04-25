@@ -6,6 +6,7 @@ import { authenticate } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { uuidSchema } from '../schemas/common.js';
 import {
+  checkoutSchema,
   completeOrderSchema,
   messageSchema,
   orderListQuerySchema,
@@ -59,6 +60,9 @@ const ORDER_SUMMARY_SELECT = {
   // Exposed so the Purchases tab can surface the "Release payment lock"
   // escape hatch when a provider tab was closed without cancelling.
   paymentSessionState: true,
+  fulfillmentMethod: true,
+  shippingPrice: true,
+  shippingAddress: true,
   trackingNumber: true,
   shippedAt: true,
   deliveredAt: true,
@@ -132,6 +136,15 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
       return;
     }
 
+    const parsed = checkoutSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+    const { items: chosenItems, shippingAddress } = parsed.data;
+    // Index buyer's choices by listingId — keeps lookup O(1) below.
+    const choiceByListingId = new Map(chosenItems.map((i) => [i.listingId, i.fulfillmentMethod]));
+
     const cart = await prisma.cart.findUnique({
       where: { userId: req.userId! },
       select: {
@@ -150,6 +163,24 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
 
     if (!cart || cart.items.length === 0) {
       res.status(400).json({ error: 'Your cart is empty' });
+      return;
+    }
+
+    // Buyer must supply a fulfillment choice for every cart item — refuse
+    // mismatches so we never silently default to PICKUP and surprise a
+    // POST-only seller.
+    if (chosenItems.length !== cart.items.length) {
+      res.status(400).json({
+        error: 'Fulfillment choices do not match cart contents. Refresh and try again.',
+      });
+      return;
+    }
+    const missingChoice = cart.items.find((i) => !choiceByListingId.has(i.listingId));
+    if (missingChoice) {
+      res.status(400).json({
+        error: `Choose pickup or delivery for "${missingChoice.listing.title}".`,
+        listingId: missingChoice.listingId,
+      });
       return;
     }
 
@@ -185,19 +216,68 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
 
           const locked = await tx.listing.findMany({
             where: { id: { in: listingIds } },
-            select: { id: true, price: true, sellerId: true },
+            select: {
+              id: true,
+              title: true,
+              price: true,
+              sellerId: true,
+              fulfillmentMethod: true,
+              shippingPrice: true,
+            },
           });
           const lockedById = new Map(locked.map((l) => [l.id, l]));
+
+          // Cross-check buyer's choice against the listing's offering.
+          // Throws CheckoutConflict so the outer catch returns 409 with a
+          // helpful message rather than silently downgrading.
+          for (const cartItem of cart.items) {
+            const l = lockedById.get(cartItem.listingId)!;
+            const chosen = choiceByListingId.get(cartItem.listingId)!;
+            const allowsPost = l.fulfillmentMethod === 'POST_ONLY' || l.fulfillmentMethod === 'BOTH';
+            const allowsPickup = l.fulfillmentMethod === 'PICKUP_ONLY' || l.fulfillmentMethod === 'BOTH';
+            if (chosen === 'POST' && !allowsPost) {
+              throw new CheckoutConflict(
+                `"${l.title}" is pickup only. Update your selection.`,
+              );
+            }
+            if (chosen === 'PICKUP' && !allowsPickup) {
+              throw new CheckoutConflict(
+                `"${l.title}" is post only. Update your selection.`,
+              );
+            }
+            if (chosen === 'POST' && (l.shippingPrice === null || l.shippingPrice === undefined)) {
+              // Should never happen given listing-side validation, but
+              // guard so we never compute amount with a missing field.
+              throw new CheckoutConflict(
+                `"${l.title}" is missing a shipping price.`,
+              );
+            }
+          }
 
           const created = [];
           for (const item of cart.items) {
             const l = lockedById.get(item.listingId)!;
+            const chosen = choiceByListingId.get(item.listingId)!;
+            const shipPrice =
+              chosen === 'POST'
+                ? new Prisma.Decimal(l.shippingPrice as Prisma.Decimal)
+                : new Prisma.Decimal(0);
+            const total = new Prisma.Decimal(l.price).plus(shipPrice);
             const order = await tx.order.create({
               data: {
                 listingId: l.id,
                 buyerId: req.userId!,
                 sellerId: l.sellerId,
-                amount: l.price,
+                amount: total,
+                fulfillmentMethod: chosen,
+                shippingPrice: shipPrice,
+                // Address is shared across all POST items in this checkout;
+                // PICKUP orders store SQL NULL so the seller doesn't get a
+                // stray delivery address they don't need. (Prisma.DbNull
+                // because shippingAddress is `Json?`; passing `null`
+                // directly is rejected by Prisma's typing.)
+                shippingAddress:
+                  chosen === 'POST' && shippingAddress ? shippingAddress : Prisma.DbNull,
                 status: 'PENDING_CONFIRMATION',
               },
               select: ORDER_SUMMARY_SELECT,
@@ -258,6 +338,12 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
       res.status(201).json({ orders });
     } catch (err) {
       if (err instanceof CheckoutConflict) {
+        // CheckoutConflict.message is set for fulfillment-mismatch cases.
+        // Otherwise the listing was raced into a non-ACTIVE state.
+        if (err.message) {
+          res.status(409).json({ error: err.message });
+          return;
+        }
         const blocker = await prisma.listing.findFirst({
           where: { id: { in: listingIds }, status: { not: 'ACTIVE' } },
           select: { id: true, title: true },
@@ -981,6 +1067,7 @@ router.post(
         select: {
           id: true,
           amount: true,
+          shippingPrice: true,
           status: true,
           buyerId: true,
           sellerId: true,
@@ -1004,6 +1091,19 @@ router.post(
       }
 
       const amountCents = Math.round(Number(order.amount) * 100);
+      const shippingCents = Math.round(Number(order.shippingPrice) * 100);
+      const itemCents = amountCents - shippingCents;
+      // Stripe and Square refuse $0 charges. Free totals (item+shipping=0)
+      // must settle through the manual completion path — the seller marks
+      // the order paid via cash/bank transfer (representing "no payment
+      // due") in the dashboard.
+      if (amountCents <= 0) {
+        res.status(400).json({
+          error:
+            'This order is free. Ask the seller to mark it as complete via cash/bank transfer.',
+        });
+        return;
+      }
       const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
       const successUrl = `${clientUrl}/dashboard?tab=purchases&payment=success&order=${order.id}`;
       const cancelUrl = `${clientUrl}/dashboard?tab=purchases&payment=cancelled&order=${order.id}`;
@@ -1092,19 +1192,61 @@ router.post(
           // has explicitly opted into a non-zero PLATFORM_FEE_BPS. Default
           // is 0 — the platform takes nothing, seller receives 100%.
           const feeCents = platformFeeForCents(amountCents);
+          // Split into item + shipping line items so the receipt itemizes
+          // the postage cost. Stripe rejects $0 line items, so combine
+          // into a single "title (free + shipping)" line when the item
+          // itself is free.
+          const stripeLineItems: Array<{
+            price_data: {
+              currency: string;
+              product_data: { name: string };
+              unit_amount: number;
+            };
+            quantity: number;
+          }> = [];
+          if (itemCents > 0 && shippingCents > 0) {
+            stripeLineItems.push({
+              price_data: {
+                currency: 'aud',
+                product_data: { name: order.listing.title },
+                unit_amount: itemCents,
+              },
+              quantity: 1,
+            });
+            stripeLineItems.push({
+              price_data: {
+                currency: 'aud',
+                product_data: { name: 'Shipping' },
+                unit_amount: shippingCents,
+              },
+              quantity: 1,
+            });
+          } else if (itemCents > 0) {
+            stripeLineItems.push({
+              price_data: {
+                currency: 'aud',
+                product_data: { name: order.listing.title },
+                unit_amount: itemCents,
+              },
+              quantity: 1,
+            });
+          } else {
+            // itemCents=0, shippingCents>0 (free item, paid shipping).
+            // amountCents>0 invariant guarantees we hit this branch only
+            // when shippingCents>0.
+            stripeLineItems.push({
+              price_data: {
+                currency: 'aud',
+                product_data: { name: `${order.listing.title} (free + shipping)` },
+                unit_amount: shippingCents,
+              },
+              quantity: 1,
+            });
+          }
           const session = await getStripeClient().checkout.sessions.create(
             {
               mode: 'payment',
-              line_items: [
-                {
-                  price_data: {
-                    currency: 'aud',
-                    product_data: { name: order.listing.title },
-                    unit_amount: amountCents,
-                  },
-                  quantity: 1,
-                },
-              ],
+              line_items: stripeLineItems,
               client_reference_id: order.id,
               metadata: { orderId: order.id, sellerId: order.sellerId },
               payment_intent_data: {
@@ -1158,18 +1300,43 @@ router.post(
           // subscriptions aren't automatic. redirectUrl carries order.id
           // through the round-trip.
           const squareRedirect = `${successUrl}&provider=square`;
+          // Mirror Stripe's free-item handling: Square also rejects $0
+          // line items, so combine when itemCents=0.
+          const squareLineItems: Array<{
+            name: string;
+            quantity: string;
+            basePriceMoney: { amount: bigint; currency: 'AUD' };
+          }> = [];
+          if (itemCents > 0 && shippingCents > 0) {
+            squareLineItems.push({
+              name: order.listing.title,
+              quantity: '1',
+              basePriceMoney: { amount: BigInt(itemCents), currency: 'AUD' },
+            });
+            squareLineItems.push({
+              name: 'Shipping',
+              quantity: '1',
+              basePriceMoney: { amount: BigInt(shippingCents), currency: 'AUD' },
+            });
+          } else if (itemCents > 0) {
+            squareLineItems.push({
+              name: order.listing.title,
+              quantity: '1',
+              basePriceMoney: { amount: BigInt(itemCents), currency: 'AUD' },
+            });
+          } else {
+            squareLineItems.push({
+              name: `${order.listing.title} (free + shipping)`,
+              quantity: '1',
+              basePriceMoney: { amount: BigInt(shippingCents), currency: 'AUD' },
+            });
+          }
           const resp = await sellerSquare.checkout.paymentLinks.create({
             idempotencyKey: randomUUID(),
             order: {
               locationId: sellerAccount.locationId,
               referenceId: order.id,
-              lineItems: [
-                {
-                  name: order.listing.title,
-                  quantity: '1',
-                  basePriceMoney: { amount: BigInt(amountCents), currency: 'AUD' },
-                },
-              ],
+              lineItems: squareLineItems,
             },
             checkoutOptions: { redirectUrl: squareRedirect },
           });
