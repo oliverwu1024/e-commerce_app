@@ -108,7 +108,11 @@ function AdminDashboardInner() {
         loading={loading}
       />
 
-      <QuickLinks pendingVerifications={stats?.pendingVerifications ?? 0} />
+      <QuickLinks
+        pendingVerifications={stats?.pendingVerifications ?? 0}
+        newSupportSubmissions={stats?.newSupportSubmissions ?? 0}
+        openDisputes={stats?.openDisputes ?? 0}
+      />
     </div>
   );
 }
@@ -327,89 +331,89 @@ function StuckOrdersSection({
   );
 }
 
-function QuickLinks({ pendingVerifications }: { pendingVerifications: number }) {
+function QuickLinks({
+  pendingVerifications,
+  newSupportSubmissions,
+  openDisputes,
+}: {
+  pendingVerifications: number;
+  newSupportSubmissions: number;
+  openDisputes: number;
+}) {
   return (
     <section className="mt-8">
       <h2 className="text-sm font-semibold text-[var(--text-muted)] uppercase tracking-wider">
         Tools
       </h2>
       <div className="mt-2 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <Link
+        <ToolCard
           href="/admin/verifications"
-          className="panel clip-corner flex items-center justify-between p-4 hover:border-[var(--neon-cyan)] hover:shadow-sm transition"
-        >
-          <div>
-            <p className="text-sm font-semibold text-[var(--text-primary)]">
-              Pending ID verifications
-            </p>
-            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-              Review submitted IDs for personal sellers.
-            </p>
-          </div>
-          <span
-            className={`ml-3 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full px-2 text-xs font-bold ${
-              pendingVerifications > 0
-                ? 'bg-[var(--tint-amber)] text-[var(--neon-amber)] border border-[var(--neon-amber)]/40'
-                : 'bg-[var(--bg-panel-hi)] text-[var(--text-muted)] border border-[var(--border-subtle)]'
-            }`}
-          >
-            {pendingVerifications}
-          </span>
-        </Link>
-        <Link
+          title="Pending ID verifications"
+          subtitle="Review submitted IDs for personal sellers."
+          count={pendingVerifications}
+        />
+        <ToolCard
           href="/admin/disputes"
-          className="panel clip-corner flex items-center justify-between p-4 hover:border-[var(--neon-cyan)] hover:shadow-sm transition"
-        >
-          <div>
-            <p className="text-sm font-semibold text-[var(--text-primary)]">
-              Open disputes
-            </p>
-            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-              Buyer-filed disputes awaiting admin resolution.
-            </p>
-          </div>
-        </Link>
-        <Link
+          title="Open disputes"
+          subtitle="Buyer-filed disputes awaiting admin resolution."
+          count={openDisputes}
+        />
+        <ToolCard
           href="/admin/contact"
-          className="panel clip-corner flex items-center justify-between p-4 hover:border-[var(--neon-cyan)] hover:shadow-sm transition"
-        >
-          <div>
-            <p className="text-sm font-semibold text-[var(--text-primary)]">
-              Support inbox
-            </p>
-            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-              Reply to contact-form submissions from inside the app.
-            </p>
-          </div>
-        </Link>
-        <Link
+          title="Support inbox"
+          subtitle="Reply to contact-form submissions from inside the app."
+          count={newSupportSubmissions}
+        />
+        <ToolCard
           href="/admin/users"
-          className="panel clip-corner flex items-center justify-between p-4 hover:border-[var(--neon-cyan)] hover:shadow-sm transition"
-        >
-          <div>
-            <p className="text-sm font-semibold text-[var(--text-primary)]">
-              Users
-            </p>
-            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-              Browse and search every account by email or username.
-            </p>
-          </div>
-        </Link>
-        <Link
+          title="Users"
+          subtitle="Browse and search every account by email or username."
+        />
+        <ToolCard
           href="/admin/broadcasts"
-          className="panel clip-corner flex items-center justify-between p-4 hover:border-[var(--neon-cyan)] hover:shadow-sm transition"
-        >
-          <div>
-            <p className="text-sm font-semibold text-[var(--text-primary)]">
-              Broadcasts
-            </p>
-            <p className="mt-0.5 text-xs text-[var(--text-muted)]">
-              Send announcements via email + in-app to subgroups or specific users.
-            </p>
-          </div>
-        </Link>
+          title="Broadcasts"
+          subtitle="Send announcements via email + in-app to subgroups or specific users."
+        />
       </div>
     </section>
+  );
+}
+
+// Shared admin tool card. `count` omitted = no badge (informational link);
+// count === 0 renders a muted "0" so the admin can confirm the queue is
+// empty rather than wondering if it loaded.
+function ToolCard({
+  href,
+  title,
+  subtitle,
+  count,
+}: {
+  href: string;
+  title: string;
+  subtitle: string;
+  count?: number;
+}) {
+  return (
+    <Link
+      href={href}
+      className="panel clip-corner flex items-center justify-between p-4 hover:border-[var(--neon-cyan)] hover:shadow-sm transition"
+    >
+      <div>
+        <p className="text-sm font-semibold text-[var(--text-primary)]">{title}</p>
+        <p className="mt-0.5 text-xs text-[var(--text-muted)]">{subtitle}</p>
+      </div>
+      {typeof count === 'number' && (
+        <span
+          className={`ml-3 inline-flex h-6 min-w-[1.5rem] items-center justify-center rounded-full px-2 text-xs font-bold ${
+            count > 0
+              ? 'bg-[var(--tint-amber)] text-[var(--neon-amber)] border border-[var(--neon-amber)]/40'
+              : 'bg-[var(--bg-panel-hi)] text-[var(--text-muted)] border border-[var(--border-subtle)]'
+          }`}
+        >
+          {count}
+        </span>
+      )}
+    </Link>
   );
 }
 

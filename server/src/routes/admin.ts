@@ -220,6 +220,8 @@ router.get('/stats', async (_req: Request, res: Response) => {
       orderCounts,
       revenueAgg,
       stuckPaymentCount,
+      newSupportCount,
+      openDisputeCount,
     ] = await Promise.all([
       prisma.user.count(),
       prisma.user.count({ where: { emailVerified: true } }),
@@ -246,6 +248,11 @@ router.get('/stats', async (_req: Request, res: Response) => {
           updatedAt: { lt: stuckSince },
         },
       }),
+      // Support backlog: NEW = unread submissions OR threads where the
+      // customer just replied. REPLIED + CLOSED don't count.
+      prisma.contactSubmission.count({ where: { status: 'NEW' } }),
+      // Disputes the admin still owes a decision on.
+      prisma.dispute.count({ where: { status: 'OPEN' } }),
     ]);
 
     const listings = { ACTIVE: 0, ON_HOLD: 0, SOLD: 0, REMOVED: 0 };
@@ -278,6 +285,8 @@ router.get('/stats', async (_req: Request, res: Response) => {
       },
       pendingVerifications: pendingVerificationCount,
       stuckPayments: stuckPaymentCount,
+      newSupportSubmissions: newSupportCount,
+      openDisputes: openDisputeCount,
     });
   } catch (err) {
     console.error('Admin stats error:', err);

@@ -19,6 +19,8 @@ export type AdminStats = {
   revenue: { totalAud: string };
   pendingVerifications: number;
   stuckPayments: number;
+  newSupportSubmissions: number;
+  openDisputes: number;
 };
 
 export type StuckOrder = {
