@@ -84,7 +84,7 @@ export default function Home() {
                 sellers across Australia.
               </p>
 
-              <form onSubmit={handleSearch} className="mt-7 max-w-xl">
+              <form onSubmit={handleSearch} className="mt-7 max-w-xl" data-tour="search">
                 <div className="flex overflow-hidden rounded-lg border border-[var(--border-hi)] bg-[var(--bg-input)] backdrop-blur-sm focus-within:border-[var(--neon-cyan)] focus-within:shadow-[0_0_0_3px_color-mix(in_oklab,var(--neon-cyan)_18%,transparent)] transition-all">
                   <div className="relative flex-1">
                     <svg

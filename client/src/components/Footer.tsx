@@ -15,6 +15,12 @@ export default function Footer() {
           <span className="text-[var(--text-dim)]">© {year}</span>
         </div>
         <nav aria-label="Footer" className="flex flex-wrap items-center gap-x-5 gap-y-1">
+          <Link href="/help" className="hover:text-[var(--neon-cyan)]">
+            Help
+          </Link>
+          <Link href="/help/sell" className="hover:text-[var(--neon-cyan)]">
+            How to sell
+          </Link>
           <Link href="/terms" className="hover:text-[var(--neon-cyan)]">
             Terms
           </Link>

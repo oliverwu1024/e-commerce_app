@@ -4,6 +4,7 @@ import { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useAuthStore } from '@/stores/auth';
+import { queuePostRegistrationTour } from '@/components/OnboardingTour';
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -52,11 +53,20 @@ export default function RegisterPage() {
         sellerType,
         ...(sellerType === 'BUSINESS' ? { businessName } : {}),
       });
+      // Queue the appropriate first-run tour. Personal accounts get the
+      // buyer tour on the homepage; business accounts go straight to the
+      // dashboard for the seller tour. The OnboardingTour component picks
+      // this up from localStorage and only fires once per user.
+      queuePostRegistrationTour(sellerType === 'BUSINESS' ? 'seller' : 'buyer');
       // If the verification email failed to send, route to the verify page so
       // the user sees a clear explanation + the Resend button, instead of the
       // generic "please verify your email" banner on home (which implies one
       // was actually sent).
-      router.push(verificationEmailSent ? '/' : '/verify-email?retry=1');
+      if (!verificationEmailSent) {
+        router.push('/verify-email?retry=1');
+      } else {
+        router.push(sellerType === 'BUSINESS' ? '/dashboard' : '/');
+      }
     } catch {
       // error is set in store
     } finally {

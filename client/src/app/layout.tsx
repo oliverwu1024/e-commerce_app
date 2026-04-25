@@ -4,6 +4,7 @@ import "./globals.css";
 import AuthProvider from "@/components/AuthProvider";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
+import OnboardingTour from "@/components/OnboardingTour";
 
 const orbitron = Orbitron({
   variable: "--font-orbitron",
@@ -58,6 +59,7 @@ export default function RootLayout({
           <Navbar />
           <main className="flex-1">{children}</main>
           <Footer />
+          <OnboardingTour />
         </AuthProvider>
       </body>
     </html>

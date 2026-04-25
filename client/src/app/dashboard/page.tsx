@@ -9,6 +9,7 @@ import { useSavedStore } from '@/stores/saved';
 import { useAuthStore } from '@/stores/auth';
 import ListingCard from '@/components/ListingCard';
 import OrderRow from '@/components/OrderRow';
+import OnboardingChecklist from '@/components/OnboardingChecklist';
 import {
   type ListingSummary,
   type ListingStatus,
@@ -262,8 +263,15 @@ function Dashboard() {
         </div>
       )}
 
+      {/* Onboarding checklist — only relevant to sellers; auto-hides when
+          all four steps are complete or the user dismisses it. */}
+      {role === 'selling' && <OnboardingChecklist />}
+
       {/* Top-level role switcher */}
-      <div className="mt-6 inline-flex rounded-lg border border-[var(--border-hi)] bg-[var(--bg-panel)] p-1">
+      <div
+        data-tour="role-switcher"
+        className="mt-6 inline-flex rounded-lg border border-[var(--border-hi)] bg-[var(--bg-panel)] p-1"
+      >
         {(['selling', 'buying'] as const).map((r) => {
           const selected = role === r;
           return (
@@ -285,7 +293,7 @@ function Dashboard() {
       </div>
 
       {/* Sub-tabs */}
-      <div className="mt-4 border-b border-[var(--border-subtle)]">
+      <div className="mt-4 border-b border-[var(--border-subtle)]" data-tour="dashboard-tabs">
         <div
           role="tablist"
           aria-label={`${role === 'selling' ? 'Selling' : 'Buying'} tabs`}

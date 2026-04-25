@@ -28,9 +28,17 @@ export default function Navbar() {
           </Link>
           <Link
             href="/browse"
+            data-tour="nav-browse"
             className="text-sm font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
           >
             Browse
+          </Link>
+          <Link
+            href="/help"
+            data-tour="nav-help"
+            className="text-sm font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
+          >
+            Help
           </Link>
         </div>
 
@@ -61,6 +69,7 @@ export default function Navbar() {
 
               <Link
                 href="/account/messages"
+                data-tour="nav-messages"
                 aria-label={`Messages${unreadMsg > 0 ? ` (${unreadMsg} unread)` : ''}`}
                 className="relative rounded-md p-1.5 text-[var(--text-muted)] transition-colors hover:text-[var(--text-primary)] hover:bg-[var(--bg-panel-hi)]"
               >
@@ -93,6 +102,7 @@ export default function Navbar() {
 
               <Link
                 href="/dashboard"
+                data-tour="nav-dashboard"
                 className="text-sm font-semibold text-[var(--text-muted)] hover:text-[var(--text-primary)] transition-colors"
               >
                 Dashboard
@@ -113,7 +123,11 @@ export default function Navbar() {
                 </Link>
               )}
 
-              <Link href="/listings/new" className="btn-cyber-primary">
+              <Link
+                href="/listings/new"
+                data-tour="nav-sell"
+                className="btn-cyber-primary"
+              >
                 + Sell Item
               </Link>
 
