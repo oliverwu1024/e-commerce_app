@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import Logo from '@/components/Logo';
 
 const SUPPORT_EMAIL = 'support@electromarket-app.com';
 
@@ -8,9 +9,12 @@ export default function Footer() {
     <footer className="mt-16 border-t border-[var(--border-subtle)] bg-[var(--bg-nav)]">
       <div className="mx-auto flex max-w-6xl flex-col gap-4 px-4 py-6 text-sm text-[var(--text-muted)] sm:flex-row sm:items-center sm:justify-between">
         <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
-          <span className="font-display text-[var(--text-primary)]">
-            <span>Electro</span>
-            <span className="text-[var(--neon-cyan)]">Market</span>
+          <span className="font-display flex items-center gap-1.5 text-[var(--text-primary)]">
+            <Logo size={18} />
+            <span>
+              <span>Electro</span>
+              <span className="text-[var(--neon-cyan)]">Market</span>
+            </span>
           </span>
           <span className="text-[var(--text-dim)]">© {year}</span>
         </div>

@@ -5,6 +5,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useCartStore } from '@/stores/cart';
 import { useInboxStore } from '@/stores/inbox';
 import Avatar from '@/components/Avatar';
+import Logo from '@/components/Logo';
 import ThemeToggle from '@/components/ThemeToggle';
 
 export default function Navbar() {
@@ -21,10 +22,13 @@ export default function Navbar() {
         <div className="flex items-center gap-7">
           <Link
             href="/"
-            className="font-display flex items-baseline text-xl font-bold tracking-[0.02em] transition-opacity hover:opacity-90"
+            className="font-display flex items-center gap-2 text-xl font-bold tracking-[0.02em] transition-opacity hover:opacity-90"
           >
-            <span className="text-[var(--text-primary)]">Electro</span>
-            <span className="text-[var(--neon-cyan)]">Market</span>
+            <Logo size={28} />
+            <span className="flex items-baseline">
+              <span className="text-[var(--text-primary)]">Electro</span>
+              <span className="text-[var(--neon-cyan)]">Market</span>
+            </span>
           </Link>
           <Link
             href="/browse"
