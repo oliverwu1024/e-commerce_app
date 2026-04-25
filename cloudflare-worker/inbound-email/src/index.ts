@@ -64,12 +64,33 @@ export default {
       webhookRes.status === 'rejected' ||
       (webhookRes.status === 'fulfilled' && !(webhookRes.value as Response).ok)
     ) {
-      const detail =
-        webhookRes.status === 'rejected'
-          ? String(webhookRes.reason)
-          : `${(webhookRes.value as Response).status}`;
+      let detail: string;
+      if (webhookRes.status === 'rejected') {
+        detail = String(webhookRes.reason);
+      } else {
+        const resp = webhookRes.value as Response;
+        // Read the body so we can see WHY the server rejected — much more
+        // useful in `wrangler tail` than just the status code.
+        let bodyText = '';
+        try {
+          bodyText = await resp.text();
+        } catch {
+          /* best-effort */
+        }
+        detail = `${resp.status} ${bodyText.slice(0, 300)}`;
+      }
       console.error('Webhook POST failed:', detail);
-      message.setReject(`Inbound webhook returned: ${detail}`);
+      // Also log what we sent, so you can see if PostalMime parsed the
+      // email shape we expected (no body, etc.).
+      console.error('Payload was:', {
+        from: payload.from,
+        subject: payload.subject,
+        textLen: payload.text.length,
+        htmlLen: payload.html.length,
+      });
+      message.setReject(`Inbound webhook returned: ${detail.slice(0, 200)}`);
+    } else {
+      console.log('Webhook POST OK');
     }
   },
 };

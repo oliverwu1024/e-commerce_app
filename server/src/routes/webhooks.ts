@@ -412,7 +412,26 @@ router.post('/email', async (req: Request, res: Response) => {
   const body = (payload.text || payload.html || '').trim();
 
   if (!fromEmail || !subject || !body) {
-    res.status(400).json({ error: 'Missing from / subject / body' });
+    // Log the payload shape (without leaking the body itself in case it's
+    // long / contains PII) so we can tell which field is empty.
+    console.error('[email webhook] missing fields', {
+      hasFrom: Boolean(fromEmail),
+      hasSubject: Boolean(subject),
+      hasBody: Boolean(body),
+      payloadKeys: Object.keys(payload),
+      fromRaw: payload.from,
+      subjectRaw: payload.subject,
+      textLen: payload.text?.length ?? 0,
+      htmlLen: payload.html?.length ?? 0,
+    });
+    res.status(400).json({
+      error: 'Missing from / subject / body',
+      missing: {
+        from: !fromEmail,
+        subject: !subject,
+        body: !body,
+      },
+    });
     return;
   }
 
