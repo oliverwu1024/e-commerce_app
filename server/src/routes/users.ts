@@ -30,6 +30,7 @@ import {
 } from '../utils/email.js';
 import { firebaseAuth, FIREBASE_ENABLED } from '../config/firebase.js';
 import { getStripeClient, isStripeConfigured } from '../config/stripe.js';
+import { FEATURES } from '../config/features.js';
 
 const DEV_EMAIL_ENABLED = process.env.ENABLE_DEV_EMAIL === '1';
 
@@ -102,7 +103,12 @@ function computeCanSell(u: UserProfile): { canSell: boolean; missing: string[] }
   if (!u.emailVerified) missing.push('email');
   if (!u.phoneVerified) missing.push('phone');
   if (u.sellerType === 'PERSONAL') {
-    if (u.idVerification !== 'APPROVED') missing.push('id');
+    // Skip the ID gate when the feature flag is off — sole-trader / pre-ABN
+    // deployments let PERSONAL sellers post on email + phone alone. Re-enable
+    // by setting ID_VERIFICATION_ENABLED=true.
+    if (FEATURES.idVerificationEnabled && u.idVerification !== 'APPROVED') {
+      missing.push('id');
+    }
   } else {
     if (!u.abnVerified) missing.push('abn');
   }
@@ -122,7 +128,13 @@ router.get('/profile', authenticate, profileLimiter, async (req: Request, res: R
       res.status(404).json({ error: 'User not found' });
       return;
     }
-    res.json({ user, ...computeCanSell(user) });
+    // Expose the ID feature flag so the client can hide the verification
+    // step + render a "Coming soon" notice when it's off.
+    res.json({
+      user,
+      ...computeCanSell(user),
+      features: { idVerificationEnabled: FEATURES.idVerificationEnabled },
+    });
   } catch (err) {
     console.error('Get profile error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -328,6 +340,10 @@ router.post('/verify-phone/confirm', authenticate, phoneConfirmLimiter, async (r
 // ---------------------------------------------------------------------------
 router.post('/verify-id', authenticate, profileLimiter, async (req: Request, res: Response) => {
   try {
+    if (!FEATURES.idVerificationEnabled) {
+      res.status(503).json({ error: 'ID verification is currently unavailable.' });
+      return;
+    }
     const parsed = verifyIdSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({ error: parsed.error.issues[0].message });
@@ -443,6 +459,10 @@ router.post(
   profileLimiter,
   async (req: Request, res: Response) => {
     try {
+      if (!FEATURES.idVerificationEnabled) {
+        res.status(503).json({ error: 'ID verification is currently unavailable.' });
+        return;
+      }
       if (!isStripeConfigured()) {
         res.status(503).json({ error: 'Stripe is not configured on this server.' });
         return;

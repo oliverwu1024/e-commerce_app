@@ -6,6 +6,7 @@ import { uuidSchema } from '../schemas/common.js';
 import { authenticate } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { getSellerStats } from '../services/sellerStats.js';
+import { FEATURES } from '../config/features.js';
 
 const router = Router();
 
@@ -237,7 +238,11 @@ router.post('/', authenticate, createListingLimiter, async (req: Request, res: R
     if (!seller.emailVerified) missing.push('email');
     if (!seller.phoneVerified) missing.push('phone');
     if (seller.sellerType === 'PERSONAL') {
-      if (seller.idVerification !== 'APPROVED') missing.push('id');
+      // Skip the ID gate when the feature flag is off — must stay in sync
+      // with computeCanSell() in routes/users.ts.
+      if (FEATURES.idVerificationEnabled && seller.idVerification !== 'APPROVED') {
+        missing.push('id');
+      }
     } else if (!seller.abnVerified) {
       missing.push('abn');
     }

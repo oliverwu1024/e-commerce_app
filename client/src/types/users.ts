@@ -36,6 +36,11 @@ export type ProfileResponse = {
   user: SelfProfile;
   canSell: boolean;
   missing: string[];
+  // Server-driven feature flags. Only `idVerificationEnabled` for now.
+  // When `idVerificationEnabled` is false, the verification UI hides the
+  // ID step and shows a "Coming soon" notice; sellers can post on email
+  // + phone alone.
+  features?: { idVerificationEnabled: boolean };
 };
 
 export type PendingVerification = {

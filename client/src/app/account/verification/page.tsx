@@ -33,6 +33,9 @@ export default function VerificationPage() {
   const [profile, setProfile] = useState<SelfProfile | null>(null);
   const [missing, setMissing] = useState<string[]>([]);
   const [canSell, setCanSell] = useState(false);
+  // Server-driven feature flag — defaults to true for older API responses
+  // that didn't include `features` (back-compat during deploy).
+  const [idVerificationEnabled, setIdVerificationEnabled] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -42,6 +45,7 @@ export default function VerificationPage() {
       setProfile(res.user);
       setMissing(res.missing);
       setCanSell(res.canSell);
+      setIdVerificationEnabled(res.features?.idVerificationEnabled ?? true);
       fetchStoreUser();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to load profile');
@@ -95,7 +99,11 @@ export default function VerificationPage() {
         <p className="mt-1 text-sm text-[var(--text-muted)]">
           Complete each step below to start posting listings.{' '}
           {profile.sellerType === 'PERSONAL' ? (
-            <>Personal sellers need email, phone and a verified government ID.</>
+            idVerificationEnabled ? (
+              <>Personal sellers need email, phone and a verified government ID.</>
+            ) : (
+              <>Personal sellers need email and phone verification.</>
+            )
           ) : (
             <>Business sellers need email, phone and a verified ABN.</>
           )}
@@ -127,10 +135,39 @@ export default function VerificationPage() {
       <EmailStep status={emailStatus} />
       <PhoneStep profile={profile} status={phoneStatus} onChange={refresh} />
       {profile.sellerType === 'PERSONAL' ? (
-        <IdStep profile={profile} status={idStatus} onChange={refresh} />
+        idVerificationEnabled ? (
+          <IdStep profile={profile} status={idStatus} onChange={refresh} />
+        ) : (
+          <IdStepDisabled />
+        )
       ) : (
         <AbnStep profile={profile} status={abnStatus} onChange={refresh} />
       )}
+    </div>
+  );
+}
+
+// "Coming soon" placeholder for the ID verification step. Renders when the
+// server feature flag idVerificationEnabled is false. Keeps the visual
+// rhythm of the page (3 step cards) without exposing the disabled flow.
+function IdStepDisabled() {
+  return (
+    <div className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4">
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-base font-medium text-[var(--text-primary)]">
+            Government ID
+          </h3>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
+            ID verification isn&apos;t required at the moment. We may introduce it
+            in the future as the marketplace grows. For now, email and phone
+            verification are enough to start selling.
+          </p>
+        </div>
+        <span className="flex-shrink-0 rounded-md border border-[var(--border-hi)] bg-[var(--bg-panel)] px-2 py-0.5 text-xs font-medium text-[var(--text-muted)]">
+          Coming soon
+        </span>
+      </div>
     </div>
   );
 }
