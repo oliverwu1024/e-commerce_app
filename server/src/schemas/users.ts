@@ -41,13 +41,37 @@ export const changeEmailSchema = z.object({
     .max(254, 'Email address is too long'),
 });
 
-// International phone format: optional leading +, then 8-15 digits.
-// E.164 minimum is 8 (country code + subscriber); max is 15.
+// AU-only phone. The /verify-phone endpoint hits Twilio Programmable SMS,
+// which bills cross-country at 3-10x the AU rate — restricting to +61
+// numbers is our cheapest cost-ceiling defence against toll-fraud attackers
+// who'd otherwise route verification codes to expensive international
+// destinations. Accept the common local input shapes (`0412 345 678`,
+// `(04) 1234 5678`, `+61 412 345 678`) and normalise to E.164 `+61...`.
+//
+// Valid shapes (after stripping spaces / dashes / parens):
+//   +614XXXXXXXX   — 12 chars total (mobile)
+//   +612XXXXXXXX   — 12 chars total (landline, kept for flexibility)
+//   04XXXXXXXX     — 10 chars, local mobile form (normalised → +614XXXXXXXX)
+//   02/03/07/08... — 10 chars, local landline form (normalised → +61...)
+//   614XXXXXXXX    — missing leading + (normalised by prefixing +)
 export const phoneSchema = z
   .string()
   .trim()
   .transform((v) => v.replace(/[\s\-()]/g, ''))
-  .pipe(z.string().regex(/^\+?[0-9]{8,15}$/, 'Phone must be 8-15 digits, optional leading +'));
+  .pipe(
+    z
+      .string()
+      .regex(
+        /^(\+?61[2-478][0-9]{8}|0[2-478][0-9]{8})$/,
+        'Enter an Australian phone number (e.g. 0412 345 678 or +61 412 345 678)',
+      ),
+  )
+  .transform((v) => {
+    if (v.startsWith('+61')) return v;
+    if (v.startsWith('61')) return `+${v}`;
+    // Local 0X... form — strip the trunk-prefix 0 and prepend +61.
+    return `+61${v.slice(1)}`;
+  });
 
 export const startPhoneVerificationSchema = z.object({
   phone: phoneSchema,

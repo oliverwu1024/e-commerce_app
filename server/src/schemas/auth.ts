@@ -13,6 +13,10 @@ export const registerSchema = z.object({
   bio: z.string().min(1).max(500).optional().or(z.literal('').transform(() => undefined)),
   sellerType: z.enum(['PERSONAL', 'BUSINESS']).optional().default('PERSONAL'),
   businessName: z.string().max(200).optional(),
+  // Cloudflare Turnstile token. Optional in the schema because the server
+  // skips verification when TURNSTILE_SECRET_KEY is unset (local dev); the
+  // route handler enforces presence in live mode.
+  turnstileToken: z.string().max(2048).optional(),
 }).refine(
   (data) => data.sellerType !== 'BUSINESS' || (data.businessName && data.businessName.trim().length > 0),
   { message: 'Business name is required for business accounts', path: ['businessName'] },

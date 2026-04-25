@@ -1,10 +1,30 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, useRef, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
+import Script from 'next/script';
 import { useAuthStore } from '@/stores/auth';
 import { queuePostRegistrationTour } from '@/components/OnboardingTour';
+
+// Cloudflare test sitekey. 1x... = always passes — the default when no real
+// key is configured, so local dev never needs a Cloudflare account.
+// Production must set NEXT_PUBLIC_TURNSTILE_SITE_KEY to the real one.
+const TURNSTILE_SITE_KEY =
+  process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY || '1x00000000000000000000AA';
+
+type TurnstileApi = {
+  render: (container: HTMLElement | string, opts: Record<string, unknown>) => string;
+  reset: (widgetId?: string) => void;
+  remove: (widgetId: string) => void;
+};
+
+declare global {
+  interface Window {
+    turnstile?: TurnstileApi;
+    onTurnstileLoad?: () => void;
+  }
+}
 
 export default function RegisterPage() {
   const router = useRouter();
@@ -23,6 +43,37 @@ export default function RegisterPage() {
   const [sellerType, setSellerType] = useState<'PERSONAL' | 'BUSINESS'>('PERSONAL');
   const [businessName, setBusinessName] = useState('');
   const [localError, setLocalError] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState('');
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    function render() {
+      if (
+        !window.turnstile ||
+        !turnstileContainerRef.current ||
+        turnstileWidgetIdRef.current
+      ) {
+        return;
+      }
+      turnstileWidgetIdRef.current = window.turnstile.render(turnstileContainerRef.current, {
+        sitekey: TURNSTILE_SITE_KEY,
+        callback: (token: string) => setTurnstileToken(token),
+        'expired-callback': () => setTurnstileToken(''),
+        'error-callback': () => setTurnstileToken(''),
+        theme: 'dark',
+      });
+    }
+    if (window.turnstile) render();
+    else window.onTurnstileLoad = render;
+    return () => {
+      const id = turnstileWidgetIdRef.current;
+      if (id && window.turnstile) {
+        window.turnstile.remove(id);
+        turnstileWidgetIdRef.current = null;
+      }
+    };
+  }, []);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -43,6 +94,11 @@ export default function RegisterPage() {
       return;
     }
 
+    if (!turnstileToken) {
+      setLocalError('Please complete the bot check below before submitting.');
+      return;
+    }
+
     setSubmitting(true);
     try {
       const { verificationEmailSent } = await register({
@@ -51,6 +107,7 @@ export default function RegisterPage() {
         email,
         password,
         sellerType,
+        turnstileToken,
         ...(sellerType === 'BUSINESS' ? { businessName } : {}),
       });
       // Queue the appropriate first-run tour. Personal accounts get the
@@ -68,7 +125,13 @@ export default function RegisterPage() {
         router.push(sellerType === 'BUSINESS' ? '/dashboard' : '/');
       }
     } catch {
-      // error is set in store
+      // error is set in store. Reset Turnstile so the user can retry —
+      // tokens are single-use, so a successful-then-rejected flow would
+      // otherwise leave a stale token that can't be reused.
+      if (window.turnstile && turnstileWidgetIdRef.current) {
+        window.turnstile.reset(turnstileWidgetIdRef.current);
+      }
+      setTurnstileToken('');
     } finally {
       setSubmitting(false);
     }
@@ -223,14 +286,27 @@ export default function RegisterPage() {
             />
           </div>
 
+          <div
+            ref={turnstileContainerRef}
+            className="flex justify-center"
+            aria-label="Bot verification challenge"
+          />
+
           <button
             type="submit"
-            disabled={submitting}
+            disabled={submitting || !turnstileToken}
             className="btn-cyber-primary w-full"
           >
             {submitting ? 'Creating account…' : 'Create account'}
           </button>
         </form>
+
+        <Script
+          src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad"
+          strategy="afterInteractive"
+          async
+          defer
+        />
 
         <p className="mt-6 text-center text-sm text-[var(--text-muted)]">
           Already have an account?{' '}

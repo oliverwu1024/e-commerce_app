@@ -19,6 +19,7 @@ import {
   sendVerificationEmail,
   sendPasswordResetEmail,
 } from '../utils/email.js';
+import { verifyTurnstile, TURNSTILE_ENABLED } from '../utils/turnstile.js';
 
 const router = Router();
 
@@ -71,9 +72,21 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
       return;
     }
 
-    const { password, name, location, bio, sellerType, businessName } = parsed.data;
+    const { password, name, location, bio, sellerType, businessName, turnstileToken } = parsed.data;
     const email = parsed.data.email.toLowerCase();
     const username = parsed.data.username.toLowerCase();
+
+    // Bot defence — the whole phone-verification cost ceiling depends on this
+    // endpoint not being a free way to mint accounts. When Turnstile is
+    // disabled (creds unset) verifyTurnstile() returns true, so local dev
+    // proceeds unchanged.
+    if (TURNSTILE_ENABLED) {
+      const ok = await verifyTurnstile(turnstileToken, req.ip);
+      if (!ok) {
+        res.status(400).json({ error: 'Bot check failed. Please try again.' });
+        return;
+      }
+    }
 
     const existing = await prisma.user.findFirst({
       where: { OR: [{ email }, { username }] },

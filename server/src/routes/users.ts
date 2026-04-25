@@ -29,8 +29,15 @@ import {
   sendVerificationEmail,
   sendIdSubmittedEmail,
 } from '../utils/email.js';
+import { sendOtpSms, SMS_LIVE } from '../utils/sms.js';
 
 const DEV_EMAIL_ENABLED = process.env.ENABLE_DEV_EMAIL === '1';
+
+const SMS_DAILY_BUDGET = Math.max(1, Number(process.env.SMS_DAILY_BUDGET) || 100);
+const SMS_PHONE_COOLDOWN_SECONDS = Math.max(
+  0,
+  Number(process.env.SMS_PHONE_COOLDOWN_SECONDS) || 60,
+);
 
 function buildVerificationUrl(token: string): string {
   const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
@@ -236,11 +243,37 @@ router.put('/password', authenticate, passwordChangeLimiter, async (req: Request
 
 // ---------------------------------------------------------------------------
 // POST /api/users/verify-phone — start phone verification
-// Stores the phone + a hashed 6-digit code + 10-minute expiry. In dev we log
-// the code to stdout (Twilio integration stubbed). Replaces any prior pending
-// code — and marks phoneVerified=false if the phone changed.
+// Layers (cost-ceiling defences against SMS-toll abuse):
+//  (1) emailVerified gate — stops throwaway-account SMS spray at the door;
+//      account creation itself is gated by Turnstile (see /auth/register).
+//  (2) AU-only E.164 — phoneSchema rejects non-+61 numbers where SMS costs
+//      are 3-10x and the attacker payoff is highest.
+//  (3) Per-phone cooldown — N attacker accounts targeting one handset can
+//      only burn one SMS per SMS_PHONE_COOLDOWN_SECONDS, globally.
+//  (4) Global daily budget — hard UTC-day ceiling bounds worst-case loss
+//      at (budget × per-SMS rate) regardless of any other failure above.
+//  (5) Per-user rate limit — phoneStartLimiter (middleware, above).
+//  (6) Twilio-side USD cap — configured in the console, outside this code.
+// Send-failure policy: if the SMS fails to deliver, we clear the stored OTP
+// state + refund the budget counter so the user can retype a corrected
+// number on the next attempt without their one-and-only hash being pinned.
 // ---------------------------------------------------------------------------
 router.post('/verify-phone', authenticate, phoneStartLimiter, async (req: Request, res: Response) => {
+  const now = new Date();
+  const day = now.toISOString().slice(0, 10);
+  // Flag tracks whether the global SMS budget counter was incremented. Any
+  // error path between reservation and success must refund it — the outer
+  // catch handles the "unexpected throw" cases the inner logic doesn't.
+  let budgetReserved = false;
+
+  const refundBudget = async () => {
+    if (!budgetReserved) return;
+    budgetReserved = false;
+    await prisma.smsUsageDay
+      .update({ where: { day }, data: { count: { decrement: 1 } } })
+      .catch(() => undefined);
+  };
+
   try {
     const parsed = startPhoneVerificationSchema.safeParse(req.body);
     if (!parsed.success) {
@@ -249,18 +282,63 @@ router.post('/verify-phone', authenticate, phoneStartLimiter, async (req: Reques
     }
     const { phone } = parsed.data;
 
+    // (1) Email gate. Only users who can receive email can start phone
+    // verification — raises the attacker's cost because SMS spray now
+    // requires email-receiving accounts, not just signups.
     const current = await prisma.user.findUnique({
       where: { id: req.userId },
-      select: { phone: true, phoneVerified: true },
+      select: { phone: true, phoneVerified: true, emailVerified: true },
     });
     if (!current) {
       res.status(404).json({ error: 'User not found' });
       return;
     }
+    if (!current.emailVerified) {
+      res.status(403).json({
+        error: 'Verify your email address first, then come back to verify your phone.',
+      });
+      return;
+    }
+
+    // (3) Per-phone cooldown. Read-only check — a tiny TOCTOU race can
+    // leak one extra SMS in the worst case, which the global budget (4)
+    // still bounds.
+    const cooldown = await prisma.phoneSmsCooldown.findUnique({ where: { phone } });
+    if (
+      cooldown &&
+      now.getTime() - cooldown.lastSentAt.getTime() < SMS_PHONE_COOLDOWN_SECONDS * 1000
+    ) {
+      const retryAfter = Math.ceil(
+        (SMS_PHONE_COOLDOWN_SECONDS * 1000 - (now.getTime() - cooldown.lastSentAt.getTime())) / 1000,
+      );
+      res.status(429).json({
+        error: `A code was just sent to that number. Try again in ${retryAfter}s.`,
+      });
+      return;
+    }
+
+    // (4) Reserve one SMS from today's budget. Atomic increment, then
+    // compare — the upsert returns the post-increment value so concurrent
+    // calls both see their own new count and only overshooters refund.
+    // Only touched in live-SMS mode; dev-log mode is free.
+    if (SMS_LIVE) {
+      const reserved = await prisma.smsUsageDay.upsert({
+        where: { day },
+        create: { day, count: 1 },
+        update: { count: { increment: 1 } },
+      });
+      budgetReserved = true;
+      if (reserved.count > SMS_DAILY_BUDGET) {
+        await refundBudget();
+        res.status(503).json({
+          error: 'SMS verification is temporarily unavailable. Please try again tomorrow.',
+        });
+        return;
+      }
+    }
 
     const code = String(crypto.randomInt(0, 1_000_000)).padStart(6, '0');
     const codeHash = await bcrypt.hash(code, AUTH_CONFIG.bcryptRounds);
-
     const phoneChanged = current.phone !== phone;
 
     await prisma.user.update({
@@ -268,28 +346,66 @@ router.post('/verify-phone', authenticate, phoneStartLimiter, async (req: Reques
       data: {
         phone,
         phoneVerificationCode: codeHash,
-        phoneVerificationExpires: new Date(Date.now() + PHONE_CODE_TTL_MS),
+        phoneVerificationExpires: new Date(now.getTime() + PHONE_CODE_TTL_MS),
         phoneVerificationAttempts: 0,
         // If the phone number changed, clear verified state — they must re-verify.
         ...(phoneChanged && { phoneVerified: false }),
       },
     });
 
-    // In production, integrate Twilio:
-    //   twilioClient.messages.create({ to: phone, from: TWILIO_FROM, body: ... })
-    // Dev-only: log + return the code, but ONLY when explicitly opted-in via
-    // ENABLE_DEV_OTP=1. Negating NODE_ENV=production leaks codes wherever
-    // NODE_ENV is unset (staging, preview, self-hosted).
-    if (DEV_OTP_ENABLED) {
+    try {
+      await sendOtpSms(phone, code);
+    } catch (err) {
+      console.error('SMS send failed:', err);
+      // Rollback: clear the OTP so the user isn't stuck with an unusable
+      // hash while their rate-limit budget ticks down, and refund the
+      // daily SMS counter so a Twilio-side failure doesn't eat our ceiling.
+      await prisma.user
+        .update({
+          where: { id: req.userId },
+          data: {
+            phoneVerificationCode: null,
+            phoneVerificationExpires: null,
+            phoneVerificationAttempts: 0,
+          },
+        })
+        .catch(() => undefined);
+      await refundBudget();
+      res.status(502).json({
+        error:
+          "Couldn't deliver the verification code. Double-check the number and try again.",
+      });
+      return;
+    }
+
+    // Record cooldown only after confirmed-sent, so failures above don't
+    // block retries on the same handset.
+    await prisma.phoneSmsCooldown.upsert({
+      where: { phone },
+      create: { phone, lastSentAt: now },
+      update: { lastSentAt: now },
+    });
+    // Budget consumed as intended — clear the flag so the outer catch doesn't
+    // refund a send we already delivered.
+    budgetReserved = false;
+
+    // Dev-log path. Gated by BOTH the env flag AND SMS_LIVE=false — when
+    // Twilio creds are set we NEVER leak the code, even if someone left
+    // ENABLE_DEV_OTP=1 in the prod env by mistake.
+    const leakOk = DEV_OTP_ENABLED && !SMS_LIVE;
+    if (leakOk) {
       console.log(`[DEV] Phone verification code for user ${req.userId} (${phone}): ${code}`);
     }
 
     res.json({
       message: 'Verification code sent.',
-      devCode: DEV_OTP_ENABLED ? code : undefined,
+      devCode: leakOk ? code : undefined,
     });
   } catch (err) {
     console.error('Start phone verification error:', err);
+    // Unexpected failure between budget reserve and send-success — refund
+    // so a bug in this handler can't permanently consume a day's budget.
+    await refundBudget();
     res.status(500).json({ error: 'Internal server error' });
   }
 });

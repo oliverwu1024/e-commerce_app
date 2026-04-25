@@ -43,6 +43,7 @@ type RegisterData = {
   bio?: string;
   sellerType?: 'PERSONAL' | 'BUSINESS';
   businessName?: string;
+  turnstileToken?: string;
 };
 
 export const useAuthStore = create<AuthState>((set) => ({

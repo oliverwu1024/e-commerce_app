@@ -633,3 +633,25 @@ model SellerPaymentAccount {
   @@unique([userId, provider])
   @@index([provider, status])
 }
+
+// One row per UTC day; `count` is incremented on every successful SMS send.
+// /verify-phone refuses once count >= SMS_DAILY_BUDGET. Prevents an attacker
+// (even one who bypasses Turnstile + creates many accounts) from racking up an
+// unbounded Twilio bill — worst-case loss is bounded at (budget × price).
+model SmsUsageDay {
+  // UTC calendar date as YYYY-MM-DD string. String PK sidesteps timezone
+  // edge cases at rollover and keeps the row lookup key-of-day trivial.
+  day       String   @id @db.VarChar(10)
+  count     Int      @default(0)
+  updatedAt DateTime @updatedAt
+}
+
+// Per-phone-number cooldown. `/verify-phone` refuses if lastSentAt is within
+// SMS_PHONE_COOLDOWN_SECONDS, regardless of which authenticated user is
+// requesting. This is the key defence against account-spraying: N attacker
+// accounts all targeting the same victim number only send one SMS total.
+model PhoneSmsCooldown {
+  phone      String   @id @db.VarChar(20) // E.164 with leading +
+  lastSentAt DateTime
+  updatedAt  DateTime @updatedAt
+}
