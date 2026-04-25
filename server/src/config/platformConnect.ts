@@ -1,17 +1,17 @@
 // Platform fee + return-URL config for the connected-accounts flow.
 //
-// We express the fee as a percentage (basis points) rather than a flat
-// amount so it scales with order size. Default 5% if unset, which is a
-// typical marketplace cut for secondary-market electronics. Override via
-// env for experiments.
+// Default is 0% — ElectroMarket runs as a free marketplace; the platform
+// stays out of the money flow entirely. Sellers receive 100% of the
+// buyer's payment direct to their Stripe / Square account.
 //
-// NOT a fee collected separately — it's the slice of each payment the
-// platform keeps via Stripe's `application_fee_amount`. Square has no
-// native platform fee; amount is informational there until we build
-// out-of-band invoicing.
+// The infrastructure is kept (rather than ripped out) so the operator can
+// flip on a fee later by setting PLATFORM_FEE_BPS on the env. When > 0,
+// Stripe charges include `application_fee_amount`; Square has no native
+// platform-fee primitive so it would still settle 100% to the seller
+// regardless.
 export function getPlatformFeeBasisPoints(): number {
   const raw = process.env.PLATFORM_FEE_BPS;
-  if (!raw) return 500; // 5.00%
+  if (!raw) return 0;
   const n = Number(raw);
   if (!Number.isFinite(n) || n < 0 || n > 2000) {
     throw new Error(

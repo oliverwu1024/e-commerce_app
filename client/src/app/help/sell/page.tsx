@@ -13,10 +13,11 @@ export default function HelpSellPage() {
       </h1>
       <p className="mt-3 text-sm text-[var(--text-muted)]">
         Whether you&apos;re clearing out an old phone or running a refurb
-        shop, this guide gets you from sign-up to first payout. The key thing
-        to know up front: <strong>you are the merchant of record</strong> —
-        the buyer pays your Stripe or Square account directly, ElectroMarket
-        never holds funds.
+        shop, this guide gets you from sign-up to first payout. The key
+        thing to know up front: <strong>you are the merchant of record</strong>
+        {' '}— the buyer pays your Stripe or Square account directly,
+        ElectroMarket never holds funds. <strong>And we don&apos;t take a
+        cut</strong>: 100% of every sale goes to you.
       </p>
 
       <Section number="1" title="Choose Personal or Business at sign-up">
@@ -87,8 +88,9 @@ export default function HelpSellPage() {
         </ol>
         <p className="mt-2 text-xs text-[var(--text-dim)]">
           Stripe issues your annual tax forms (e.g. 1099-K equivalent) — not
-          ElectroMarket. Stripe charges its own processing fee on top of our
-          5% platform fee.
+          ElectroMarket. Stripe charges its own card-processing fee (around
+          1.7%–2.9% + 30¢ per transaction depending on card type) — that&apos;s
+          Stripe&apos;s, not ours.
         </p>
 
         <h3 className="mt-5 text-base font-semibold text-[var(--text-primary)]">
@@ -153,8 +155,9 @@ export default function HelpSellPage() {
           </li>
           <li>
             The buyer pays via Stripe / Square / cash. Online payments land
-            in your provider account immediately; we deduct our 5% platform
-            fee at the moment of charge (no separate invoice).
+            in your provider account immediately. ElectroMarket takes no
+            cut — 100% of the buyer&apos;s payment is yours (minus
+            Stripe&apos;s / Square&apos;s own card-processing fees).
           </li>
           <li>
             <strong>Ship it</strong> and add a tracking number. Mark as
@@ -170,12 +173,15 @@ export default function HelpSellPage() {
       <Section number="6" title="Fees and payouts">
         <ul className="ml-5 list-disc space-y-2">
           <li>
-            <strong>Platform fee</strong>: 5% of each completed online payment.
-            Deducted at the time of charge via Stripe&apos;s{' '}
-            <code>application_fee_amount</code> mechanism.
+            <strong>ElectroMarket platform fee</strong>: <strong>none</strong>.
+            We don&apos;t take a cut of your sales — 100% of every payment is
+            yours.
           </li>
           <li>
-            <strong>Cash and bank transfer</strong>: free. No platform fee.
+            <strong>Stripe / Square processing fees</strong>: charged by
+            those providers, not by us. Roughly 1.7%–2.9% + 30¢ per online
+            transaction depending on card type. Cash and bank transfer have
+            no processing fee.
           </li>
           <li>
             <strong>Payouts</strong>: managed by Stripe / Square, not by us.
@@ -184,7 +190,7 @@ export default function HelpSellPage() {
             <Link href="/dashboard?tab=in_sales" className="text-[var(--neon-cyan)] hover:underline">
               earnings card
             </Link>{' '}
-            for a running gross / fee / net total.
+            for your lifetime total.
           </li>
         </ul>
       </Section>
@@ -192,8 +198,7 @@ export default function HelpSellPage() {
       <Section number="7" title="Refunds and disputes">
         <p>
           You can issue a full refund on any paid order from the order page.
-          The refund debits your Stripe / Square account and reverses the
-          platform fee.
+          The refund debits your Stripe / Square account directly.
         </p>
         <p>
           If a buyer opens a dispute (or files a chargeback directly with

@@ -42,14 +42,19 @@ export default function TermsPage() {
 
       <Section title="3. Platform fee">
         <p>
-          ElectroMarket charges the seller a platform fee (5% by default)
-          on each completed online payment. The fee is deducted at the time
-          of payment through the payment provider&apos;s platform-fee
-          mechanism (Stripe <code>application_fee_amount</code>). No separate
-          invoice.
+          ElectroMarket does <strong>not</strong> currently charge a platform
+          fee. Sellers receive 100% of each completed payment — Stripe and
+          Square settle directly to the seller&apos;s connected account,
+          and ElectroMarket takes no cut.
         </p>
         <p>
-          Cash and bank-transfer sales are free — no platform fee.
+          Stripe and Square charge their own card-processing fees (paid by
+          the seller to the provider, not to ElectroMarket). Cash and
+          bank-transfer sales involve no provider fee.
+        </p>
+        <p>
+          ElectroMarket reserves the right to introduce a platform fee in
+          the future on at least 14 days&apos; notice (see Section 10).
         </p>
       </Section>
 

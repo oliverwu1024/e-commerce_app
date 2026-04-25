@@ -783,6 +783,9 @@ function SellerEarningsCard() {
   }
   if (!data || Number(data.gross) === 0) return null;
 
+  // Fee-free marketplace by default. When the operator opts in to a
+  // non-zero PLATFORM_FEE_BPS, the gross/fee/net breakdown re-appears.
+  const hasFee = data.feeBasisPoints > 0;
   const feePct = (data.feeBasisPoints / 100).toFixed(data.feeBasisPoints % 100 === 0 ? 0 : 2);
 
   return (
@@ -793,11 +796,17 @@ function SellerEarningsCard() {
         </h3>
         <span className="text-xs text-[var(--text-dim)]">Lifetime · paid orders</span>
       </div>
-      <dl className="mt-3 grid grid-cols-3 gap-4">
-        <Stat label="Gross" value={`A$${data.gross}`} />
-        <Stat label={`Platform fee (${feePct}%)`} value={`−A$${data.fee}`} muted />
-        <Stat label="Net to you" value={`A$${data.net}`} highlight />
-      </dl>
+      {hasFee ? (
+        <dl className="mt-3 grid grid-cols-3 gap-4">
+          <Stat label="Gross" value={`A$${data.gross}`} />
+          <Stat label={`Platform fee (${feePct}%)`} value={`−A$${data.fee}`} muted />
+          <Stat label="Net to you" value={`A$${data.net}`} highlight />
+        </dl>
+      ) : (
+        <dl className="mt-3">
+          <Stat label="Total received" value={`A$${data.gross}`} highlight />
+        </dl>
+      )}
       {data.byMethod.length > 1 && (
         <div className="mt-4 border-t border-[var(--border-subtle)] pt-3">
           <p className="mb-2 text-xs font-medium uppercase tracking-wide text-[var(--text-muted)]">
@@ -811,7 +820,7 @@ function SellerEarningsCard() {
                 </span>
                 <span className="font-mono text-[var(--text-primary)]">
                   A${m.gross}
-                  {Number(m.fee) > 0 && (
+                  {hasFee && Number(m.fee) > 0 && (
                     <span className="ml-1 text-[var(--text-dim)]">(fee A${m.fee})</span>
                   )}
                 </span>
@@ -820,10 +829,17 @@ function SellerEarningsCard() {
           </ul>
         </div>
       )}
-      <p className="mt-3 text-[11px] text-[var(--text-dim)]">
-        Platform fee is approximate — it&apos;s computed at the current {feePct}% rate, not
-        the historical rate at each charge. Cash and bank transfer are fee-free.
-      </p>
+      {hasFee ? (
+        <p className="mt-3 text-[11px] text-[var(--text-dim)]">
+          Platform fee is approximate — it&apos;s computed at the current {feePct}% rate, not
+          the historical rate at each charge. Cash and bank transfer are fee-free.
+        </p>
+      ) : (
+        <p className="mt-3 text-[11px] text-[var(--text-dim)]">
+          ElectroMarket is fee-free — you receive 100% of every sale, settled
+          direct to your Stripe / Square / cash arrangement.
+        </p>
+      )}
     </section>
   );
 }

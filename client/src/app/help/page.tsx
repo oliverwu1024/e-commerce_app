@@ -42,8 +42,9 @@ export default function HelpIndexPage() {
             account.
           </li>
           <li>
-            <strong>How much does it cost to sell?</strong> 5% of each
-            completed online payment. Cash and bank transfer are free.
+            <strong>How much does it cost to sell?</strong> Nothing.
+            ElectroMarket takes no platform fee on any payment method —
+            sellers receive 100% of each sale.
           </li>
           <li>
             <strong>Do I need a Stripe / Square account before signing up?</strong>{' '}

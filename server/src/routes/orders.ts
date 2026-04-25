@@ -1088,8 +1088,9 @@ router.post(
         try {
           // Connect direct charge: the session is created ON the seller's
           // account (via stripeAccount header), so funds settle to THEIR
-          // bank. application_fee_amount routes the platform's cut back
-          // to our account during the same charge.
+          // bank. We only attach application_fee_amount when the operator
+          // has explicitly opted into a non-zero PLATFORM_FEE_BPS. Default
+          // is 0 — the platform takes nothing, seller receives 100%.
           const feeCents = platformFeeForCents(amountCents);
           const session = await getStripeClient().checkout.sessions.create(
             {
@@ -1107,7 +1108,7 @@ router.post(
               client_reference_id: order.id,
               metadata: { orderId: order.id, sellerId: order.sellerId },
               payment_intent_data: {
-                application_fee_amount: feeCents,
+                ...(feeCents > 0 ? { application_fee_amount: feeCents } : {}),
                 metadata: { orderId: order.id, sellerId: order.sellerId },
               },
               success_url: successUrl,
