@@ -408,29 +408,22 @@ router.post('/email', async (req: Request, res: Response) => {
   }
 
   const fromEmail = (payload.from || '').trim().toLowerCase();
-  const subject = (payload.subject || '').trim();
-  const body = (payload.text || payload.html || '').trim();
+  const subject = ((payload.subject || '').trim()) || '(no subject)';
+  // Body falls back to subject (so an email like "subject: my order is broken
+  // / body: <empty>" still gives the admin something to read), and finally
+  // to a placeholder. Only the From address is mandatory — everything else
+  // is the customer's prerogative.
+  const body =
+    (payload.text || payload.html || '').trim() ||
+    payload.subject?.trim() ||
+    '(no body — sender did not include a message)';
 
-  if (!fromEmail || !subject || !body) {
-    // Log the payload shape (without leaking the body itself in case it's
-    // long / contains PII) so we can tell which field is empty.
-    console.error('[email webhook] missing fields', {
-      hasFrom: Boolean(fromEmail),
-      hasSubject: Boolean(subject),
-      hasBody: Boolean(body),
+  if (!fromEmail) {
+    console.error('[email webhook] missing From address', {
       payloadKeys: Object.keys(payload),
-      fromRaw: payload.from,
-      subjectRaw: payload.subject,
-      textLen: payload.text?.length ?? 0,
-      htmlLen: payload.html?.length ?? 0,
     });
     res.status(400).json({
-      error: 'Missing from / subject / body',
-      missing: {
-        from: !fromEmail,
-        subject: !subject,
-        body: !body,
-      },
+      error: 'Inbound email is missing a From address — cannot route.',
     });
     return;
   }
