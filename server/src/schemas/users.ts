@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { checkPassword, passwordErrorMessage, PASSWORD_MAX_LENGTH } from '../lib/password.js';
 
 // Accept empty string as "clear this field"; reject whitespace-only strings.
 const emptyToNull = z
@@ -48,8 +49,16 @@ export const changePasswordSchema = z.object({
   currentPassword: z.string().min(1, 'Current password is required'),
   newPassword: z
     .string()
-    .min(8, 'New password must be at least 8 characters')
-    .max(200, 'New password is too long'),
+    .max(PASSWORD_MAX_LENGTH, 'New password is too long')
+    .superRefine((pw, ctx) => {
+      const { ok } = checkPassword(pw);
+      if (!ok) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: passwordErrorMessage(pw) ?? 'Password does not meet requirements',
+        });
+      }
+    }),
 });
 
 // Same format rules as register (kept in sync by copy — if either changes,

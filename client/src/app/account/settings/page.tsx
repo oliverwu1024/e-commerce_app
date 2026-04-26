@@ -6,6 +6,7 @@ import { useRouter } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useAuthStore } from '@/stores/auth';
 import Avatar from '@/components/Avatar';
+import PasswordStrengthChecklist, { isPasswordStrong } from '@/components/PasswordStrengthChecklist';
 import { AU_STATES, type ProfileResponse, type SelfProfile } from '@/types/users';
 
 export default function AccountSettingsPage() {
@@ -765,8 +766,8 @@ function PasswordForm({ onChanged }: { onChanged: () => void }) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError('');
-    if (newPassword.length < 8) {
-      setError('New password must be at least 8 characters');
+    if (!isPasswordStrong(newPassword)) {
+      setError('New password does not meet the requirements listed below the field.');
       return;
     }
     if (newPassword !== confirm) {
@@ -823,6 +824,9 @@ function PasswordForm({ onChanged }: { onChanged: () => void }) {
           autoComplete="new-password"
           className="input-cyber mt-1 block w-full max-w-md px-3 py-2 text-sm"
         />
+        <div className="max-w-md">
+          <PasswordStrengthChecklist password={newPassword} />
+        </div>
       </div>
       <div>
         <label className="block text-sm font-medium text-[var(--text-primary)]">Confirm new password</label>
@@ -839,7 +843,7 @@ function PasswordForm({ onChanged }: { onChanged: () => void }) {
       <div>
         <button
           type="submit"
-          disabled={saving}
+          disabled={saving || !isPasswordStrong(newPassword) || newPassword !== confirm}
           className="btn-cyber-primary"
         >
           {saving ? 'Changing...' : 'Change password'}

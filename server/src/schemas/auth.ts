@@ -1,5 +1,19 @@
 import { z } from 'zod';
 import { validateAbnChecksum } from '../lib/abn.js';
+import { checkPassword, passwordErrorMessage, PASSWORD_MAX_LENGTH } from '../lib/password.js';
+
+const strongPassword = z
+  .string()
+  .max(PASSWORD_MAX_LENGTH, 'Password is too long')
+  .superRefine((pw, ctx) => {
+    const { ok } = checkPassword(pw);
+    if (!ok) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: passwordErrorMessage(pw) ?? 'Password does not meet requirements',
+      });
+    }
+  });
 
 export const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -8,7 +22,7 @@ export const registerSchema = z.object({
     .min(3, 'Username must be at least 3 characters')
     .max(30, 'Username must be at most 30 characters')
     .regex(/^[a-zA-Z0-9_]+$/, 'Username can only contain letters, numbers, and underscores'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: strongPassword,
   name: z.string().min(1, 'Name is required').max(100),
   location: z.string().min(1).optional().or(z.literal('').transform(() => undefined)),
   bio: z.string().min(1).max(500).optional().or(z.literal('').transform(() => undefined)),
@@ -65,7 +79,7 @@ export const resetPasswordSchema = z.object({
     .min(32, 'Invalid reset link')
     .max(128, 'Invalid reset link')
     .regex(/^[a-f0-9]+$/i, 'Invalid reset link'),
-  password: z.string().min(8, 'Password must be at least 8 characters'),
+  password: strongPassword,
 });
 
 export type RegisterInput = z.infer<typeof registerSchema>;

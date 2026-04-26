@@ -4,6 +4,7 @@ import { useState, FormEvent, Suspense } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { api } from '@/lib/api';
+import PasswordStrengthChecklist, { isPasswordStrong } from '@/components/PasswordStrengthChecklist';
 
 function ResetPasswordContent() {
   const router = useRouter();
@@ -24,8 +25,8 @@ function ResetPasswordContent() {
       setError('Passwords do not match.');
       return;
     }
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters.');
+    if (!isPasswordStrong(password)) {
+      setError('Password does not meet the requirements listed below the field.');
       return;
     }
 
@@ -72,7 +73,7 @@ function ResetPasswordContent() {
           Set a new password
         </h1>
         <p className="mb-6 text-sm text-[var(--text-muted)]">
-          Choose a password you haven&apos;t used before. Minimum 8 characters.
+          Choose a password you haven&apos;t used before.
         </p>
 
         {success ? (
@@ -107,6 +108,7 @@ function ResetPasswordContent() {
                 autoComplete="new-password"
                 autoFocus
               />
+              <PasswordStrengthChecklist password={password} />
             </div>
             <div>
               <label
@@ -128,7 +130,7 @@ function ResetPasswordContent() {
             </div>
             <button
               type="submit"
-              disabled={submitting || password.length < 8 || password !== confirmPassword}
+              disabled={submitting || !isPasswordStrong(password) || password !== confirmPassword}
               className="btn-cyber-primary w-full"
             >
               {submitting ? 'Resetting…' : 'Reset password'}

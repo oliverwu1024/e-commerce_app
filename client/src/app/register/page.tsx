@@ -6,6 +6,7 @@ import Link from 'next/link';
 import Script from 'next/script';
 import { useAuthStore } from '@/stores/auth';
 import { queuePostRegistrationTour } from '@/components/OnboardingTour';
+import PasswordStrengthChecklist, { isPasswordStrong } from '@/components/PasswordStrengthChecklist';
 
 // Cloudflare test sitekey. 1x... = always passes — the default when no real
 // key is configured, so local dev never needs a Cloudflare account.
@@ -85,8 +86,8 @@ export default function RegisterPage() {
       return;
     }
 
-    if (password.length < 8) {
-      setLocalError('Password must be at least 8 characters');
+    if (!isPasswordStrong(password)) {
+      setLocalError('Password does not meet the requirements listed below the password field.');
       return;
     }
 
@@ -300,6 +301,7 @@ export default function RegisterPage() {
               className="input-cyber w-full px-3 py-2.5 text-sm"
               placeholder="At least 8 characters"
             />
+            <PasswordStrengthChecklist password={password} />
           </div>
 
           <div>
@@ -325,7 +327,7 @@ export default function RegisterPage() {
 
           <button
             type="submit"
-            disabled={submitting || !turnstileToken}
+            disabled={submitting || !turnstileToken || !isPasswordStrong(password) || password !== confirmPassword}
             className="btn-cyber-primary w-full"
           >
             {submitting ? 'Creating account…' : 'Create account'}
