@@ -20,6 +20,7 @@ import {
   sendPasswordResetEmail,
 } from '../utils/email.js';
 import { verifyTurnstile, TURNSTILE_ENABLED } from '../utils/turnstile.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -135,13 +136,14 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
       await sendVerificationEmail(email, verificationToken);
     } catch (err) {
       verificationEmailSent = false;
-      console.error('Failed to send verification email:', err);
+      logger.error('auth.register.send_verification_email.failed', { err: String(err) });
     }
 
     if (DEV_EMAIL_ENABLED) {
-      console.log(
-        `[DEV] Email verification URL for ${email}: ${buildVerificationUrl(verificationToken)}`,
-      );
+      logger.debug('auth.register.dev_verification_url', {
+        email,
+        url: buildVerificationUrl(verificationToken),
+      });
     }
 
     const token = signToken(user.id, user.tokenVersion);
@@ -171,7 +173,7 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
       res.status(409).json({ error: 'Email or username already taken' });
       return;
     }
-    console.error('Register error:', err);
+    logger.error('auth.register.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -218,7 +220,7 @@ router.post('/login', authLimiter, async (req: Request, res: Response) => {
       },
     });
   } catch (err) {
-    console.error('Login error:', err);
+    logger.error('auth.login.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -251,7 +253,7 @@ router.get('/me', authenticate, async (req: Request, res: Response) => {
 
     res.json({ user });
   } catch (err) {
-    console.error('Fetch user error:', err);
+    logger.error('auth.me.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -276,7 +278,7 @@ router.post('/logout-all', authenticate, async (req: Request, res: Response) => 
     clearTokenCookie(res);
     res.json({ message: 'Signed out of all devices' });
   } catch (err) {
-    console.error('Logout-all error:', err);
+    logger.error('auth.logout_all.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -343,7 +345,7 @@ router.get('/verify-email/:token', authLimiter, async (req: Request<{ token: str
       throw err;
     }
   } catch (err) {
-    console.error('Email verification error:', err);
+    logger.error('auth.verify_email.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -380,13 +382,14 @@ router.post('/resend-verification', authenticate, authLimiter, async (req: Reque
       await sendVerificationEmail(user.email, verificationToken);
     } catch (err) {
       verificationEmailSent = false;
-      console.error('Failed to send verification email:', err);
+      logger.error('auth.resend_verification.send_email.failed', { err: String(err) });
     }
 
     if (DEV_EMAIL_ENABLED) {
-      console.log(
-        `[DEV] Email verification URL for ${user.email}: ${buildVerificationUrl(verificationToken)}`,
-      );
+      logger.debug('auth.resend_verification.dev_verification_url', {
+        email: user.email,
+        url: buildVerificationUrl(verificationToken),
+      });
     }
 
     res.json({
@@ -397,7 +400,7 @@ router.post('/resend-verification', authenticate, authLimiter, async (req: Reque
         : undefined,
     });
   } catch (err) {
-    console.error('Resend verification error:', err);
+    logger.error('auth.resend_verification.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -451,12 +454,12 @@ router.post('/forgot-password', authLimiter, async (req: Request, res: Response)
     try {
       await sendPasswordResetEmail(user.email, user.username, token);
     } catch (err) {
-      console.error('Failed to send password reset email:', err);
+      logger.error('auth.forgot_password.send_email.failed', { err: String(err) });
     }
 
     res.json(GENERIC_OK);
   } catch (err) {
-    console.error('Forgot password error:', err);
+    logger.error('auth.forgot_password.failed', { err: String(err) });
     // Still return the generic OK to avoid leaking stack info via 500.
     res.json(GENERIC_OK);
   }
@@ -477,24 +480,19 @@ router.post('/reset-password', authLimiter, async (req: Request, res: Response) 
     }
     const { token, password } = parsed.data;
 
-    const user = await prisma.user.findUnique({
-      where: { passwordResetToken: token },
-    });
-
-    if (
-      !user ||
-      !user.passwordResetExpires ||
-      user.passwordResetExpires < new Date() ||
-      user.deletedAt
-    ) {
-      res.status(400).json({ error: 'Invalid or expired reset link. Please request a new one.' });
-      return;
-    }
-
     const passwordHash = await bcrypt.hash(password, AUTH_CONFIG.bcryptRounds);
 
-    await prisma.user.update({
-      where: { id: user.id },
+    // Atomic one-time consumption: the WHERE filter requires the token AND a
+    // future expiry AND a non-deleted account. If anything has already
+    // consumed the token (count=0), the whole flow rejects without ever
+    // touching the password. Prevents a race where two parallel requests
+    // both load the user and both reset the password.
+    const result = await prisma.user.updateMany({
+      where: {
+        passwordResetToken: token,
+        passwordResetExpires: { gt: new Date() },
+        deletedAt: null,
+      },
       data: {
         password: passwordHash,
         passwordResetToken: null,
@@ -503,9 +501,14 @@ router.post('/reset-password', authLimiter, async (req: Request, res: Response) 
       },
     });
 
+    if (result.count === 0) {
+      res.status(400).json({ error: 'Invalid or expired reset link. Please request a new one.' });
+      return;
+    }
+
     res.json({ message: 'Password reset successfully. You can now log in with your new password.' });
   } catch (err) {
-    console.error('Reset password error:', err);
+    logger.error('auth.reset_password.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

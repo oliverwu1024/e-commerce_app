@@ -17,6 +17,7 @@ import {
 } from '../utils/email.js';
 import { createNotification } from '../services/notifications.js';
 import { sendBroadcast } from '../services/broadcasts.js';
+import { logger } from '../utils/logger.js';
 import { z } from 'zod';
 
 const router = Router();
@@ -37,7 +38,7 @@ async function signIdDocumentUrl(url: string | null): Promise<string | null> {
       expiresIn: ID_DOC_URL_EXPIRY,
     });
   } catch (err) {
-    console.error('Failed to sign id document url:', err);
+    logger.error('admin.sign_id_document_url.failed', { err: String(err) });
     return null;
   }
 }
@@ -102,7 +103,7 @@ router.get('/verifications', async (req: Request, res: Response) => {
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (err) {
-    console.error('List verifications error:', err);
+    logger.error('admin.list_verifications.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -160,7 +161,7 @@ router.put('/verifications/:userId', async (req: Request<{ userId: string }>, re
       // returning 200. The user can also see their status in the account
       // verification page regardless.
       sendIdApprovedEmail(target.email, target.username).catch((err) => {
-        console.error('Failed to send ID-approved email:', err);
+        logger.error('admin.id_approved_email.failed', { err: String(err) });
       });
       void createNotification({
         recipientId: userId,
@@ -189,7 +190,7 @@ router.put('/verifications/:userId', async (req: Request<{ userId: string }>, re
         return;
       }
       sendIdRejectedEmail(target.email, target.username, parsed.data.reason).catch((err) => {
-        console.error('Failed to send ID-rejected email:', err);
+        logger.error('admin.id_rejected_email.failed', { err: String(err) });
       });
       void createNotification({
         recipientId: userId,
@@ -200,7 +201,7 @@ router.put('/verifications/:userId', async (req: Request<{ userId: string }>, re
       res.json({ message: 'ID rejected.' });
     }
   } catch (err) {
-    console.error('Review verification error:', err);
+    logger.error('admin.review_verification.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -289,7 +290,7 @@ router.get('/stats', async (_req: Request, res: Response) => {
       openDisputes: openDisputeCount,
     });
   } catch (err) {
-    console.error('Admin stats error:', err);
+    logger.error('admin.stats.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -338,7 +339,7 @@ router.get('/orders/stuck', async (req: Request, res: Response) => {
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (err) {
-    console.error('Admin stuck orders error:', err);
+    logger.error('admin.stuck_orders.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -464,7 +465,7 @@ router.post(
         parsed.data.body,
       );
     } catch (err) {
-      console.error('[admin contact reply] send failed:', err);
+      logger.error('admin.contact_reply.send.failed', { err: String(err) });
       res.status(502).json({ error: 'Failed to send reply email' });
       return;
     }
@@ -568,7 +569,7 @@ router.post('/broadcasts', async (req: Request, res: Response) => {
     });
     res.json(result);
   } catch (err) {
-    console.error('Broadcast send failed:', err);
+    logger.error('admin.broadcast.send.failed', { err: String(err) });
     res.status(500).json({
       error: err instanceof Error ? err.message : 'Broadcast failed',
     });

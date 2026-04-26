@@ -17,6 +17,7 @@ import {
   upsertAccount,
 } from '../services/sellerPaymentAccounts.js';
 import { getSellerEarnings } from '../services/sellerEarnings.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -123,7 +124,7 @@ router.post(
 
       res.json({ url: link.url, accountId });
     } catch (err) {
-      console.error('[seller-payments] stripe onboard failed:', err);
+      logger.error('seller_payments.stripe.onboard.failed', { err: String(err) });
       res.status(502).json({ error: 'Failed to start Stripe onboarding' });
     }
   },
@@ -176,7 +177,7 @@ router.post(
       });
       res.json({ account: toPublic(updated) });
     } catch (err) {
-      console.error('[seller-payments] stripe sync failed:', err);
+      logger.error('seller_payments.stripe.sync.failed', { err: String(err) });
       res.status(502).json({ error: 'Failed to sync Stripe account status' });
     }
   },
@@ -286,7 +287,7 @@ router.get(
     try {
       state = signSquareState(req.userId!);
     } catch (err) {
-      console.error('[seller-payments] square state sign failed:', err);
+      logger.error('seller_payments.square.state_sign.failed', { err: String(err) });
       res.status(503).json({ error: 'Square OAuth state signing not configured' });
       return;
     }
@@ -339,7 +340,7 @@ router.get('/square/callback', async (req: Request, res: Response) => {
       }),
     });
     if (!tokenResp.ok) {
-      console.error('[seller-payments] square token exchange failed:', tokenResp.status);
+      logger.error('seller_payments.square.token_exchange.failed', { status: tokenResp.status });
       res.redirect(`${returnTo}?square=exchange_failed`);
       return;
     }
@@ -389,7 +390,7 @@ router.get('/square/callback', async (req: Request, res: Response) => {
     });
     res.redirect(`${returnTo}?square=connected`);
   } catch (err) {
-    console.error('[seller-payments] square callback failed:', err);
+    logger.error('seller_payments.square.callback.failed', { err: String(err) });
     res.redirect(`${returnTo}?square=error`);
   }
 });
@@ -421,7 +422,7 @@ router.post(
           });
         }
       } catch (err) {
-        console.error('[seller-payments] square revoke failed:', err);
+        logger.error('seller_payments.square.revoke.failed', { err: String(err) });
       }
     }
     await markDisconnected(req.userId!, 'SQUARE');

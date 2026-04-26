@@ -9,6 +9,7 @@ import {
   sellerReviewQuerySchema,
 } from '../schemas/reviews.js';
 import { createNotification } from '../services/notifications.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -100,7 +101,7 @@ router.post('/', authenticate, reviewWriteLimiter, async (req: Request, res: Res
       throw err;
     }
   } catch (err) {
-    console.error('Create review error:', err);
+    logger.error('reviews.create.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -162,7 +163,7 @@ router.get('/seller/:id', async (req: Request<{ id: string }>, res: Response) =>
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (err) {
-    console.error('Seller reviews error:', err);
+    logger.error('reviews.seller_list.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

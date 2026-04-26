@@ -2,6 +2,7 @@ import prisma from '../lib/prisma.js';
 import type { BroadcastAudience } from '../generated/prisma/client.js';
 import { sendBroadcastEmail } from '../utils/email.js';
 import { createNotification } from './notifications.js';
+import { logger } from '../utils/logger.js';
 
 // Audience resolution + send pipeline for admin broadcasts. The resolver is
 // shared between the preview endpoint (`POST /api/admin/broadcasts/preview`)
@@ -174,7 +175,11 @@ export async function sendBroadcast(input: SendBroadcastInput): Promise<SendBroa
         emailsSent += 1;
       } catch (err) {
         emailsFailed += 1;
-        console.error(`[broadcast ${broadcast.id}] email failed for ${r.email}:`, err);
+        logger.error('broadcast.email.failed', {
+          broadcastId: broadcast.id,
+          email: r.email,
+          err: String(err),
+        });
       }
     }
 

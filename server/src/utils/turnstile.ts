@@ -3,6 +3,8 @@
 // we forward it to Cloudflare along with our secret and the client IP.
 // Tokens are single-use and short-lived (~5 min).
 
+import { logger } from './logger.js';
+
 const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY || '';
 const SITEVERIFY_URL = 'https://challenges.cloudflare.com/turnstile/v0/siteverify';
 
@@ -36,16 +38,16 @@ export async function verifyTurnstile(token: string | undefined, remoteIp: strin
       body: form,
     });
     if (!res.ok) {
-      console.error(`[turnstile] siteverify non-200: ${res.status}`);
+      logger.error('turnstile.siteverify.non_200', { status: res.status });
       return true;
     }
     const data = (await res.json()) as SiteverifyResponse;
     if (!data.success) {
-      console.warn(`[turnstile] token rejected: ${JSON.stringify(data['error-codes'] ?? [])}`);
+      logger.warn('turnstile.token.rejected', { errorCodes: data['error-codes'] ?? [] });
     }
     return data.success;
   } catch (err) {
-    console.error('[turnstile] siteverify network error — failing open:', err);
+    logger.error('turnstile.siteverify.network_error', { err: String(err), failingOpen: true });
     return true;
   }
 }

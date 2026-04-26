@@ -1,7 +1,25 @@
 import { faker } from '@faker-js/faker';
+import bcrypt from 'bcrypt';
 import { PrismaClient, Condition, ListingStatus, OrderStatus, PaymentMethod, SellerType, UserRole, VerificationStatus } from '../src/generated/prisma/client.js';
 import { PrismaPg } from '@prisma/adapter-pg';
 import 'dotenv/config';
+
+if (process.env.NODE_ENV === 'production') {
+  throw new Error('seed.ts must never run in production (NODE_ENV=production)');
+}
+
+const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+if (!adminPasswordHash) {
+  throw new Error(
+    'ADMIN_PASSWORD_HASH env var is required. Generate one with: ' +
+      `node -e "require('bcrypt').hash(process.argv[1], 12).then(console.log)" 'your-password'`,
+  );
+}
+
+// Dummy users get a freshly-generated random password each seed run.
+// The plaintext is logged once so a developer can sign in if needed.
+const dummyPlaintext = faker.internet.password({ length: 16, memorable: false });
+const dummyPasswordHash = bcrypt.hashSync(dummyPlaintext, 10);
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const prisma = new PrismaClient({ adapter });
@@ -313,7 +331,7 @@ async function main() {
     return {
       email: isAdmin ? 'admin@marketplace.com' : faker.internet.email().toLowerCase(),
       username: isAdmin ? 'admin' : faker.internet.username().toLowerCase().replace(/[^a-z0-9_]/g, '_'),
-      password: '***REMOVED***', // "password123"
+      password: isAdmin ? adminPasswordHash : dummyPasswordHash,
       name: isAdmin ? 'Admin User' : faker.person.fullName(),
       role: isAdmin ? UserRole.ADMIN : UserRole.USER,
       location: faker.helpers.arrayElement(australianCities),
@@ -339,6 +357,7 @@ async function main() {
     usersData.map((u) => prisma.user.create({ data: u }))
   );
   console.log(`  Created ${users.length} users`);
+  console.log(`  Dummy-user password (this run): ${dummyPlaintext}`);
 
   // --- Listings ------------------------------------------------------------
   console.log('Creating listings...');

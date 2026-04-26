@@ -9,6 +9,7 @@ import {
 } from '../config/stripe.js';
 import { markOrderPaid } from '../services/orderPayments.js';
 import { handleSquareCatalogWebhook } from '../services/squareCatalog/inbound.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -83,7 +84,7 @@ router.post('/stripe', async (req: Request, res: Response) => {
       getStripeWebhookSecret(),
     );
   } catch (err) {
-    console.error('Stripe signature verification failed:', err);
+    logger.error('webhook.stripe.bad_signature', { err: String(err) });
     res.status(400).json({ error: 'Invalid signature' });
     return;
   }
@@ -111,7 +112,7 @@ router.post('/stripe', async (req: Request, res: Response) => {
       if (session.amount_total == null || !session.currency) {
         // Shouldn't happen for a successful checkout, but don't mark paid if
         // we can't validate the amount.
-        console.error('[stripe webhook] session missing amount/currency', {
+        logger.error('webhook.stripe.session_missing_amount_currency', {
           sessionId: session.id,
           orderId,
           stripeAccountId,
@@ -135,12 +136,13 @@ router.post('/stripe', async (req: Request, res: Response) => {
 
       const result = outcome.result;
       if (result.status === 'amount_mismatch') {
-        console.error('[stripe webhook] payment amount mismatch — NOT marking paid', {
+        logger.error('webhook.stripe.payment_amount_mismatch', {
           orderId,
           sessionId: session.id,
           eventId: event.id,
           expected: result.expected,
           reported: result.reported,
+          markingPaid: false,
         });
       }
       res.json({ received: true, result: result.status });
@@ -187,7 +189,7 @@ router.post('/stripe', async (req: Request, res: Response) => {
     // Other event types acked but not processed.
     res.json({ received: true, ignored: event.type });
   } catch (err) {
-    console.error('Stripe webhook handler error:', err);
+    logger.error('webhook.stripe.handler.failed', { err: String(err) });
     // Return 500 so Stripe retries on transient failures (DB blips etc.).
     res.status(500).json({ error: 'Webhook handler failed' });
   }
@@ -219,7 +221,7 @@ router.post('/stripe/identity', async (req: Request, res: Response) => {
       getStripeIdentityWebhookSecret(),
     );
   } catch (err) {
-    console.error('Stripe Identity signature verification failed:', err);
+    logger.error('webhook.stripe_identity.bad_signature', { err: String(err) });
     res.status(400).json({ error: 'Invalid signature' });
     return;
   }
@@ -295,7 +297,7 @@ router.post('/stripe/identity', async (req: Request, res: Response) => {
     // processing / created / etc. acked but not processed.
     res.json({ received: true, ignored: event.type });
   } catch (err) {
-    console.error('Stripe Identity webhook handler error:', err);
+    logger.error('webhook.stripe_identity.handler.failed', { err: String(err) });
     res.status(500).json({ error: 'Webhook handler failed' });
   }
 });
@@ -338,7 +340,7 @@ router.post('/email', async (req: Request, res: Response) => {
   // length-discriminating timing on a brute-force attempt.
   const expected = process.env.EMAIL_WEBHOOK_SECRET;
   if (!expected) {
-    console.error('[email webhook] EMAIL_WEBHOOK_SECRET not configured');
+    logger.error('webhook.email.secret_not_configured');
     res.status(503).json({ error: 'Inbound email not configured' });
     return;
   }
@@ -382,7 +384,7 @@ router.post('/email', async (req: Request, res: Response) => {
     '(no body — sender did not include a message)';
 
   if (!fromEmail) {
-    console.error('[email webhook] missing From address', {
+    logger.error('webhook.email.missing_from_address', {
       payloadKeys: Object.keys(payload),
     });
     res.status(400).json({
@@ -435,7 +437,7 @@ router.post('/email', async (req: Request, res: Response) => {
       // Tag present but no match (admin closed + DB cleared, replied to a
       // forwarded chain, etc.). Fall through to new-submission creation so
       // the message isn't lost.
-      console.warn(`[email webhook] thread tag #${idPrefix} not found — creating new submission`);
+      logger.warn('webhook.email.thread_tag_not_found', { idPrefix, fallback: 'creating new submission' });
     }
 
     // No matching thread → cold email to support. Create a new submission.
@@ -456,7 +458,7 @@ router.post('/email', async (req: Request, res: Response) => {
     });
     res.json({ received: true, createdSubmission: fresh.id });
   } catch (err) {
-    console.error('[email webhook] handler failed:', err);
+    logger.error('webhook.email.handler.failed', { err: String(err) });
     res.status(500).json({ error: 'Inbound handler failed' });
   }
 });

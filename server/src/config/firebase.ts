@@ -10,6 +10,7 @@
 
 import { initializeApp, cert, getApps, type App } from 'firebase-admin/app';
 import { getAuth, type Auth } from 'firebase-admin/auth';
+import { logger } from '../utils/logger.js';
 
 const SERVICE_ACCOUNT_B64 = process.env.FIREBASE_SERVICE_ACCOUNT || '';
 
@@ -52,7 +53,7 @@ export function firebaseAuth(): Auth {
 
 export function verifyFirebaseAtStartup(): void {
   if (!FIREBASE_ENABLED) {
-    console.warn('[firebase] FIREBASE_SERVICE_ACCOUNT not set — phone verification will reject');
+    logger.warn('firebase.init.skipped', { reason: 'FIREBASE_SERVICE_ACCOUNT not set — phone verification will reject' });
     return;
   }
   try {
@@ -60,8 +61,8 @@ export function verifyFirebaseAtStartup(): void {
     // Touch the app's options to confirm the key parsed cleanly.
     const projectId = (app.options.credential as unknown as { projectId?: string })?.projectId
       ?? '(unknown)';
-    console.log(`[firebase] admin initialised — project=${projectId}`);
+    logger.info('firebase.init.success', { projectId });
   } catch (err) {
-    console.error('[firebase] init FAILED:', err);
+    logger.error('firebase.init.failed', { err: String(err) });
   }
 }

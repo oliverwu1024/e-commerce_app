@@ -1,4 +1,5 @@
 import nodemailer from 'nodemailer';
+import { logger } from '../utils/logger.js';
 
 const SMTP_PORT = Number(process.env.SMTP_PORT) || 2525;
 const SMTP_HOST = process.env.SMTP_HOST || 'sandbox.smtp.mailtrap.io';
@@ -72,9 +73,10 @@ export async function sendMail(params: MailParams): Promise<void> {
 // instead of the first real send.
 export function verifyEmailAtStartup(): void {
   if (RESEND_API_KEY) {
-    console.log(
-      `[email] using Resend HTTPS API from=${EMAIL_CONFIG.from} keyPrefix=${RESEND_API_KEY.slice(0, 6)}...`,
-    );
+    logger.info('email.resend.enabled', {
+      from: EMAIL_CONFIG.from,
+      keyPrefix: `${RESEND_API_KEY.slice(0, 6)}...`,
+    });
     return;
   }
   if (
@@ -83,26 +85,31 @@ export function verifyEmailAtStartup(): void {
     !process.env.SMTP_PASS ||
     process.env.SMTP_USER === 'placeholder'
   ) {
-    console.warn(
-      `[email] verify skipped — neither RESEND_API_KEY nor full SMTP env is set (host=${SMTP_HOST} user=${process.env.SMTP_USER || '(unset)'})`,
-    );
+    logger.warn('email.verify.skipped', {
+      reason: 'neither RESEND_API_KEY nor full SMTP env is set',
+      host: SMTP_HOST,
+      user: process.env.SMTP_USER || '(unset)',
+    });
     return;
   }
   transporter
     .verify()
     .then(() => {
-      console.log(
-        `[smtp] verify ok host=${SMTP_HOST} port=${SMTP_PORT} secure=${SMTP_PORT === 465} user=${process.env.SMTP_USER}`,
-      );
+      logger.info('smtp.verify.ok', {
+        host: SMTP_HOST,
+        port: SMTP_PORT,
+        secure: SMTP_PORT === 465,
+        user: process.env.SMTP_USER,
+      });
     })
     .catch((err) => {
-      console.error('[smtp] verify FAILED', {
+      logger.error('smtp.verify.failed', {
         host: SMTP_HOST,
         port: SMTP_PORT,
         secure: SMTP_PORT === 465,
         user: process.env.SMTP_USER,
         from: EMAIL_CONFIG.from,
-        error: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
+        err: err instanceof Error ? `${err.name}: ${err.message}` : String(err),
       });
     });
 }

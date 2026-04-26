@@ -6,6 +6,7 @@ import { z } from 'zod';
 import { s3, S3_BUCKET, S3_REGION } from '../config/s3.js';
 import { authenticate } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -120,7 +121,7 @@ router.post(
 
       res.json({ uploadUrl, fileUrl, key });
     } catch (err) {
-      console.error('Presigned URL error:', err);
+      logger.error('uploads.presigned_url.failed', { err: String(err) });
       res.status(500).json({ error: 'Failed to generate upload URL' });
     }
   },

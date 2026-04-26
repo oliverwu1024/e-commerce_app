@@ -9,6 +9,7 @@ import {
   resolveDisputeSchema,
 } from '../schemas/disputes.js';
 import { createNotification } from '../services/notifications.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -108,7 +109,7 @@ router.post(
         res.status(409).json({ error: 'A dispute already exists for this order' });
         return;
       }
-      console.error('Create dispute error:', err);
+      logger.error('disputes.create.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -288,7 +289,7 @@ router.post(
         res.status(404).json({ error: 'Dispute not found' });
         return;
       }
-      console.error('Resolve dispute error:', err);
+      logger.error('disputes.resolve.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },

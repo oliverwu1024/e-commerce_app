@@ -2,6 +2,7 @@ import { Router, Request, Response } from 'express';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -39,7 +40,7 @@ router.get('/unread-count', authenticate, inboxLimiter, async (req: Request, res
       inquiryMessages,
     });
   } catch (err) {
-    console.error('Unread count error:', err);
+    logger.error('inbox.unread_count.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -161,7 +162,7 @@ router.get('/threads', authenticate, inboxLimiter, async (req: Request, res: Res
 
     res.json({ threads });
   } catch (err) {
-    console.error('Inbox threads error:', err);
+    logger.error('inbox.threads.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

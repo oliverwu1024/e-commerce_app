@@ -38,6 +38,7 @@ import {
   startSquareCatalogSync,
   stopSquareCatalogSync,
 } from './services/squareCatalog/index.js';
+import { getRedisConnection, isQueueConfigured } from './queue/connection.js';
 
 // Fail fast at boot on missing required env — the alternative is a service
 // that reports "ok" and 500s on the first real request. JWT_SECRET is already
@@ -102,12 +103,36 @@ app.use(cookieParser());
 // Health is a plain GET from load balancers / uptime monitors — exempt from
 // both requestLogger (handled inside it) and csrfOriginGuard (GET is safe).
 app.get('/api/health', async (_req, res) => {
+  const checks: Record<string, 'connected' | 'disconnected' | 'disabled'> = {
+    database: 'disconnected',
+    redis: 'disabled',
+  };
+  let dbOk = false;
+  let redisOk = true; // disabled counts as ok — Redis is optional for the marketplace itself
   try {
     await prisma.$queryRaw`SELECT 1`;
-    res.json({ status: 'ok', database: 'connected' });
+    checks.database = 'connected';
+    dbOk = true;
   } catch {
-    res.status(500).json({ status: 'error', database: 'disconnected' });
+    // dbOk stays false
   }
+  if (isQueueConfigured()) {
+    redisOk = false;
+    try {
+      const ping = await Promise.race([
+        getRedisConnection().ping(),
+        new Promise<'TIMEOUT'>((resolve) => setTimeout(() => resolve('TIMEOUT'), 1000)),
+      ]);
+      if (ping === 'PONG') {
+        checks.redis = 'connected';
+        redisOk = true;
+      }
+    } catch {
+      // redisOk stays false
+    }
+  }
+  const status = dbOk && redisOk ? 'ok' : 'error';
+  res.status(status === 'ok' ? 200 : 500).json({ status, ...checks });
 });
 
 // Prometheus exposition. Token-gated via METRICS_AUTH_TOKEN — any value works

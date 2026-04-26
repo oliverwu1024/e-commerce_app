@@ -5,6 +5,7 @@ import { uuidSchema } from '../schemas/common.js';
 import { paginationSchema } from '../schemas/listings.js';
 import { authenticate } from '../middleware/auth.js';
 import { PUBLIC_LOCATION_SELECT, projectPublicSeller } from '../services/publicLocation.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -75,7 +76,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (err) {
-    console.error('Get saved listings error:', err);
+    logger.error('saved.list.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -89,7 +90,7 @@ router.get('/ids', authenticate, async (req: Request, res: Response) => {
     });
     res.json({ ids: saved.map((s) => s.listingId) });
   } catch (err) {
-    console.error('Get saved IDs error:', err);
+    logger.error('saved.ids.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -128,7 +129,7 @@ router.post('/:listingId', authenticate, async (req: Request<{ listingId: string
       res.json({ message: 'Listing already saved' });
       return;
     }
-    console.error('Save listing error:', err);
+    logger.error('saved.create.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -148,7 +149,7 @@ router.delete('/:listingId', authenticate, async (req: Request<{ listingId: stri
 
     res.json({ message: 'Listing unsaved' });
   } catch (err) {
-    console.error('Unsave listing error:', err);
+    logger.error('saved.delete.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

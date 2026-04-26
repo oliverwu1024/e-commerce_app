@@ -37,6 +37,7 @@ import { firebaseAuth, FIREBASE_ENABLED } from '../config/firebase.js';
 import { getStripeClient, isStripeConfigured } from '../config/stripe.js';
 import { FEATURES } from '../config/features.js';
 import { PUBLIC_LOCATION_SELECT, projectPublicSeller } from '../services/publicLocation.js';
+import { logger } from '../utils/logger.js';
 
 const DEV_EMAIL_ENABLED = process.env.ENABLE_DEV_EMAIL === '1';
 
@@ -161,7 +162,7 @@ router.get('/profile', authenticate, profileLimiter, async (req: Request, res: R
       features: { idVerificationEnabled: FEATURES.idVerificationEnabled },
     });
   } catch (err) {
-    console.error('Get profile error:', err);
+    logger.error('users.profile.get.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -221,7 +222,7 @@ router.put('/profile', authenticate, profileLimiter, async (req: Request, res: R
 
     res.json({ user, ...computeCanSell(user) });
   } catch (err) {
-    console.error('Update profile error:', err);
+    logger.error('users.profile.update.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -273,7 +274,7 @@ router.put('/password', authenticate, passwordChangeLimiter, async (req: Request
     clearTokenCookie(res);
     res.json({ message: 'Password changed. Please sign in with your new password.' });
   } catch (err) {
-    console.error('Change password error:', err);
+    logger.error('users.change_password.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -303,7 +304,7 @@ router.post('/verify-phone/confirm', authenticate, phoneConfirmLimiter, async (r
     const { idToken } = parsed.data;
 
     if (!FIREBASE_ENABLED) {
-      console.error('[verify-phone] Firebase not configured — refusing token');
+      logger.error('users.verify_phone.firebase_not_configured', { reason: 'refusing token' });
       res.status(503).json({ error: 'Phone verification is temporarily unavailable.' });
       return;
     }
@@ -334,7 +335,7 @@ router.post('/verify-phone/confirm', authenticate, phoneConfirmLimiter, async (r
     try {
       decoded = await firebaseAuth().verifyIdToken(idToken, true);
     } catch (err) {
-      console.warn('[verify-phone] Firebase token verification failed:', err);
+      logger.warn('users.verify_phone.token_verification_failed', { err: String(err) });
       res.status(400).json({ error: 'Invalid or expired verification token.' });
       return;
     }
@@ -370,7 +371,7 @@ router.post('/verify-phone/confirm', authenticate, phoneConfirmLimiter, async (r
 
     res.json({ message: 'Phone verified successfully', phone });
   } catch (err) {
-    console.error('Confirm phone verification error:', err);
+    logger.error('users.verify_phone.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -473,14 +474,14 @@ router.post('/verify-id', authenticate, profileLimiter, async (req: Request, res
     if (adminEmail) {
       sendIdSubmittedEmail(adminEmail, current.username, current.email, req.userId!).catch(
         (err) => {
-          console.error('Failed to send ID-submitted admin email:', err);
+          logger.error('users.verify_id.admin_email.failed', { err: String(err) });
         },
       );
     }
 
     res.json({ message: 'ID documents submitted for review.' });
   } catch (err) {
-    console.error('Verify ID error:', err);
+    logger.error('users.verify_id.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -561,7 +562,7 @@ router.post(
         } catch (err) {
           // Treat retrieve failure (session expired, key rotated, etc.) as
           // "no existing session" and fall through to create a fresh one.
-          console.warn('[verify-id stripe] retrieve existing session failed:', err);
+          logger.warn('users.verify_id_stripe.retrieve_session.failed', { err: String(err) });
         }
       }
 
@@ -594,7 +595,7 @@ router.post(
 
       res.json({ url: session.url, sessionId: session.id, reused: false });
     } catch (err) {
-      console.error('Verify ID (Stripe) error:', err);
+      logger.error('users.verify_id_stripe.failed', { err: String(err) });
       res.status(500).json({ error: 'Failed to start ID verification.' });
     }
   },
@@ -654,7 +655,7 @@ router.post('/verify-abn', authenticate, profileLimiter, async (req: Request, re
 
     res.json({ message: 'ABN verified.' });
   } catch (err) {
-    console.error('Verify ABN error:', err);
+    logger.error('users.verify_abn.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -701,7 +702,7 @@ router.put('/username', authenticate, profileLimiter, async (req: Request, res: 
       throw err;
     }
   } catch (err) {
-    console.error('Change username error:', err);
+    logger.error('users.change_username.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -774,13 +775,14 @@ router.post('/email-change', authenticate, profileLimiter, async (req: Request, 
       await sendVerificationEmail(newEmail, token);
     } catch (err) {
       verificationEmailSent = false;
-      console.error('Failed to send email-change verification:', err);
+      logger.error('users.change_email.send_verification.failed', { err: String(err) });
     }
 
     if (DEV_EMAIL_ENABLED) {
-      console.log(
-        `[DEV] Email-change verification URL for ${newEmail}: ${buildVerificationUrl(token)}`,
-      );
+      logger.debug('users.change_email.dev_verification_url', {
+        email: newEmail,
+        url: buildVerificationUrl(token),
+      });
     }
 
     res.json({
@@ -790,7 +792,7 @@ router.post('/email-change', authenticate, profileLimiter, async (req: Request, 
       devVerificationUrl: DEV_EMAIL_ENABLED ? buildVerificationUrl(token) : undefined,
     });
   } catch (err) {
-    console.error('Email change error:', err);
+    logger.error('users.change_email.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -846,7 +848,7 @@ router.put('/avatar', authenticate, profileLimiter, async (req: Request, res: Re
     });
     res.json({ user, ...computeCanSell(user) });
   } catch (err) {
-    console.error('Update avatar error:', err);
+    logger.error('users.avatar.update.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -866,7 +868,7 @@ router.delete('/avatar', authenticate, profileLimiter, async (req: Request, res:
     });
     res.json({ user, ...computeCanSell(user) });
   } catch (err) {
-    console.error('Delete avatar error:', err);
+    logger.error('users.avatar.delete.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -989,7 +991,7 @@ router.delete('/me', authenticate, passwordChangeLimiter, async (req: Request, r
     clearTokenCookie(res);
     res.json({ message: 'Account deleted.' });
   } catch (err) {
-    console.error('Delete account error:', err);
+    logger.error('users.delete_account.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -1047,7 +1049,7 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
       },
     });
   } catch (err) {
-    console.error('Get user error:', err);
+    logger.error('users.get.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

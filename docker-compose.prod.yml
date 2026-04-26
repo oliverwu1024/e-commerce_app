@@ -15,9 +15,16 @@
 # and point DATABASE_URL at the managed instance. Consider Multi-AZ and
 # automated backups at that point.
 
+# Image pinning policy:
+#   Major-only tags (`postgres:16-alpine`) silently track the upstream
+#   floating tag, so a rebuild months later can land a different base.
+#   Pin to a specific minor (`postgres:16.6-alpine`) here; for reproducible
+#   builds across the deployment fleet, replace the tag with a digest in
+#   CI: `postgres:16.6-alpine@sha256:<digest>`. Refresh quarterly to pick
+#   up upstream patches.
 services:
   db:
-    image: postgres:16-alpine
+    image: postgres:16.6-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
@@ -38,7 +45,7 @@ services:
     # drift between marketplace and Square POS until reconciliation runs).
     # If you're running on Railway / Render, replace this with a managed
     # Redis and point REDIS_URL at it; the rest of the stack is agnostic.
-    image: redis:7-alpine
+    image: redis:7.4-alpine
     restart: unless-stopped
     volumes:
       - redisdata:/data

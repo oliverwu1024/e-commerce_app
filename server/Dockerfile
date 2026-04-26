@@ -6,7 +6,7 @@
 #   - runner → compiled dist/, drops root, ships prisma CLI for migrations.
 #              Selected by docker-compose.prod.yml via build.target=runner.
 #
-FROM node:20-alpine AS base
+FROM node:20.18-alpine AS base
 WORKDIR /app
 COPY package*.json ./
 RUN npm ci
@@ -22,7 +22,7 @@ COPY . .
 RUN npx prisma generate
 RUN npm run build
 
-FROM node:20-alpine AS runner
+FROM node:20.18-alpine AS runner
 WORKDIR /app
 ENV NODE_ENV=production
 # Full install (includes prisma CLI from devDependencies) so operators can

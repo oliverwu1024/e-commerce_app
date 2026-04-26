@@ -1,5 +1,6 @@
 import prisma from '../lib/prisma.js';
 import type { NotificationType } from '../generated/prisma/client.js';
+import { logger } from '../utils/logger.js';
 
 export type NotificationInput = {
   recipientId: string;
@@ -24,6 +25,6 @@ export async function createNotification(input: NotificationInput): Promise<void
     if (input.actorId && input.actorId === input.recipientId) return;
     await prisma.notification.create({ data: input });
   } catch (err) {
-    console.error('Failed to create notification:', err);
+    logger.error('notifications.create.failed', { err: String(err) });
   }
 }

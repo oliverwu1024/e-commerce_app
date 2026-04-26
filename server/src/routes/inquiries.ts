@@ -11,6 +11,7 @@ import {
 } from '../schemas/inquiries.js';
 import { createNotification } from '../services/notifications.js';
 import { PUBLIC_LOCATION_SELECT, projectPublicSeller } from '../services/publicLocation.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -176,7 +177,7 @@ router.post(
       });
       res.status(201).json({ inquiry: full ? projectInquiryParties(full) : full });
     } catch (err) {
-      console.error('Create inquiry error:', err);
+      logger.error('inquiries.create.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -234,7 +235,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (err) {
-    console.error('List inquiries error:', err);
+    logger.error('inquiries.list.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -295,7 +296,7 @@ router.get(
         messages,
       });
     } catch (err) {
-      console.error('Get inquiry error:', err);
+      logger.error('inquiries.get.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -346,7 +347,7 @@ router.get(
 
       res.json({ messages });
     } catch (err) {
-      console.error('Get inquiry messages error:', err);
+      logger.error('inquiries.messages.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -430,7 +431,7 @@ router.post(
 
       res.status(201).json({ message });
     } catch (err) {
-      console.error('Inquiry reply error:', err);
+      logger.error('inquiries.reply.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -474,7 +475,7 @@ router.post(
 
       res.json({ ok: true });
     } catch (err) {
-      console.error('Close inquiry error:', err);
+      logger.error('inquiries.close.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },

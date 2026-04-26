@@ -1,3 +1,17 @@
+// =============================================================================
+// Money convention
+// -----------------------------------------------------------------------------
+//   Decimal(10, 2)  — used for human-facing prices on Listing, Order, etc.
+//                     Stored in major currency units (AUD dollars).
+//   Int  *Cents     — used for newer money columns where we need exact
+//                     arithmetic and zero ambiguity (Refund.amountCents,
+//                     Order.totalRefundedCents, SquareFeaturedItem.priceCents).
+//                     Always interpreted as cents (1/100 of a dollar).
+//
+// Don't mix the two for the same logical value. When summing both,
+// convert Decimal to cents first: (decimal.times(100)).toFixed(0).
+// New money fields should default to Int + cents naming.
+// =============================================================================
 generator client {
   provider = "prisma-client"
   output   = "../src/generated/prisma"
@@ -394,6 +408,11 @@ model Cart {
   items CartItem[]
 }
 
+// CartItem.listingId has the implicit Restrict default, which means a hard
+// `DELETE FROM Listing` would error out — that's intentional. The app never
+// hard-deletes listings; sold/withdrawn ones move to status=REMOVED so cart
+// rows continue to render the buyer's snapshot. If you ever need to purge a
+// row manually, drop the cart entries first.
 model CartItem {
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
@@ -405,6 +424,9 @@ model CartItem {
   listingId String
 
   @@unique([cartId, listingId])
+  // The composite unique covers cartId-prefix lookups, but listing-side
+  // joins (e.g. "is this listing in any cart?") need a standalone index.
+  @@index([listingId])
 }
 
 model Order {
@@ -481,6 +503,7 @@ model Review {
   rating    Int
   comment   String?  @db.VarChar(2000)
   createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   order   Order  @relation(fields: [orderId], references: [id])
   orderId String @unique
@@ -505,6 +528,9 @@ model SavedListing {
   listingId String
 
   @@unique([userId, listingId])
+  // Cascade on listing delete needs a standalone listingId index — without
+  // it, deleting a listing scans the whole table for saved rows.
+  @@index([listingId])
 }
 
 model Message {

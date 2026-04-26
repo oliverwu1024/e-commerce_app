@@ -36,10 +36,6 @@ export const metadata: Metadata = {
     "Phones, laptops, consoles, cameras and more, from trusted sellers across Australia.",
 };
 
-// Runs before React hydrates — reads the saved theme and applies the class
-// synchronously so there's no flash of the wrong palette.
-const themeInitScript = `(function(){try{var t=localStorage.getItem('theme');if(t==='dark'){document.documentElement.classList.add('dark');}}catch(e){}})();`;
-
 export default function RootLayout({
   children,
 }: Readonly<{
@@ -52,7 +48,8 @@ export default function RootLayout({
       className={`${orbitron.variable} ${manrope.variable} ${fraunces.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
+        {/* External theme-init script keeps script-src CSP free of unsafe-inline. */}
+        <script src="/theme-init.js" />
       </head>
       <body className="min-h-full flex flex-col">
         <AuthProvider>

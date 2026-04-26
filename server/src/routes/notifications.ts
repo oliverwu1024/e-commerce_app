@@ -4,6 +4,7 @@ import type { Prisma } from '../generated/prisma/client.js';
 import { authenticate } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { notificationQuerySchema, markReadSchema } from '../schemas/notifications.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -63,7 +64,7 @@ router.get('/', authenticate, notifLimiter, async (req: Request, res: Response) 
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (err) {
-    console.error('List notifications error:', err);
+    logger.error('notifications.list.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -94,7 +95,7 @@ router.put('/mark-read', authenticate, notifLimiter, async (req: Request, res: R
 
     res.json({ markedCount: count });
   } catch (err) {
-    console.error('Mark notifications read error:', err);
+    logger.error('notifications.mark_read.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

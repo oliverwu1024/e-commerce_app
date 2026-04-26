@@ -28,6 +28,7 @@ import { platformFeeForCents } from '../config/platformConnect.js';
 import { createNotification } from '../services/notifications.js';
 import { sendOrderPlacedEmail, sendNewMessageEmail } from '../utils/email.js';
 import { PUBLIC_LOCATION_SELECT, projectPublicSeller } from '../services/publicLocation.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -348,12 +349,12 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
               order.buyer.username,
               order.id,
             ).catch((err) => {
-              console.error('Failed to send order-placed email:', err);
+              logger.error('orders.checkout.order_placed_email.failed', { err: String(err) });
             });
           }
         })
         .catch((err) => {
-          console.error('Failed to fetch seller emails for notifications:', err);
+          logger.error('orders.checkout.fetch_seller_emails.failed', { err: String(err) });
         });
 
       res.status(201).json({ orders: orders.map(projectOrderParties) });
@@ -380,7 +381,7 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
       throw err;
     }
   } catch (err) {
-    console.error('Checkout error:', err);
+    logger.error('orders.checkout.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -430,7 +431,7 @@ async function listOrders(
       pagination: { page, limit, total, totalPages: Math.ceil(total / limit) },
     });
   } catch (err) {
-    console.error(`List ${role} orders error:`, err);
+    logger.error('orders.list.failed', { role, err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 }
@@ -482,12 +483,12 @@ router.get(
           data: { readAt: new Date() },
         })
         .catch((err) => {
-          console.error('Failed to mark messages read:', err);
+          logger.error('orders.messages.mark_read.failed', { err: String(err) });
         });
 
       res.json({ messages });
     } catch (err) {
-      console.error('Get messages error:', err);
+      logger.error('orders.messages.get.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -578,13 +579,13 @@ router.post(
             receiverRole,
           );
         } catch (err) {
-          console.error('Failed to notify/email receiver of message:', err);
+          logger.error('orders.messages.notify_receiver.failed', { err: String(err) });
         }
       })();
 
       res.status(201).json({ message });
     } catch (err) {
-      console.error('Send message error:', err);
+      logger.error('orders.messages.send.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -654,7 +655,7 @@ router.put(
       }
       res.json({ order: updated ? projectOrderParties(updated) : updated });
     } catch (err) {
-      console.error('Confirm order error:', err);
+      logger.error('orders.confirm.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -768,7 +769,7 @@ router.put(
       }
       res.json({ order: updated ? projectOrderParties(updated) : updated });
     } catch (err) {
-      console.error('Cancel order error:', err);
+      logger.error('orders.cancel.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -889,7 +890,7 @@ router.put(
       }
       res.json({ order: updated ? projectOrderParties(updated) : updated });
     } catch (err) {
-      console.error('Complete order error:', err);
+      logger.error('orders.complete.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -974,7 +975,7 @@ router.post(
       }
       res.json({ order: updated ? projectOrderParties(updated) : updated });
     } catch (err) {
-      console.error('Ship order error:', err);
+      logger.error('orders.ship.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -1047,7 +1048,7 @@ router.post(
       }
       res.json({ order: updated ? projectOrderParties(updated) : updated });
     } catch (err) {
-      console.error('Receive order error:', err);
+      logger.error('orders.receive.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -1178,7 +1179,7 @@ router.post(
             data: { paymentSessionState: 'NONE' },
           });
         } catch (err) {
-          console.error('[pay] revertSessionPending failed:', err);
+          logger.error('orders.pay.revert_session_pending.failed', { err: String(err) });
         }
       }
 
@@ -1381,7 +1382,7 @@ router.post(
       // Exhaustiveness check — unreachable given Zod enum
       res.status(400).json({ error: 'Unsupported payment method' });
     } catch (err) {
-      console.error('Pay error:', err);
+      logger.error('orders.pay.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -1453,7 +1454,7 @@ router.post(
 
       res.json({ message: 'Payment lock released.' });
     } catch (err) {
-      console.error('Abandon payment error:', err);
+      logger.error('orders.abandon_payment.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -1545,12 +1546,13 @@ router.post(
         return;
       }
       if (result.status === 'amount_mismatch') {
-        console.error('[square confirm] amount mismatch — NOT marking paid', {
+        logger.error('orders.square_confirm.amount_mismatch', {
           ourOrderId: id,
           squareOrderId: matching.id,
           tenderId: tender?.id,
           expected: result.expected,
           reported: result.reported,
+          markingPaid: false,
         });
         res.status(409).json({ error: 'Payment amount does not match order amount' });
         return;
@@ -1564,7 +1566,7 @@ router.post(
         idempotent: result.status === 'already_completed',
       });
     } catch (err) {
-      console.error('Square confirm error:', err);
+      logger.error('orders.square_confirm.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -1689,7 +1691,7 @@ router.post(
           );
           refundProviderId = refund.id;
         } catch (err) {
-          console.error('[refund] stripe refund failed:', err);
+          logger.error('orders.refund.stripe.failed', { err: String(err) });
           res.status(502).json({ error: 'Stripe refund failed; nothing changed.' });
           return;
         }
@@ -1723,7 +1725,7 @@ router.post(
           });
           refundProviderId = resp.refund?.id ?? null;
         } catch (err) {
-          console.error('[refund] square refund failed:', err);
+          logger.error('orders.refund.square.failed', { err: String(err) });
           res.status(502).json({ error: 'Square refund failed; nothing changed.' });
           return;
         }
@@ -1773,7 +1775,7 @@ router.post(
         // Provider call already succeeded; the order moved out from under us
         // (extremely unlikely race). Don't undo the provider refund — log
         // loudly so an admin can reconcile.
-        console.error('[refund] provider refunded but order state changed', {
+        logger.error('orders.refund.provider_refunded_state_changed', {
           orderId: id,
           refundProviderId,
           refundAmountCents,
@@ -1810,7 +1812,7 @@ router.post(
         refundProviderId,
       });
     } catch (err) {
-      console.error('Refund error:', err);
+      logger.error('orders.refund.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -1843,7 +1845,7 @@ router.get(
 
       res.json({ order: projectOrderParties(order) });
     } catch (err) {
-      console.error('Get order error:', err);
+      logger.error('orders.get.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },

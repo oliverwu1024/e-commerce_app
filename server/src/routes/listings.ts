@@ -14,6 +14,7 @@ import {
   snapshotListing,
 } from '../services/squareCatalog/index.js';
 import { LISTING_IMAGE_TYPES, verifyS3Upload } from '../lib/s3Verify.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -243,7 +244,7 @@ router.get('/', browseLimiter, async (req: Request, res: Response) => {
       },
     });
   } catch (err) {
-    console.error('Browse listings error:', err);
+    logger.error('listings.browse.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -316,7 +317,7 @@ router.get('/my', authenticate, async (req: Request, res: Response) => {
       counts,
     });
   } catch (err) {
-    console.error('My listings error:', err);
+    logger.error('listings.mine.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -452,7 +453,7 @@ router.post('/', authenticate, createListingLimiter, async (req: Request, res: R
       listing: { ...listing, seller: projectPublicSeller(listing.seller) },
     });
   } catch (err) {
-    console.error('Create listing error:', err);
+    logger.error('listings.create.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -653,7 +654,7 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
       listing: { ...result.listing, seller: projectPublicSeller(result.listing.seller) },
     });
   } catch (err) {
-    console.error('Update listing error:', err);
+    logger.error('listings.update.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -766,7 +767,7 @@ router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Re
 
     res.json({ message: 'Listing removed successfully' });
   } catch (err) {
-    console.error('Delete listing error:', err);
+    logger.error('listings.delete.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -837,7 +838,7 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
       },
     });
   } catch (err) {
-    console.error('Get listing error:', err);
+    logger.error('listings.get.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

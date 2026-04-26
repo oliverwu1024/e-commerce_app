@@ -6,6 +6,7 @@ import { addCartItemSchema } from '../schemas/cart.js';
 import { authenticate } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { PUBLIC_LOCATION_SELECT, projectPublicSeller } from '../services/publicLocation.js';
+import { logger } from '../utils/logger.js';
 
 const router = Router();
 
@@ -58,7 +59,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
         },
       });
     } catch (purgeErr) {
-      console.error('Cart REMOVED purge failed (non-fatal):', purgeErr);
+      logger.error('cart.purge_removed.failed', { err: String(purgeErr), nonFatal: true });
     }
 
     const cart = await prisma.cart.findUnique({
@@ -95,7 +96,7 @@ router.get('/', authenticate, async (req: Request, res: Response) => {
       },
     });
   } catch (err) {
-    console.error('Get cart error:', err);
+    logger.error('cart.get.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -150,7 +151,7 @@ router.post('/items', authenticate, cartWriteLimiter, async (req: Request, res: 
       throw err;
     }
   } catch (err) {
-    console.error('Add cart item error:', err);
+    logger.error('cart.add_item.failed', { err: String(err) });
     res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -181,7 +182,7 @@ router.delete(
 
       res.json({ message: 'Removed from cart' });
     } catch (err) {
-      console.error('Remove cart item error:', err);
+      logger.error('cart.remove_item.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },

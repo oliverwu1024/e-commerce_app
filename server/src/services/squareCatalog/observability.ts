@@ -126,6 +126,29 @@ let summaryTask: ScheduledTask | null = null;
 const DAILY_SUMMARY_CRON =
   process.env.SQUARE_CATALOG_SUMMARY_CRON || '0 9 * * *';
 
+// Postgres advisory-lock keys (two int4s identifying this specific cron).
+// pg_try_advisory_lock returns false if any other session already holds the
+// pair, which is exactly the "only one replica fires the summary" property
+// we need. Pick stable, namespaced numbers: 71_92 = ascii 'G','\\' — random
+// enough to not collide with anyone else's locks.
+const SUMMARY_LOCK_KEY_1 = 71;
+const SUMMARY_LOCK_KEY_2 = 9201;
+
+async function withDailySummaryLock<T>(work: () => Promise<T>): Promise<T | null> {
+  // Hold the lock for the duration of the work via a transaction. If we
+  // can't grab it, another replica is already running this tick — skip.
+  return prisma.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<{ ok: boolean }[]>`
+      SELECT pg_try_advisory_xact_lock(${SUMMARY_LOCK_KEY_1}, ${SUMMARY_LOCK_KEY_2}) AS ok
+    `;
+    if (!rows[0]?.ok) {
+      logger.info('square.catalog.daily_summary_skipped_other_replica');
+      return null;
+    }
+    return work();
+  });
+}
+
 export function startDailyFailureSummary(): void {
   if (summaryTask) return;
   if (!cron.validate(DAILY_SUMMARY_CRON)) {
@@ -137,7 +160,7 @@ export function startDailyFailureSummary(): void {
   summaryTask = cron.schedule(
     DAILY_SUMMARY_CRON,
     () => {
-      runDailyFailureSummary().catch((err) =>
+      withDailySummaryLock(runDailyFailureSummary).catch((err) =>
         logger.error('square.catalog.daily_summary_failed', { err: String(err) }),
       );
     },

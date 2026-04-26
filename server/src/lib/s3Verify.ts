@@ -17,13 +17,44 @@
 // the first ~12 bytes and checking magic numbers (`FF D8 FF` for JPEG,
 // `89 50 4E 47` for PNG, etc.). Tracked as future hardening.
 
-import { HeadObjectCommand } from '@aws-sdk/client-s3';
+import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
 import { s3, S3_BUCKET, S3_REGION } from '../config/s3.js';
 import { logger } from '../utils/logger.js';
 
 export type S3VerifyResult =
   | { ok: true }
-  | { ok: false; reason: 'not_found' | 'wrong_type' | 'too_big' | 'misconfigured'; detail?: string };
+  | { ok: false; reason: 'not_found' | 'wrong_type' | 'too_big' | 'misconfigured' | 'magic_mismatch'; detail?: string };
+
+// Magic-number signatures for the file types we accept. We read the first
+// 12 bytes via a Range GET (cheap — typically one round-trip, no body
+// streaming) and require the prefix to match one of these. Closes the
+// "uploaded a PDF as image/jpeg" hole that Content-Type alone can't see.
+const MAGIC_BYTES: Record<string, readonly (readonly number[])[]> = {
+  'image/jpeg': [[0xff, 0xd8, 0xff]],
+  'image/png': [[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]],
+  'image/webp': [[0x52, 0x49, 0x46, 0x46]], // "RIFF" — followed by size, then "WEBP" at byte 8
+  'application/pdf': [[0x25, 0x50, 0x44, 0x46]], // "%PDF"
+};
+
+function prefixMatches(buf: Uint8Array, signature: readonly number[]): boolean {
+  if (buf.length < signature.length) return false;
+  for (let i = 0; i < signature.length; i++) {
+    if (buf[i] !== signature[i]) return false;
+  }
+  return true;
+}
+
+function magicMatches(buf: Uint8Array, contentType: string): boolean {
+  const sigs = MAGIC_BYTES[contentType];
+  if (!sigs) return false;
+  // image/webp also requires "WEBP" at offset 8 after the RIFF header.
+  if (contentType === 'image/webp') {
+    if (!prefixMatches(buf, sigs[0])) return false;
+    if (buf.length < 12) return false;
+    return buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50;
+  }
+  return sigs.some((sig) => prefixMatches(buf, sig));
+}
 
 export type VerifyOptions = {
   allowedContentTypes: readonly string[];
@@ -85,6 +116,32 @@ export async function verifyS3Upload(
       detail: `S3 reports ${head.ContentLength} bytes; max ${options.maxBytes}`,
     };
   }
+
+  // Magic-number check: read just enough bytes to validate the file
+  // signature actually matches the declared Content-Type.
+  try {
+    const range = await s3.send(
+      new GetObjectCommand({ Bucket: S3_BUCKET, Key: key, Range: 'bytes=0-15' }),
+    );
+    const bytes = await range.Body?.transformToByteArray();
+    if (!bytes || bytes.length === 0) {
+      return { ok: false, reason: 'not_found', detail: 'empty body' };
+    }
+    if (!magicMatches(bytes, contentType)) {
+      const hex = Array.from(bytes.slice(0, 8))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join(' ');
+      return {
+        ok: false,
+        reason: 'magic_mismatch',
+        detail: `bytes ${hex} don't match ${contentType}`,
+      };
+    }
+  } catch (err) {
+    logger.error('s3.verify.range_threw', { key, err: String(err) });
+    throw err;
+  }
+
   return { ok: true };
 }
 

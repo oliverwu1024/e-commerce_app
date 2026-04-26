@@ -143,3 +143,18 @@ See `docker-compose.yml` for the full list. The critical ones at minimum:
 - Per-provider payment env vars (`STRIPE_SECRET_KEY`, `SQUARE_APPLICATION_ID`,
   etc.) — empty values are fine; each provider's `/pay` endpoint returns 503
   if it's not configured
+- `ADMIN_PASSWORD_HASH` — bcrypt hash for the seeded admin user (seed.ts only).
+  Generate with:
+  ```bash
+  node -e "require('bcrypt').hash(process.argv[1], 12).then(console.log)" 'your-password'
+  ```
+- `FIREBASE_SERVICE_ACCOUNT` — base64-encoded service-account JSON for the
+  Firebase Admin SDK (used to verify client-issued phone-auth ID tokens).
+  Generate the JSON in Firebase Console → Project Settings → Service accounts,
+  then `base64 -w0 firebase-admin.json`. Treat as a secret.
+
+### Running the Cloudflare Worker (inbound email)
+
+The `cloudflare-worker/inbound-email/` directory holds a Worker that parses
+inbound mail and POSTs to `/api/webhooks/email`. Setup is documented in
+[`docs/inbound-email-setup.md`](docs/inbound-email-setup.md).
