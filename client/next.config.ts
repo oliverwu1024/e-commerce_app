@@ -1,5 +1,6 @@
 import type { NextConfig } from "next";
 import path from "node:path";
+import { withSentryConfig } from "@sentry/nextjs";
 
 const S3_HOST =
   process.env.S3_IMAGE_HOST ||
@@ -130,4 +131,20 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+// Wrap with Sentry's Next.js plugin so source maps upload at build time
+// (auth via SENTRY_AUTH_TOKEN at build time, optional). When neither org
+// nor project is set, the plugin no-ops — useful for local dev where you
+// don't want to talk to Sentry.
+export default withSentryConfig(nextConfig, {
+  org: process.env.SENTRY_ORG,
+  project: process.env.SENTRY_PROJECT,
+  // Silent in CI when auth token isn't present so builds don't fail.
+  silent: !process.env.SENTRY_AUTH_TOKEN,
+  // Delete source maps after upload so they aren't served publicly. Stack
+  // traces in Sentry still resolve via the uploaded maps.
+  sourcemaps: { deleteSourcemapsAfterUpload: true },
+  disableLogger: true,
+  // Tunnel events through a Next.js route to bypass ad-blocker false
+  // positives. Can be removed if you don't care.
+  tunnelRoute: '/monitoring',
+});

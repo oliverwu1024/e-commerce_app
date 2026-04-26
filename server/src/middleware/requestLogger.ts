@@ -1,6 +1,10 @@
 import { Request, Response, NextFunction } from 'express';
 import { randomUUID } from 'node:crypto';
 import { logger } from '../utils/logger.js';
+import {
+  httpRequestsTotal,
+  httpRequestLatency,
+} from '../lib/metrics.js';
 
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace
@@ -38,6 +42,26 @@ export function requestLogger(req: Request, res: Response, next: NextFunction): 
       ms,
       userId: req.userId,
     });
+
+    // Prometheus: route label uses the matched Express route pattern (e.g.
+    // `/api/listings/:id`) when available, falling back to req.path. Using
+    // raw paths would cardinality-explode on uuid-bearing URLs.
+    const route =
+      (req as Request & { route?: { path?: string } }).route?.path ??
+      (req as Request & { baseUrl?: string }).baseUrl
+        ? ((req as Request & { baseUrl?: string }).baseUrl ?? '') +
+          ((req as Request & { route?: { path?: string } }).route?.path ?? '')
+        : req.path;
+    const statusClass =
+      res.statusCode >= 500
+        ? '5xx'
+        : res.statusCode >= 400
+          ? '4xx'
+          : res.statusCode >= 300
+            ? '3xx'
+            : '2xx';
+    httpRequestsTotal.inc({ method: req.method, route, status_class: statusClass });
+    httpRequestLatency.observe({ method: req.method, route }, ms / 1000);
   });
   next();
 }

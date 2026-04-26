@@ -71,14 +71,9 @@ router.get('/', browseLimiter, async (req: Request, res: Response) => {
       };
     }
 
-    if (search) {
-      where.OR = [
-        { title: { contains: search, mode: 'insensitive' } },
-        { description: { contains: search, mode: 'insensitive' } },
-      ];
-    }
-
-    // Build sort order
+    // Build sort order. When a search query is present we override this
+    // with relevance (ts_rank) — sorting by price on a search query
+    // produces near-irrelevant results at the top.
     let orderBy: Prisma.ListingOrderByWithRelationInput;
     switch (sort) {
       case 'price_asc':
@@ -93,44 +88,150 @@ router.get('/', browseLimiter, async (req: Request, res: Response) => {
 
     const skip = (page - 1) * limit;
 
-    // Run count and data queries in parallel
-    const [listings, total] = await Promise.all([
-      prisma.listing.findMany({
-        where,
-        orderBy,
-        skip,
-        take: limit,
-        select: {
-          id: true,
-          title: true,
-          price: true,
-          fulfillmentMethod: true,
-          shippingPrice: true,
-          category: true,
-          brand: true,
-          condition: true,
-          status: true,
-          createdAt: true,
-          seller: {
+    // Search path: full-text search via tsvector + GIN. The searchVector
+    // column is a STORED generated column populated from
+    // title + brand + category + description with weighted setweight
+    // levels (A→D respectively), so a hit on the title outranks one in
+    // the description. websearch_to_tsquery accepts user-friendly query
+    // syntax: "iphone -case OR samsung". We get back ranked ids in one
+    // query, then fetch full rows in the second so the response shape
+    // exactly matches the non-search path.
+    // We use the same projection shape in both branches; bind it explicitly
+    // so the conditional doesn't force the broader Listing type.
+    type ListingRow = {
+      id: string;
+      title: string;
+      price: Prisma.Decimal;
+      fulfillmentMethod: 'POST_ONLY' | 'PICKUP_ONLY' | 'BOTH';
+      shippingPrice: Prisma.Decimal | null;
+      category: string;
+      brand: string | null;
+      condition: 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'POOR';
+      status: 'ACTIVE' | 'ON_HOLD' | 'SOLD' | 'REMOVED';
+      createdAt: Date;
+      seller: {
+        id: string;
+        username: string;
+        avatarUrl: string | null;
+        sellerType: 'PERSONAL' | 'BUSINESS';
+        location: string | null;
+        addressLine1: string | null;
+        suburb: string | null;
+        postcode: string | null;
+        state: string | null;
+        showFullAddressPublicly: boolean;
+      };
+      images: { id: string; url: string }[];
+    };
+    let listings: ListingRow[];
+    let total: number;
+    if (search) {
+      const rankedRows = await prisma.$queryRaw<
+        { id: string; rank: number }[]
+      >(
+        Prisma.sql`
+          SELECT id, ts_rank("searchVector", websearch_to_tsquery('english', ${search})) AS rank
+          FROM "Listing"
+          WHERE "searchVector" @@ websearch_to_tsquery('english', ${search})
+            AND status = 'ACTIVE'
+            ${category ? Prisma.sql`AND lower(category) = lower(${category})` : Prisma.empty}
+            ${brand ? Prisma.sql`AND lower(brand) = lower(${brand})` : Prisma.empty}
+            ${condition ? Prisma.sql`AND condition = ${condition}::"Condition"` : Prisma.empty}
+            ${sellerId ? Prisma.sql`AND "sellerId" = ${sellerId}` : Prisma.empty}
+            ${minPrice !== undefined ? Prisma.sql`AND price >= ${minPrice}` : Prisma.empty}
+            ${maxPrice !== undefined ? Prisma.sql`AND price <= ${maxPrice}` : Prisma.empty}
+          ORDER BY rank DESC, "createdAt" DESC
+          LIMIT ${limit} OFFSET ${skip}
+        `,
+      );
+      const totalRow = await prisma.$queryRaw<{ count: bigint }[]>(
+        Prisma.sql`
+          SELECT COUNT(*)::bigint AS count
+          FROM "Listing"
+          WHERE "searchVector" @@ websearch_to_tsquery('english', ${search})
+            AND status = 'ACTIVE'
+            ${category ? Prisma.sql`AND lower(category) = lower(${category})` : Prisma.empty}
+            ${brand ? Prisma.sql`AND lower(brand) = lower(${brand})` : Prisma.empty}
+            ${condition ? Prisma.sql`AND condition = ${condition}::"Condition"` : Prisma.empty}
+            ${sellerId ? Prisma.sql`AND "sellerId" = ${sellerId}` : Prisma.empty}
+            ${minPrice !== undefined ? Prisma.sql`AND price >= ${minPrice}` : Prisma.empty}
+            ${maxPrice !== undefined ? Prisma.sql`AND price <= ${maxPrice}` : Prisma.empty}
+        `,
+      );
+      total = Number(totalRow[0]?.count ?? 0);
+
+      const ids = rankedRows.map((r) => r.id);
+      const rankById = new Map(rankedRows.map((r) => [r.id, r.rank]));
+      listings = ids.length === 0
+        ? []
+        : (await prisma.listing.findMany({
+            where: { id: { in: ids } },
             select: {
               id: true,
-              username: true,
-              avatarUrl: true,
-              ...PUBLIC_LOCATION_SELECT,
+              title: true,
+              price: true,
+              fulfillmentMethod: true,
+              shippingPrice: true,
+              category: true,
+              brand: true,
+              condition: true,
+              status: true,
+              createdAt: true,
+              seller: {
+                select: {
+                  id: true,
+                  username: true,
+                  avatarUrl: true,
+                  ...PUBLIC_LOCATION_SELECT,
+                },
+              },
+              images: {
+                orderBy: { displayOrder: 'asc' },
+                take: 1,
+                select: { id: true, url: true },
+              },
+            },
+          })).sort((a, b) => (rankById.get(b.id) ?? 0) - (rankById.get(a.id) ?? 0));
+    } else {
+      // Non-search path: standard Prisma query, unchanged.
+      [listings, total] = await Promise.all([
+        prisma.listing.findMany({
+          where,
+          orderBy,
+          skip,
+          take: limit,
+          select: {
+            id: true,
+            title: true,
+            price: true,
+            fulfillmentMethod: true,
+            shippingPrice: true,
+            category: true,
+            brand: true,
+            condition: true,
+            status: true,
+            createdAt: true,
+            seller: {
+              select: {
+                id: true,
+                username: true,
+                avatarUrl: true,
+                ...PUBLIC_LOCATION_SELECT,
+              },
+            },
+            images: {
+              orderBy: { displayOrder: 'asc' },
+              take: 1,
+              select: {
+                id: true,
+                url: true,
+              },
             },
           },
-          images: {
-            orderBy: { displayOrder: 'asc' },
-            take: 1,
-            select: {
-              id: true,
-              url: true,
-            },
-          },
-        },
-      }),
-      prisma.listing.count({ where }),
-    ]);
+        }),
+        prisma.listing.count({ where }),
+      ]);
+    }
 
     res.json({
       listings: listings.map((l) => ({ ...l, seller: projectPublicSeller(l.seller) })),
@@ -430,6 +531,10 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
       });
       if (current?.status !== 'ACTIVE' || current.sellerId !== req.userId) return null;
 
+      // Captured outbox ids for outside-tx enqueue (LISTING_UPSERT and
+      // optionally an IMAGE_DELETE for any orphaned Square images).
+      let imageDeleteOutboxId: string | null = null;
+
       if (images !== undefined) {
         // Preserve ListingImage rows whose URL is unchanged so their
         // squareImageId (if any) carries over — otherwise every save would
@@ -442,7 +547,11 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
         //   Phase 4: assign final displayOrder to every row in one pass
         const currentRows = await tx.listingImage.findMany({
           where: { listingId: id },
-          select: { id: true, url: true },
+          // Pull squareImageId so we can enqueue an IMAGE_DELETE outbox
+          // row for any rows that are about to be removed — otherwise
+          // those Square CatalogImage objects orphan and count against
+          // the seller's catalog quota forever.
+          select: { id: true, url: true, squareImageId: true },
         });
         const desiredUrls = new Set(images.map((img) => img.url));
         const toDelete = currentRows.filter((r) => !desiredUrls.has(r.url));
@@ -450,6 +559,21 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
           await tx.listingImage.deleteMany({
             where: { id: { in: toDelete.map((r) => r.id) } },
           });
+          const orphanedSquareIds = toDelete
+            .map((r) => r.squareImageId)
+            .filter((x): x is string => Boolean(x));
+          if (orphanedSquareIds.length > 0) {
+            imageDeleteOutboxId = await createOutboxRow({
+              tx,
+              listingId: id,
+              sellerId: req.userId!,
+              kind: 'IMAGE_DELETE',
+              payload: {
+                kind: 'IMAGE_DELETE',
+                squareImageIds: orphanedSquareIds,
+              },
+            });
+          }
         }
 
         const survivorByUrl = new Map(
@@ -510,7 +634,7 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
           listing: snapshotListing(updated),
         },
       });
-      return { listing: updated, outboxId: oid };
+      return { listing: updated, outboxId: oid, imageDeleteOutboxId };
     });
 
     if (!result) {
@@ -520,6 +644,9 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
 
     if (result.outboxId) {
       void enqueueOutbox(result.outboxId);
+    }
+    if (result.imageDeleteOutboxId) {
+      void enqueueOutbox(result.imageDeleteOutboxId);
     }
 
     res.json({
@@ -577,7 +704,11 @@ router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Re
         select: { status: true, sellerId: true },
       });
       if (current?.status !== 'ACTIVE' || current.sellerId !== req.userId) {
-        return { removed: false, outboxId: null as string | null };
+        return {
+          removed: false,
+          outboxId: null as string | null,
+          imageDeleteOutboxId: null as string | null,
+        };
       }
 
       const updated = await tx.listing.update({
@@ -595,7 +726,30 @@ router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Re
           listing: snapshotListing(updated),
         },
       });
-      return { removed: true, outboxId: oid };
+
+      // Square's batchDelete cascades Item→Variation but NOT Item→
+      // CatalogImage (images are independent objects referenced by id).
+      // So when we soft-delete a listing, capture every CatalogImage id
+      // we ever uploaded for it and queue an IMAGE_DELETE so the
+      // seller's catalog quota doesn't accumulate orphans.
+      const orphanedSquareIds = updated.images
+        .map((img) => img.squareImageId)
+        .filter((x): x is string => Boolean(x));
+      let imageDeleteOutboxId: string | null = null;
+      if (orphanedSquareIds.length > 0) {
+        imageDeleteOutboxId = await createOutboxRow({
+          tx,
+          listingId: id,
+          sellerId: req.userId!,
+          kind: 'IMAGE_DELETE',
+          payload: {
+            kind: 'IMAGE_DELETE',
+            squareImageIds: orphanedSquareIds,
+          },
+        });
+      }
+
+      return { removed: true, outboxId: oid, imageDeleteOutboxId };
     });
 
     if (!result.removed) {
@@ -605,6 +759,9 @@ router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Re
 
     if (result.outboxId) {
       void enqueueOutbox(result.outboxId);
+    }
+    if (result.imageDeleteOutboxId) {
+      void enqueueOutbox(result.imageDeleteOutboxId);
     }
 
     res.json({ message: 'Listing removed successfully' });

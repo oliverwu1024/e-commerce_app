@@ -5,43 +5,33 @@
 import prisma from '../../lib/prisma.js';
 import { logger } from '../../utils/logger.js';
 import { sendSyncFailureSummaryEmail } from './emails.js';
+import {
+  squareSyncTotal,
+  squareSyncLatency,
+} from '../../lib/metrics.js';
 
 type Outcome = 'STARTED' | 'SUCCESS' | 'FAILURE' | 'CONFLICT' | 'SKIPPED';
-type Kind = 'LISTING_UPSERT' | 'LISTING_DELETE' | 'INVENTORY_ADJUST';
+type Kind =
+  | 'LISTING_UPSERT'
+  | 'LISTING_DELETE'
+  | 'INVENTORY_ADJUST'
+  | 'IMAGE_DELETE';
 
-// In-memory metrics counters. These are NOT a replacement for Prometheus —
-// they're a starting point that:
-//   - Powers a `/api/admin/square-catalog/metrics` endpoint
-//   - Lets us prove "we instrumented sync" in interviews
-// A real deployment would scrape these into a time-series DB.
-const counters: Record<string, number> = {};
-const latencyBuckets: Record<string, { count: number; sumMs: number; max: number }> = {};
-
-function bumpCounter(key: string, by = 1): void {
-  counters[key] = (counters[key] ?? 0) + by;
-}
-
-function recordLatency(key: string, ms: number): void {
-  const bucket = latencyBuckets[key] ?? { count: 0, sumMs: 0, max: 0 };
-  bucket.count += 1;
-  bucket.sumMs += ms;
-  if (ms > bucket.max) bucket.max = ms;
-  latencyBuckets[key] = bucket;
-}
-
+// Metrics now live in Prometheus (see `lib/metrics.ts`). The admin endpoint
+// formerly returned an in-memory snapshot; keeping the function signature
+// for backward compat but it now returns a static "see /metrics" pointer
+// so old admin UIs don't break. Real scraping happens at /metrics with a
+// Prometheus-compatible scraper.
 export function getMetricsSnapshot(): {
   counters: Record<string, number>;
   latencies: Record<string, { count: number; avgMs: number; maxMs: number }>;
+  note: string;
 } {
-  const latencies: Record<string, { count: number; avgMs: number; maxMs: number }> = {};
-  for (const [k, v] of Object.entries(latencyBuckets)) {
-    latencies[k] = {
-      count: v.count,
-      avgMs: v.count === 0 ? 0 : Math.round(v.sumMs / v.count),
-      maxMs: v.max,
-    };
-  }
-  return { counters: { ...counters }, latencies };
+  return {
+    counters: {},
+    latencies: {},
+    note: 'Metrics moved to Prometheus. Scrape /metrics with the configured METRICS_AUTH_TOKEN.',
+  };
 }
 
 /**
@@ -112,36 +102,57 @@ export async function recordSyncEvent(args: {
     squareObjectId: args.squareObjectId,
   });
 
-  // Counters + latency.
-  bumpCounter(`sync.${args.kind}.${args.outcome}`);
+  // Prometheus counters + latency histogram.
+  squareSyncTotal.inc({ kind: args.kind, outcome: args.outcome });
   if (typeof args.durationMs === 'number') {
-    recordLatency(`sync.${args.kind}.${args.action}`, args.durationMs);
+    squareSyncLatency.observe(
+      { kind: args.kind, action: args.action },
+      args.durationMs / 1000,
+    );
   }
 }
 
 // ─── Daily summary cron ───────────────────────────────────────────────────
+//
+// Backed by node-cron. Runs at 09:00 UTC every day (~early-evening AU).
+// Earlier this was a setTimeout chain pegged to "24h after server boot",
+// which drifts on every restart and means a redeploy can either skip a
+// day or fire two summaries within hours of each other. Cron fixes that.
 
-let summaryTimer: NodeJS.Timeout | null = null;
+import cron, { type ScheduledTask } from 'node-cron';
+
+let summaryTask: ScheduledTask | null = null;
+
+const DAILY_SUMMARY_CRON =
+  process.env.SQUARE_CATALOG_SUMMARY_CRON || '0 9 * * *';
 
 export function startDailyFailureSummary(): void {
-  if (summaryTimer) return;
-  // Every 24h. We don't try to align to "midnight" — the email's body
-  // says "in the last 24 hours" so the actual run time doesn't matter.
-  // First run is delayed by 1 hour so a fresh deploy isn't immediately
-  // bombarded by daily emails on top of the existing monitoring noise.
-  const ONE_DAY = 24 * 60 * 60 * 1000;
-  summaryTimer = setTimeout(function tick() {
-    runDailyFailureSummary().catch((err) =>
-      logger.error('square.catalog.daily_summary_failed', { err: String(err) }),
-    );
-    summaryTimer = setTimeout(tick, ONE_DAY);
-  }, 60 * 60 * 1000);
+  if (summaryTask) return;
+  if (!cron.validate(DAILY_SUMMARY_CRON)) {
+    logger.error('square.catalog.daily_summary_invalid_cron', {
+      cron: DAILY_SUMMARY_CRON,
+    });
+    return;
+  }
+  summaryTask = cron.schedule(
+    DAILY_SUMMARY_CRON,
+    () => {
+      runDailyFailureSummary().catch((err) =>
+        logger.error('square.catalog.daily_summary_failed', { err: String(err) }),
+      );
+    },
+    { timezone: 'UTC' },
+  );
+  logger.info('square.catalog.daily_summary_scheduled', {
+    cron: DAILY_SUMMARY_CRON,
+    timezone: 'UTC',
+  });
 }
 
 export function stopDailyFailureSummary(): void {
-  if (summaryTimer) {
-    clearTimeout(summaryTimer);
-    summaryTimer = null;
+  if (summaryTask) {
+    summaryTask.stop();
+    summaryTask = null;
   }
 }
 

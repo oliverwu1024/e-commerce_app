@@ -36,10 +36,23 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
     'NOT_RECEIVED' | 'NOT_AS_DESCRIBED' | 'DAMAGED' | 'OTHER'
   >('NOT_RECEIVED');
   const [disputeDescription, setDisputeDescription] = useState('');
+  const [showRefundForm, setShowRefundForm] = useState(false);
+  // Track the input as a string so the field can be empty mid-edit without
+  // the input jumping around (parseFloat('') === NaN). Validated on submit.
+  const [refundAmountInput, setRefundAmountInput] = useState('');
+  const [refundReasonInput, setRefundReasonInput] = useState('');
 
   const imageUrl = order.listing.images[0]?.url;
   const otherParty = role === 'buyer' ? order.seller : order.buyer;
   const statusStyle = ORDER_STATUS_STYLES[order.status];
+  // Refund accounting. Order.amount is a string ("19.99"); convert to cents
+  // for arithmetic. totalRefundedCents is an Int. remaining < 0 means
+  // "fully refunded already" (REFUNDED status); == amount means full,
+  // 0 < remaining < amount means a partial has been issued.
+  const totalCents = Math.round(parseFloat(order.amount) * 100);
+  const remainingCents = Math.max(0, totalCents - order.totalRefundedCents);
+  const partialRefundIssued =
+    order.totalRefundedCents > 0 && order.status !== 'REFUNDED';
   const createdDate = new Intl.DateTimeFormat('en-AU', {
     day: 'numeric',
     month: 'short',
@@ -87,21 +100,52 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
     }
   }
 
-  async function handleRefund() {
-    // Wallet refunds (Stripe / Square) re-credit the buyer's original card,
-    // which usually takes 5–10 days at their bank. CASH / BANK_TRANSFER
-    // assume the seller has settled offline; we just record the refund
-    // here so the order history is consistent.
+  function openRefundForm() {
+    // Default the input to the remaining refundable balance — the most
+    // common case is "refund the rest." The seller can edit before submit
+    // for partial refunds.
+    setRefundAmountInput((remainingCents / 100).toFixed(2));
+    setRefundReasonInput('');
+    setError('');
+    setShowRefundForm(true);
+  }
+
+  async function handleSubmitRefund() {
+    // Validate locally before round-tripping. Server enforces the upper
+    // bound but a friendly inline error is better than a 400 toast.
+    const dollars = Number(refundAmountInput);
+    if (!Number.isFinite(dollars) || dollars <= 0) {
+      setError('Enter a refund amount greater than zero.');
+      return;
+    }
+    const cents = Math.round(dollars * 100);
+    if (cents > remainingCents) {
+      setError(
+        `Refund amount exceeds remaining balance ($${(remainingCents / 100).toFixed(2)}).`,
+      );
+      return;
+    }
     const wallet =
       order.paymentMethod === 'STRIPE' || order.paymentMethod === 'SQUARE';
+    const isFull = cents === remainingCents && order.totalRefundedCents === 0;
+    const verb = isFull ? 'refund' : cents === remainingCents ? 'finalise the refund of' : 'partially refund';
     const msg = wallet
-      ? `Refund A$${order.amount} to the buyer via ${order.paymentMethod}? This is a full refund and cannot be reversed from inside ElectroMarket.`
-      : `Mark this order as refunded? You should already have returned the buyer's payment via ${order.paymentMethod ? PAYMENT_METHOD_LABELS[order.paymentMethod] : 'the original method'} before doing this.`;
+      ? `${verb[0].toUpperCase()}${verb.slice(1)} A$${(cents / 100).toFixed(2)} to the buyer via ${order.paymentMethod}? This cannot be reversed from inside ElectroMarket.`
+      : `${verb[0].toUpperCase()}${verb.slice(1)} A$${(cents / 100).toFixed(2)}? You should already have returned the money via ${order.paymentMethod ? PAYMENT_METHOD_LABELS[order.paymentMethod] : 'the original method'} before clicking confirm.`;
     if (!confirm(msg)) return;
     setBusy(true);
     setError('');
     try {
-      await api(`/api/orders/${order.id}/refund`, { method: 'POST' });
+      await api(`/api/orders/${order.id}/refund`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amountCents: cents,
+          reason: refundReasonInput.trim() || undefined,
+        }),
+      });
+      setShowRefundForm(false);
+      setRefundAmountInput('');
+      setRefundReasonInput('');
       onChange();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Refund failed');
@@ -268,7 +312,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
         </button>,
         <button
           key="refund"
-          onClick={handleRefund}
+          onClick={openRefundForm}
           disabled={busy}
           className="btn-cyber-outline text-xs"
         >
@@ -282,7 +326,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
       actions.push(
         <button
           key="refund"
-          onClick={handleRefund}
+          onClick={openRefundForm}
           disabled={busy}
           className="btn-cyber-outline text-xs"
         >
@@ -432,6 +476,14 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             <span className={`rounded-md px-2 py-0.5 font-medium ${statusStyle.bg}`}>
               {statusStyle.label}
             </span>
+            {partialRefundIssued && (
+              <span
+                className="rounded-md border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] px-2 py-0.5 font-medium text-[var(--neon-amber)]"
+                title="A partial refund has been issued; the order remains otherwise active."
+              >
+                Refunded ${(order.totalRefundedCents / 100).toFixed(2)} of ${order.amount}
+              </span>
+            )}
             <span className="text-[var(--text-muted)]">
               {otherPartyLabel}:{' '}
               {role === 'buyer' ? (
@@ -649,6 +701,76 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
               below. They&apos;ll mark the order as paid once payment is received.
             </p>
           )}
+        </div>
+      )}
+
+      {/* Refund form — seller issuing a (possibly partial) refund */}
+      {showRefundForm && role === 'seller' && (
+        <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4 space-y-3">
+          <p className="text-xs font-medium text-[var(--text-primary)]">
+            Issue a refund for this order
+          </p>
+          {order.totalRefundedCents > 0 && (
+            <p className="text-[11px] text-[var(--text-muted)]">
+              Already refunded: A${(order.totalRefundedCents / 100).toFixed(2)} of A${order.amount}.
+              Remaining refundable: A${(remainingCents / 100).toFixed(2)}.
+            </p>
+          )}
+          <div>
+            <label className="text-[11px] text-[var(--text-muted)]">
+              Refund amount (AUD)
+            </label>
+            <input
+              type="number"
+              value={refundAmountInput}
+              onChange={(e) => setRefundAmountInput(e.target.value)}
+              min="0.01"
+              step="0.01"
+              max={(remainingCents / 100).toFixed(2)}
+              disabled={busy}
+              className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel)] p-2 text-xs text-[var(--text-primary)]"
+            />
+          </div>
+          <div>
+            <label className="text-[11px] text-[var(--text-muted)]">
+              Reason (optional, shown to the buyer)
+            </label>
+            <textarea
+              value={refundReasonInput}
+              onChange={(e) => setRefundReasonInput(e.target.value)}
+              placeholder="e.g. item shipped damaged, partial discount agreed"
+              rows={2}
+              maxLength={500}
+              disabled={busy}
+              className="mt-1 w-full rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel)] p-2 text-xs text-[var(--text-primary)]"
+            />
+          </div>
+          <p className="text-[11px] text-[var(--text-dim)]">
+            {order.paymentMethod === 'STRIPE' || order.paymentMethod === 'SQUARE'
+              ? 'Wallet refunds re-credit the buyer’s original card. Funds typically appear in 5–10 business days.'
+              : 'For cash / bank transfer / PayPal, you must have already returned the funds offline. This step only records the refund.'}
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={handleSubmitRefund}
+              disabled={busy || !refundAmountInput.trim()}
+              className="btn-cyber-primary text-xs disabled:opacity-50"
+            >
+              {busy ? 'Refunding…' : 'Issue refund'}
+            </button>
+            <button
+              onClick={() => {
+                setShowRefundForm(false);
+                setRefundAmountInput('');
+                setRefundReasonInput('');
+                setError('');
+              }}
+              disabled={busy}
+              className="btn-cyber-ghost text-xs"
+            >
+              Cancel
+            </button>
+          </div>
         </div>
       )}
 

@@ -1,4 +1,11 @@
 import 'dotenv/config';
+// Sentry MUST init before any route or handler import — its instrumentation
+// works by patching modules at require time. If we initSentry() after the
+// route imports, those modules are already loaded without the patches and
+// errors thrown inside them won't be captured.
+import { initSentry, mountSentryMiddleware } from './lib/sentry.js';
+initSentry();
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -21,7 +28,6 @@ import contactRoutes from './routes/contact.js';
 import sellerPaymentRoutes from './routes/sellerPayments.js';
 import disputeRoutes from './routes/disputes.js';
 import squareCatalogRoutes from './routes/squareCatalog.js';
-import { validateSquareWebhookConfig } from './config/square.js';
 import { verifySmtpAtStartup } from './config/email.js';
 import { verifyFirebaseAtStartup } from './config/firebase.js';
 import { csrfOriginGuard } from './middleware/csrf.js';
@@ -47,7 +53,6 @@ function validateEnv(): void {
   }
 }
 validateEnv();
-validateSquareWebhookConfig();
 verifySmtpAtStartup();
 verifyFirebaseAtStartup();
 
@@ -105,6 +110,29 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 
+// Prometheus exposition. Token-gated via METRICS_AUTH_TOKEN — any value works
+// as long as the same value is configured in the scraper's bearer auth.
+// Returns 503 if the token isn't configured (fail-closed; no point exposing
+// metrics to the open internet).
+app.get('/metrics', async (req, res) => {
+  const expected = process.env.METRICS_AUTH_TOKEN;
+  if (!expected) {
+    res.status(503).type('text/plain').send('metrics endpoint disabled (METRICS_AUTH_TOKEN not set)');
+    return;
+  }
+  const auth = req.headers.authorization ?? '';
+  const provided = auth.startsWith('Bearer ') ? auth.slice('Bearer '.length) : null;
+  if (provided !== expected) {
+    res.status(401).type('text/plain').send('unauthorized');
+    return;
+  }
+  // Lazy require so index.ts doesn't pay the prom-client init cost until
+  // the first scrape (cheap, but it's not worth eagerly importing).
+  const { registry } = await import('./lib/metrics.js');
+  res.setHeader('Content-Type', registry.contentType);
+  res.send(await registry.metrics());
+});
+
 // CSRF defence: browser-originated mutations must declare an Origin in the
 // CORS allowlist. Covers every /api route below. Webhooks + health are above
 // this line so they bypass.
@@ -127,6 +155,10 @@ app.use('/api/seller/payments', sellerPaymentRoutes);
 app.use('/api/square-catalog', squareCatalogRoutes);
 // disputes mounts its own /orders/:id/disputes and /admin/disputes paths
 app.use('/api', disputeRoutes);
+
+// Sentry error capture — must come AFTER all routes so it sees thrown
+// errors. Idempotent no-op when SENTRY_DSN is unset.
+mountSentryMiddleware(app);
 
 const server = app.listen(PORT, () => {
   logger.info('server.start', { port: Number(PORT) });

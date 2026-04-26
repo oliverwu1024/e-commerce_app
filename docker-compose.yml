@@ -60,11 +60,15 @@ services:
       # returns 503 if the corresponding provider isn't configured.
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN:-}
-      SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-}
+      # Square: only the OAuth application credentials + per-seller connected
+      # accounts are used. The legacy platform-level SQUARE_ACCESS_TOKEN /
+      # SQUARE_LOCATION_ID / SQUARE_WEBHOOK_* env vars were removed in the
+      # 2026-05-01 cleanup along with the deprecated /api/webhooks/square
+      # payment handler.
       SQUARE_ENV: ${SQUARE_ENV:-sandbox}
-      SQUARE_WEBHOOK_SIGNATURE_KEY: ${SQUARE_WEBHOOK_SIGNATURE_KEY:-}
-      SQUARE_WEBHOOK_URL: ${SQUARE_WEBHOOK_URL:-}
+      SQUARE_APPLICATION_ID: ${SQUARE_APPLICATION_ID:-}
+      SQUARE_APPLICATION_SECRET: ${SQUARE_APPLICATION_SECRET:-}
+      SQUARE_OAUTH_STATE_SECRET: ${SQUARE_OAUTH_STATE_SECRET:-}
       # Catalog sync — pulled from a single demo merchant's Square account
       # (separate from per-seller OAuth) for the public Featured rail.
       SQUARE_FEATURED_ACCESS_TOKEN: ${SQUARE_FEATURED_ACCESS_TOKEN:-}
@@ -73,6 +77,9 @@ services:
       # gracefully — the toggles in the UI still appear, but sync jobs
       # are not enqueued, and the seller sees a "queue offline" message.
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
+      # Observability — both no-op when unset.
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      METRICS_AUTH_TOKEN: ${METRICS_AUTH_TOKEN:-}
     # Run prisma generate before starting so the src bind-mount below doesn't wipe
     # the generated client baked into the image at build time.
     command: sh -c "npx prisma generate && npm run dev"

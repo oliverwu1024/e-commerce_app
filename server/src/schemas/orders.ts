@@ -91,12 +91,20 @@ export const shipSchema = z.object({
 export type ShipInput = z.infer<typeof shipSchema>;
 
 // Seller-initiated refund. Optional reason shown to the buyer + stored
-// on the order for the seller's own records.
+// on the order for the seller's own records. amountCents is optional —
+// when omitted, refund the entire remaining refundable balance (the
+// "full refund" case). When supplied, it must be > 0 and ≤ remaining;
+// the server enforces the upper bound against the order's actual state.
 export const refundSchema = z.object({
   reason: z
     .string()
     .trim()
     .max(500, 'Reason must be 500 characters or fewer')
+    .optional(),
+  amountCents: z
+    .number()
+    .int('Refund amount must be a whole number of cents')
+    .positive('Refund amount must be greater than zero')
     .optional(),
 });
 

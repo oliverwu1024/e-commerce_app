@@ -116,6 +116,13 @@ export type Order = {
   trackingNumber: string | null;
   shippedAt: string | null;
   deliveredAt: string | null;
+  // Cumulative refunded amount in cents. 0 = no refund yet. When the
+  // sum of refunds equals amount*100, status flips to REFUNDED; before
+  // that, partial refunds keep the prior status (PAID/SHIPPED/COMPLETED)
+  // and the UI surfaces a "Refunded $X of $Y" badge.
+  totalRefundedCents: number;
+  refundedAt: string | null;
+  refundReason: string | null;
   createdAt: string;
   updatedAt: string;
   listing: OrderListing;

@@ -73,11 +73,10 @@ services:
       AWS_S3_BUCKET: ${AWS_S3_BUCKET:?AWS_S3_BUCKET is required}
       STRIPE_SECRET_KEY: ${STRIPE_SECRET_KEY:-}
       STRIPE_WEBHOOK_SECRET: ${STRIPE_WEBHOOK_SECRET:-}
-      SQUARE_ACCESS_TOKEN: ${SQUARE_ACCESS_TOKEN:-}
-      SQUARE_LOCATION_ID: ${SQUARE_LOCATION_ID:-}
+      # Square uses connected accounts (OAuth) only. Legacy platform-level
+      # SQUARE_ACCESS_TOKEN / SQUARE_LOCATION_ID / SQUARE_WEBHOOK_* removed
+      # 2026-05-01 with the deprecated /api/webhooks/square handler.
       SQUARE_ENV: ${SQUARE_ENV:-production}
-      SQUARE_WEBHOOK_SIGNATURE_KEY: ${SQUARE_WEBHOOK_SIGNATURE_KEY:-}
-      SQUARE_WEBHOOK_URL: ${SQUARE_WEBHOOK_URL:-}
       SQUARE_OAUTH_STATE_SECRET: ${SQUARE_OAUTH_STATE_SECRET:-}
       SQUARE_APPLICATION_ID: ${SQUARE_APPLICATION_ID:-}
       SQUARE_APPLICATION_SECRET: ${SQUARE_APPLICATION_SECRET:-}
@@ -90,6 +89,12 @@ services:
       SQUARE_CATALOG_WEBHOOK_URL: ${SQUARE_CATALOG_WEBHOOK_URL:-}
       REDIS_URL: ${REDIS_URL:?REDIS_URL is required for the catalog sync queue}
       PAYMENT_TOKEN_ENCRYPTION_KEY: ${PAYMENT_TOKEN_ENCRYPTION_KEY:?PAYMENT_TOKEN_ENCRYPTION_KEY is required}
+      # Observability: Sentry server-side (no-op when DSN unset).
+      SENTRY_DSN: ${SENTRY_DSN:-}
+      SENTRY_RELEASE: ${SENTRY_RELEASE:-}
+      # Prometheus scrape token. Set this AND configure your scraper's
+      # bearer auth to the same value. Leave unset to disable /metrics.
+      METRICS_AUTH_TOKEN: ${METRICS_AUTH_TOKEN:-}
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/api/health"]
       interval: 15s

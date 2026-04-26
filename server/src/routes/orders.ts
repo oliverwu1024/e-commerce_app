@@ -19,7 +19,6 @@ import {
   isStripeConfigured,
 } from '../config/stripe.js';
 import { SquareClient, SquareEnvironment } from 'square';
-import { isSquareConfigured } from '../config/square.js';
 import { markOrderPaid } from '../services/orderPayments.js';
 import {
   canAcceptPayments,
@@ -67,6 +66,12 @@ const ORDER_SUMMARY_SELECT = {
   trackingNumber: true,
   shippedAt: true,
   deliveredAt: true,
+  // Cumulative refund total (cents). Lets the Purchases / Sales tabs render
+  // a "Refunded $X of $Y" badge for partially-refunded orders. The latest
+  // reason / timestamp on the order itself (denormalised) renders next to it.
+  totalRefundedCents: true,
+  refundedAt: true,
+  refundReason: true,
   createdAt: true,
   updatedAt: true,
   listing: {
@@ -1283,10 +1288,9 @@ router.post(
       }
 
       if (paymentMethod === 'SQUARE') {
-        if (!isSquareConfigured()) {
-          res.status(503).json({ error: 'Square is not configured on this server' });
-          return;
-        }
+        // Connected-accounts model: the seller's own OAuth tokens are what
+        // matter, not any platform-level Square credentials. If the seller
+        // doesn't have an active Square connection, fail closed.
         const sellerAccount = await findAccount(order.sellerId, 'SQUARE');
         if (!canAcceptPayments(sellerAccount) || !sellerAccount?.accessToken || !sellerAccount?.locationId) {
           res.status(503).json({ error: NOT_CONNECTED_MESSAGE });
@@ -1572,8 +1576,13 @@ router.post(
 // connected provider account (Stripe Connect via stripeAccount header, Square
 // via seller's OAuth token) so the original card / wallet is credited. For
 // CASH / BANK_TRANSFER, no provider call — we trust the seller has settled
-// the offline channel and just flip status to REFUNDED for record-keeping.
-// Full-refund only in v1; partial-refund is a follow-up.
+// the offline channel and just record the refund for audit.
+//
+// Partial refunds: the body may include `amountCents` (positive integer); when
+// omitted we refund the entire remaining balance. The order's status only
+// flips to REFUNDED when the cumulative refund total equals the order amount;
+// partial refunds keep the prior status (PAID/SHIPPED/COMPLETED) and surface
+// in the UI as "Refunded $X of $Y" badges.
 // ---------------------------------------------------------------------------
 router.post(
   '/:id/refund',
@@ -1591,7 +1600,7 @@ router.post(
         res.status(400).json({ error: parsed.error.issues[0].message });
         return;
       }
-      const { reason } = parsed.data;
+      const { reason, amountCents: requestedAmountCents } = parsed.data;
 
       const order = await prisma.order.findUnique({
         where: { id },
@@ -1603,6 +1612,7 @@ router.post(
           sellerId: true,
           paymentMethod: true,
           paymentProviderId: true,
+          totalRefundedCents: true,
           listing: { select: { id: true, title: true } },
           buyer: { select: { username: true } },
         },
@@ -1630,7 +1640,24 @@ router.post(
         return;
       }
 
-      const amountCents = Math.round(Number(order.amount) * 100);
+      const totalCents = Math.round(Number(order.amount) * 100);
+      const remainingCents = totalCents - order.totalRefundedCents;
+      if (remainingCents <= 0) {
+        res.status(409).json({ error: 'Order has already been fully refunded.' });
+        return;
+      }
+      // Default = refund the remainder. If the seller asked for a specific
+      // amount, validate it's positive and not more than what's left to give
+      // back.
+      const refundAmountCents = requestedAmountCents ?? remainingCents;
+      if (refundAmountCents > remainingCents) {
+        res.status(400).json({
+          error: `Refund amount exceeds remaining refundable balance (${remainingCents} cents).`,
+        });
+        return;
+      }
+
+      const isFullRemaining = refundAmountCents === remainingCents;
       let refundProviderId: string | null = null;
 
       if (order.paymentMethod === 'STRIPE') {
@@ -1649,8 +1676,15 @@ router.post(
           return;
         }
         try {
+          // Pass `amount` for partial refunds. Stripe interprets omitted amount
+          // as "refund the entire remainder" — same semantics we want, so we
+          // could omit on full-remaining refunds, but passing it always keeps
+          // the API call symmetric and makes the audit log unambiguous.
           const refund = await getStripeClient().refunds.create(
-            { payment_intent: order.paymentProviderId },
+            {
+              payment_intent: order.paymentProviderId,
+              amount: refundAmountCents,
+            },
             { stripeAccount: sellerAccount.accountId },
           );
           refundProviderId = refund.id;
@@ -1685,7 +1719,7 @@ router.post(
           const resp = await sellerSquare.refunds.refundPayment({
             idempotencyKey: randomUUID(),
             paymentId: order.paymentProviderId,
-            amountMoney: { amount: BigInt(amountCents), currency: 'AUD' },
+            amountMoney: { amount: BigInt(refundAmountCents), currency: 'AUD' },
           });
           refundProviderId = resp.refund?.id ?? null;
         } catch (err) {
@@ -1694,31 +1728,55 @@ router.post(
           return;
         }
       }
-      // CASH / BANK_TRANSFER / PAYPAL (legacy): no provider call. Seller is
-      // expected to have already moved the money offline; we just record
-      // the refund.
+      // CASH / BANK_TRANSFER / PAYPAL: no provider call. Seller is expected
+      // to have moved the money offline; we just persist the audit row.
 
-      // Flip the order. Conditional on the same statuses we read above so a
-      // race against shipping/completion doesn't quietly succeed.
-      const { count } = await prisma.order.updateMany({
-        where: {
-          id,
-          status: { in: ['PAID', 'SHIPPED', 'COMPLETED'] },
-        },
-        data: {
-          status: 'REFUNDED',
-          refundedAt: new Date(),
-          refundReason: reason ?? null,
-          refundProviderId,
-        },
+      // Update the order + insert audit row in a single transaction so a
+      // crash between the provider call and our state can't lose the audit
+      // entry. Status conditional on same set we read above to defeat a
+      // race against shipping/completion.
+      const fullyRefundedAfter = order.totalRefundedCents + refundAmountCents >= totalCents;
+      const channel = order.paymentMethod;
+      const refundOutcome = await prisma.$transaction(async (tx) => {
+        const updated = await tx.order.updateMany({
+          where: {
+            id,
+            status: { in: ['PAID', 'SHIPPED', 'COMPLETED'] },
+            // Belt-and-braces against double-refund: the order's running
+            // total when we picked it up must still match. If a concurrent
+            // refund snuck in, this returns count=0.
+            totalRefundedCents: order.totalRefundedCents,
+          },
+          data: {
+            status: fullyRefundedAfter ? 'REFUNDED' : undefined,
+            totalRefundedCents: { increment: refundAmountCents },
+            refundedAt: new Date(),
+            refundReason: reason ?? null,
+            refundProviderId,
+          },
+        });
+        if (updated.count === 0) return { ok: false as const };
+        await tx.refund.create({
+          data: {
+            orderId: id,
+            issuedById: req.userId!,
+            amountCents: refundAmountCents,
+            reason: reason ?? null,
+            providerId: refundProviderId,
+            channel,
+          },
+        });
+        return { ok: true as const };
       });
-      if (count === 0) {
-        // Provider call already succeeded; the order moved out from under
-        // us (extremely unlikely race). Don't undo the provider refund —
-        // log loudly so an admin can reconcile.
+
+      if (!refundOutcome.ok) {
+        // Provider call already succeeded; the order moved out from under us
+        // (extremely unlikely race). Don't undo the provider refund — log
+        // loudly so an admin can reconcile.
         console.error('[refund] provider refunded but order state changed', {
           orderId: id,
           refundProviderId,
+          refundAmountCents,
         });
         res.status(500).json({
           error:
@@ -1727,11 +1785,17 @@ router.post(
         return;
       }
 
+      // Notification copy diverges based on whether this was the final refund.
+      const refundDollars = (refundAmountCents / 100).toFixed(2);
+      const totalDollars = (totalCents / 100).toFixed(2);
+      const notifBody = fullyRefundedAfter
+        ? `Your payment of $${refundDollars} for "${order.listing.title}" has been refunded${reason ? `: ${reason}` : '.'}`
+        : `A partial refund of $${refundDollars} (of $${totalDollars}) has been issued for "${order.listing.title}"${reason ? `: ${reason}` : '.'}`;
       void createNotification({
         recipientId: order.buyerId,
         type: 'ORDER_REFUNDED',
-        title: 'Refund issued',
-        body: `Your payment for "${order.listing.title}" has been refunded${reason ? `: ${reason}` : '.'}`,
+        title: fullyRefundedAfter ? 'Refund issued' : 'Partial refund issued',
+        body: notifBody,
         actorId: order.sellerId,
         orderId: id,
         listingId: order.listing.id,

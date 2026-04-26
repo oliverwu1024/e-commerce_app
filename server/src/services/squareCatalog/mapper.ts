@@ -84,7 +84,9 @@ const MAX_VARIATION_NAME_LEN = 255;
  * Build the CatalogObject payload for a single listing. `existingIds`
  * lets us preserve server-assigned ids on update — Square requires the
  * same `id` on update, with `version` set to the prior version for
- * optimistic-concurrency.
+ * optimistic-concurrency. `categoryId` is the seller-scoped Square
+ * CatalogCategory id (resolved by `ensureCategoryForSeller`); when null,
+ * the item is upserted without a category.
  */
 export function listingToCatalogPayload(
   listing: ListingSnapshot,
@@ -93,6 +95,7 @@ export function listingToCatalogPayload(
     variationId?: string | null;
     version?: bigint | null;
     imageIds?: string[];
+    categoryId?: string | null;
   } = {},
 ): MappedCatalogPayload {
   const itemClientId = existingIds.itemId ?? `#listing-${listing.id}-item`;
@@ -159,10 +162,16 @@ export function listingToCatalogPayload(
       // 2022-07-20 and the two stay in sync server-side. Strip script tags
       // to be safe; Square's allow-list rejects them anyway.
       descriptionHtml: description,
-      // Categories: omitted in v1. Square's category objects are per-
-      // merchant taxonomy ids — mapping our string categories to those
-      // requires a separate "ensure category exists" round-trip per
-      // merchant, which is a future enhancement.
+      // categories[] is the post-2023-12 way to file an item under a
+      // merchant's taxonomy. The legacy `categoryId` field still works
+      // but is deprecated; we set both for max compatibility with older
+      // Square POS clients.
+      ...(existingIds.categoryId
+        ? {
+            categoryId: existingIds.categoryId,
+            categories: [{ id: existingIds.categoryId, ordinal: BigInt(0) }],
+          }
+        : {}),
       ...(existingIds.imageIds && existingIds.imageIds.length > 0
         ? { imageIds: existingIds.imageIds }
         : {}),

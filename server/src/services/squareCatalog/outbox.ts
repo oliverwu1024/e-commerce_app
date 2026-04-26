@@ -23,20 +23,41 @@ import { getSquareCatalogQueue } from '../../queue/queues.js';
 import { logger } from '../../utils/logger.js';
 import type { ListingSnapshot } from './mapper.js';
 
-export type OutboxKind = 'LISTING_UPSERT' | 'LISTING_DELETE' | 'INVENTORY_ADJUST';
+export type OutboxKind =
+  | 'LISTING_UPSERT'
+  | 'LISTING_DELETE'
+  | 'INVENTORY_ADJUST'
+  | 'IMAGE_DELETE';
 
 /**
- * Snapshot of the listing as we want it to appear on Square. Captured at
- * write-time and persisted on the outbox row so a debugger can replay the
- * exact intent regardless of subsequent edits.
+ * Snapshot of the intent at write-time. Persisted on the outbox row so a
+ * debugger can replay regardless of subsequent edits. The shape is a
+ * discriminated union by `kind`, but stored in JSON so Prisma's type
+ * system doesn't enforce it — the worker re-reads as needed and validates
+ * before acting.
  */
-export type OutboxPayload = {
-  kind: OutboxKind;
-  // Always present — denormalized so the worker can run without re-reading.
-  listing: ListingSnapshot;
-  // Only set on INVENTORY_ADJUST. Negative numbers OK for downward adjustments.
-  inventoryDelta?: number;
-};
+export type OutboxPayload =
+  | {
+      kind: 'LISTING_UPSERT';
+      listing: ListingSnapshot;
+    }
+  | {
+      kind: 'LISTING_DELETE';
+      listing: ListingSnapshot;
+    }
+  | {
+      kind: 'INVENTORY_ADJUST';
+      listing: ListingSnapshot;
+      inventoryDelta: number;
+    }
+  | {
+      kind: 'IMAGE_DELETE';
+      // Square server ids (from ListingImage.squareImageId) that should be
+      // batch-deleted from the seller's catalog. Captured at write time
+      // because the underlying ListingImage rows are about to be — or
+      // already have been — removed.
+      squareImageIds: string[];
+    };
 
 export type CreateOutboxArgs = {
   tx: Prisma.TransactionClient;
@@ -153,10 +174,13 @@ export async function enqueueOutbox(outboxId: string): Promise<void> {
   }
 }
 
-function mapKindToJobName(kind: OutboxKind): 'listing.upsert' | 'listing.delete' | 'inventory.adjust' {
+function mapKindToJobName(
+  kind: OutboxKind,
+): 'listing.upsert' | 'listing.delete' | 'inventory.adjust' | 'image.delete' {
   if (kind === 'LISTING_UPSERT') return 'listing.upsert';
   if (kind === 'LISTING_DELETE') return 'listing.delete';
-  return 'inventory.adjust';
+  if (kind === 'INVENTORY_ADJUST') return 'inventory.adjust';
+  return 'image.delete';
 }
 
 function buildJobData(
@@ -168,7 +192,8 @@ function buildJobData(
 ):
   | { kind: 'listing.upsert'; outboxId: string; listingId: string; sellerId: string }
   | { kind: 'listing.delete'; outboxId: string; listingId: string; sellerId: string }
-  | { kind: 'inventory.adjust'; outboxId: string; listingId: string; sellerId: string; quantity: number } {
+  | { kind: 'inventory.adjust'; outboxId: string; listingId: string; sellerId: string; quantity: number }
+  | { kind: 'image.delete'; outboxId: string; listingId: string; sellerId: string; squareImageIds: string[] } {
   if (kind === 'INVENTORY_ADJUST') {
     const qty =
       payload &&
@@ -183,6 +208,24 @@ function buildJobData(
       listingId,
       sellerId,
       quantity: qty,
+    };
+  }
+  if (kind === 'IMAGE_DELETE') {
+    const ids =
+      payload &&
+      typeof payload === 'object' &&
+      'squareImageIds' in payload &&
+      Array.isArray((payload as { squareImageIds?: unknown }).squareImageIds)
+        ? ((payload as { squareImageIds: unknown[] }).squareImageIds.filter(
+            (x): x is string => typeof x === 'string' && x.length > 0,
+          ) as string[])
+        : [];
+    return {
+      kind: 'image.delete',
+      outboxId,
+      listingId,
+      sellerId,
+      squareImageIds: ids,
     };
   }
   return {

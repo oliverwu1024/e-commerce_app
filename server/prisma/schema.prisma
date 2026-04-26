@@ -172,6 +172,7 @@ enum SquareSyncOutboxKind {
   LISTING_UPSERT // create or update on Square (worker picks delta)
   LISTING_DELETE // soft-delete (is_deleted=true) on Square
   INVENTORY_ADJUST // push InventoryCount change for a variation
+  IMAGE_DELETE // batch-delete CatalogImage objects orphaned by listing edit/delete
 }
 
 enum SquareSyncOutboxStatus {
@@ -339,6 +340,11 @@ model Listing {
   // (non-null) when fulfillmentMethod is POST_ONLY or BOTH. May be 0
   // (seller offers free shipping). Null for PICKUP_ONLY.
   shippingPrice     Decimal?          @db.Decimal(10, 2)
+  // Full-text search vector — a STORED generated column managed by Postgres
+  // via `GENERATED ALWAYS AS`. Prisma can't represent the expression so we
+  // mark it Unsupported and never read/write it through the client. Powers
+  // search via $queryRaw. See migration 20260426095300_listing_search_tsvector.
+  searchVector      Unsupported("tsvector")?
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
@@ -434,10 +440,15 @@ model Order {
   //  - Square: payment id (the tender behind the Order)
   //  - cash/bank: null (no provider call possible)
   paymentProviderId   String?                @db.VarChar(200)
-  // Refund metadata. refundedAt is set when status flips to REFUNDED;
-  // refundReason is the seller's free-text justification (shown to buyer).
-  // refundProviderId is the Stripe refund_id / Square refund_id for audit
-  // — null for cash/bank where no provider was involved.
+  // Cumulative refund total in cents (sum of all Refund rows below). Stays
+  // at 0 until the first refund. When it equals amount*100, the order's
+  // status flips to REFUNDED. Used to compute "remaining refundable" without
+  // re-summing the Refund table on every render.
+  totalRefundedCents  Int                    @default(0)
+  // Denormalized "last refund" cache — overwritten on each refund event so
+  // the order-detail UI can render the latest reason / timestamp without
+  // joining. The append-only audit trail of every refund (partial included)
+  // lives on the Refund[] relation below.
   refundedAt          DateTime?
   refundReason        String?                @db.VarChar(500)
   refundProviderId    String?                @db.VarChar(200)
@@ -456,6 +467,7 @@ model Order {
   review   Review?
   messages Message[]
   dispute  Dispute?
+  refunds  Refund[]
 
   @@index([sellerId, createdAt])
   @@index([buyerId, createdAt])
@@ -921,6 +933,27 @@ model SquareSyncEvent {
   @@index([listingId, createdAt])
 }
 
+// Per-merchant cache of Square Catalog categories. The marketplace's own
+// `Listing.category` is a free-string ("Phones", "Laptops"…); Square's
+// CatalogCategory is a per-merchant object with a server-assigned id.
+// On every listing upsert the worker calls `ensureCategoryForSeller`,
+// which finds-or-creates the CatalogCategory and caches the id here so
+// subsequent listings don't round-trip Square.
+//
+// (squareMerchantId, name) is the lookup key. We don't FK to User —
+// it's an opaque cache, and clearing it is safe.
+model SquareCategoryLink {
+  id               String   @id @default(uuid())
+  squareMerchantId String   @db.VarChar(64)
+  name             String   @db.VarChar(100)
+  squareCategoryId String   @db.VarChar(64)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@unique([squareMerchantId, name])
+  @@index([squareMerchantId])
+}
+
 // Replay-dedupe for inbound Square Catalog webhooks (catalog.version.updated
 // and inventory.count.updated). Separate from ProcessedWebhookEvent (which is
 // for payment events) because catalog event volume is much higher and we
@@ -936,6 +969,41 @@ model SquareCatalogWebhookEvent {
 
   @@index([merchantId, createdAt])
   @@index([createdAt])
+}
+
+// Append-only audit log of refunds against an Order. Every refund event
+// (full or partial) creates one row. Sum(amountCents) over an order equals
+// Order.totalRefundedCents — that field is the denormalised running total
+// for fast remaining-balance reads. Cumulative refunds == order amount
+// flips Order.status to REFUNDED; until then the order keeps its prior
+// status (PAID/SHIPPED/COMPLETED) but renders a "Partial refund of $X"
+// badge in the UI.
+//
+// providerId is the Stripe refund id / Square refund id when the refund
+// went through a connected account; null for CASH / BANK_TRANSFER refunds
+// where the seller settled offline and we just record the intent.
+model Refund {
+  id           String   @id @default(uuid())
+  amountCents  Int
+  reason       String?  @db.VarChar(500)
+  // The provider call that issued this specific refund. NOT a foreign key
+  // — keeps the audit row alive even if Stripe / Square ever recycle ids.
+  providerId   String?  @db.VarChar(200)
+  // Free-text marker of how the refund was issued: 'STRIPE' / 'SQUARE' /
+  // 'CASH' / 'BANK_TRANSFER' / 'PAYPAL'. Mirrors the Order's paymentMethod
+  // at refund time so a per-method earnings rollup doesn't have to join back.
+  channel      String   @db.VarChar(20)
+  createdAt    DateTime @default(now())
+
+  order   Order  @relation(fields: [orderId], references: [id])
+  orderId String
+
+  // Set to the seller (always — only the seller can refund). NOT a FK to
+  // User to avoid cascading concerns on user soft-delete.
+  issuedById String  @db.VarChar(64)
+
+  @@index([orderId, createdAt])
+  @@index([issuedById, createdAt])
 }
 
 // Seed data for the public Featured rail. Mirrors a curated selection of

@@ -19,12 +19,14 @@ export type SquareCatalogJobName =
   | 'listing.upsert'
   | 'listing.delete'
   | 'inventory.adjust'
+  | 'image.delete'
   | 'reconcile.seller';
 
 export type SquareCatalogJobData =
   | { kind: 'listing.upsert'; outboxId: string; listingId: string; sellerId: string }
   | { kind: 'listing.delete'; outboxId: string; listingId: string; sellerId: string }
   | { kind: 'inventory.adjust'; outboxId: string; listingId: string; sellerId: string; quantity: number }
+  | { kind: 'image.delete'; outboxId: string; listingId: string; sellerId: string; squareImageIds: string[] }
   | { kind: 'reconcile.seller'; sellerId: string };
 
 let cachedSquareCatalogQueue: Queue<SquareCatalogJobData, unknown, SquareCatalogJobName> | null = null;

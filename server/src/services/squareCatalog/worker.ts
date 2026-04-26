@@ -46,7 +46,9 @@ import {
 } from './oauth.js';
 import { recordSyncEvent } from './observability.js';
 import { uploadListingImageToSquare } from './imageUpload.js';
+import { ensureCategoryForSeller } from './categories.js';
 import { logger } from '../../utils/logger.js';
+import { captureBackgroundError } from '../../lib/sentry.js';
 import { randomUUID } from 'node:crypto';
 
 let cachedWorker: Worker<SquareCatalogJobData, unknown, SquareCatalogJobName> | null = null;
@@ -96,9 +98,21 @@ export function startSquareCatalogWorker():
       attemptsMade: job?.attemptsMade,
       err: String(err?.message ?? err),
     });
+    // Surface to Sentry only after retries exhaust — earlier attempts are
+    // expected to fail transiently and would create noise. BullMQ sets
+    // attemptsMade equal to the configured `attempts` on terminal failure.
+    if (job && job.attemptsMade >= (job.opts.attempts ?? 1)) {
+      captureBackgroundError(err, {
+        operation: 'square_catalog_worker.terminal_failure',
+        jobId: job.id,
+        jobName: job.name,
+        attemptsMade: job.attemptsMade,
+      });
+    }
   });
   worker.on('error', (err) => {
     logger.error('square.catalog.worker.error', { err: String(err) });
+    captureBackgroundError(err, { operation: 'square_catalog_worker.error' });
   });
 
   cachedWorker = worker;
@@ -155,6 +169,15 @@ async function handleJob(
       data.listingId,
       data.sellerId,
       data.quantity,
+    );
+    return;
+  }
+  if (data.kind === 'image.delete') {
+    await handleImageDelete(
+      data.outboxId,
+      data.listingId,
+      data.sellerId,
+      data.squareImageIds,
     );
     return;
   }
@@ -232,12 +255,19 @@ async function handleUpsert(
   // bad image doesn't block the rest of the listing from syncing.
   const imageIds = await ensureImagesUploaded(session, listing.images);
 
-  // Step 2: build the item + nested variation, then batchUpsert.
+  // Step 2: ensure the seller has a CatalogCategory matching this listing's
+  // category name. Finds-or-creates + caches in SquareCategoryLink.
+  // Returns null if Square refuses the operation; we then upsert the item
+  // without a category rather than fail the whole sync.
+  const categoryId = await ensureCategoryForSeller(session, snapshot.category);
+
+  // Step 3: build the item + nested variation, then batchUpsert.
   const payload = listingToCatalogPayload(snapshot, {
     itemId: link?.squareObjectId ?? undefined,
     variationId: link?.squareVariationId ?? undefined,
     version: link?.version ?? undefined,
     imageIds,
+    categoryId,
   });
 
   const idempotencyKey = randomUUID();
@@ -477,6 +507,98 @@ async function handleDelete(
   await markOutboxProcessed(outboxId, sellerId, listingId, 'LISTING_DELETE', 'SUCCESS', start, null, link.squareObjectId);
 }
 
+// ─── IMAGE_DELETE ─────────────────────────────────────────────────────────
+
+async function handleImageDelete(
+  outboxId: string,
+  listingId: string,
+  sellerId: string,
+  squareImageIds: string[],
+): Promise<void> {
+  const start = Date.now();
+  if (squareImageIds.length === 0) {
+    await markOutboxProcessed(
+      outboxId,
+      sellerId,
+      listingId,
+      'IMAGE_DELETE',
+      'SKIPPED',
+      start,
+      'no image ids on payload',
+    );
+    return;
+  }
+
+  let session: CatalogSession;
+  try {
+    session = await openCatalogSession(sellerId);
+  } catch (err) {
+    await onSyncFailure({
+      outboxId,
+      listingId,
+      sellerId,
+      kind: 'IMAGE_DELETE',
+      action: 'oauth',
+      err,
+      start,
+    });
+    if (err instanceof SquareSyncDisabledError) {
+      throw new UnrecoverableError(err.message);
+    }
+    throw err;
+  }
+
+  try {
+    // Square's batchDelete cascades, but only for parent→child links it
+    // owns (Item→Variation). Standalone CatalogImages are addressed
+    // independently. One call deletes up to 200 ids; we're well under
+    // that for any single listing edit.
+    await session.client.catalog.batchDelete({ objectIds: squareImageIds });
+  } catch (err) {
+    // 404s from Square mean the image is already gone (the image record
+    // was removed elsewhere or never landed). Treat as a benign no-op so
+    // we don't keep retrying a permanently-missing object.
+    const status = (err as { statusCode?: number; status?: number }).statusCode
+      ?? (err as { status?: number }).status;
+    if (status === 404) {
+      logger.warn('square.catalog.image_delete.already_gone', {
+        outboxId,
+        squareImageIds,
+      });
+      await markOutboxProcessed(
+        outboxId,
+        sellerId,
+        listingId,
+        'IMAGE_DELETE',
+        'SKIPPED',
+        start,
+        'already deleted on Square',
+      );
+      return;
+    }
+    await onSyncFailure({
+      outboxId,
+      listingId,
+      sellerId,
+      kind: 'IMAGE_DELETE',
+      action: 'batch_delete',
+      err,
+      start,
+    });
+    throw err;
+  }
+
+  await markOutboxProcessed(
+    outboxId,
+    sellerId,
+    listingId,
+    'IMAGE_DELETE',
+    'SUCCESS',
+    start,
+    `deleted ${squareImageIds.length} image(s)`,
+  );
+}
+
 // ─── INVENTORY_ADJUST ─────────────────────────────────────────────────────
 
 async function handleInventoryAdjust(
@@ -608,7 +730,7 @@ async function markOutboxProcessed(
   outboxId: string,
   sellerId: string,
   listingId: string | null,
-  kind: 'LISTING_UPSERT' | 'LISTING_DELETE' | 'INVENTORY_ADJUST',
+  kind: 'LISTING_UPSERT' | 'LISTING_DELETE' | 'INVENTORY_ADJUST' | 'IMAGE_DELETE',
   outcome: 'SUCCESS' | 'SKIPPED',
   startMs: number,
   message: string | null,
@@ -635,7 +757,7 @@ async function onSyncFailure(args: {
   outboxId: string;
   listingId: string;
   sellerId: string;
-  kind: 'LISTING_UPSERT' | 'LISTING_DELETE' | 'INVENTORY_ADJUST';
+  kind: 'LISTING_UPSERT' | 'LISTING_DELETE' | 'INVENTORY_ADJUST' | 'IMAGE_DELETE';
   action: string;
   err: unknown;
   errorCode?: string;
@@ -677,7 +799,7 @@ async function onSyncFailure(args: {
 }
 
 function kindToAction(
-  kind: 'LISTING_UPSERT' | 'LISTING_DELETE' | 'INVENTORY_ADJUST',
+  kind: 'LISTING_UPSERT' | 'LISTING_DELETE' | 'INVENTORY_ADJUST' | 'IMAGE_DELETE',
 ): string {
   if (kind === 'LISTING_UPSERT') return 'upsert.complete';
   if (kind === 'LISTING_DELETE') return 'delete.complete';
