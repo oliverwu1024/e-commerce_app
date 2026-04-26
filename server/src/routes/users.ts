@@ -3,6 +3,7 @@ import bcrypt from 'bcrypt';
 import crypto from 'crypto';
 import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import prisma from '../lib/prisma.js';
+import { validateAbnChecksum } from '../lib/abn.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { AUTH_CONFIG } from '../config/auth.js';
 import { EMAIL_CONFIG } from '../config/email.js';
@@ -592,24 +593,11 @@ router.post(
   },
 );
 
-// Australian ABN checksum (ATO algorithm).
-// https://abr.business.gov.au/Help/AbnFormat
-function validateAbnChecksum(abn: string): boolean {
-  if (!/^[0-9]{11}$/.test(abn)) return false;
-  const weights = [10, 1, 3, 5, 7, 9, 11, 13, 15, 17, 19];
-  const digits = abn.split('').map(Number);
-  // Step 1: subtract 1 from the leftmost digit.
-  digits[0] -= 1;
-  // Step 2: weighted sum.
-  const sum = digits.reduce((acc, d, i) => acc + d * weights[i], 0);
-  // Step 3: valid iff sum is divisible by 89.
-  return sum % 89 === 0;
-}
-
 // ---------------------------------------------------------------------------
 // POST /api/users/verify-abn — validate ABN and mark verified
-// Uses the ATO checksum algorithm (no external API call for demo). Only for
-// BUSINESS sellers. Returns 400 on invalid checksum.
+// Used for BUSINESS sellers who registered before ABN-at-signup was required,
+// or to change a previously-set ABN. New BUSINESS registrations set abn +
+// abnVerified directly in POST /api/auth/register.
 // ---------------------------------------------------------------------------
 router.post('/verify-abn', authenticate, profileLimiter, async (req: Request, res: Response) => {
   try {

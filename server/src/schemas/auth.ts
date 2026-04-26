@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { validateAbnChecksum } from '../lib/abn.js';
 
 export const registerSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -13,14 +14,41 @@ export const registerSchema = z.object({
   bio: z.string().min(1).max(500).optional().or(z.literal('').transform(() => undefined)),
   sellerType: z.enum(['PERSONAL', 'BUSINESS']).optional().default('PERSONAL'),
   businessName: z.string().max(200).optional(),
+  abn: z
+    .string()
+    .trim()
+    .transform((v) => v.replace(/\s/g, ''))
+    .optional()
+    .or(z.literal('').transform(() => undefined)),
   // Cloudflare Turnstile token. Optional in the schema because the server
   // skips verification when TURNSTILE_SECRET_KEY is unset (local dev); the
   // route handler enforces presence in live mode.
   turnstileToken: z.string().max(2048).optional(),
-}).refine(
-  (data) => data.sellerType !== 'BUSINESS' || (data.businessName && data.businessName.trim().length > 0),
-  { message: 'Business name is required for business accounts', path: ['businessName'] },
-);
+}).superRefine((data, ctx) => {
+  if (data.sellerType !== 'BUSINESS') return;
+  if (!data.businessName || data.businessName.trim().length === 0) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Business name is required for business accounts',
+      path: ['businessName'],
+    });
+  }
+  if (!data.abn) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'ABN is required for business accounts',
+      path: ['abn'],
+    });
+    return;
+  }
+  if (!validateAbnChecksum(data.abn)) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: 'Invalid ABN. Check the number and try again.',
+      path: ['abn'],
+    });
+  }
+});
 
 export const loginSchema = z.object({
   email: z.string().email('Invalid email address'),

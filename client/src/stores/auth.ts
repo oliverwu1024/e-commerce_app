@@ -43,6 +43,7 @@ type RegisterData = {
   bio?: string;
   sellerType?: 'PERSONAL' | 'BUSINESS';
   businessName?: string;
+  abn?: string;
   turnstileToken?: string;
 };
 

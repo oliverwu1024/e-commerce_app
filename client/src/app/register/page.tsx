@@ -42,6 +42,7 @@ export default function RegisterPage() {
   const [confirmPassword, setConfirmPassword] = useState('');
   const [sellerType, setSellerType] = useState<'PERSONAL' | 'BUSINESS'>('PERSONAL');
   const [businessName, setBusinessName] = useState('');
+  const [abn, setAbn] = useState('');
   const [localError, setLocalError] = useState('');
   const [turnstileToken, setTurnstileToken] = useState('');
   const turnstileContainerRef = useRef<HTMLDivElement>(null);
@@ -94,6 +95,12 @@ export default function RegisterPage() {
       return;
     }
 
+    const abnDigits = abn.replace(/\s/g, '');
+    if (sellerType === 'BUSINESS' && !/^[0-9]{11}$/.test(abnDigits)) {
+      setLocalError('ABN must be 11 digits');
+      return;
+    }
+
     if (!turnstileToken) {
       setLocalError('Please complete the bot check below before submitting.');
       return;
@@ -108,7 +115,7 @@ export default function RegisterPage() {
         password,
         sellerType,
         turnstileToken,
-        ...(sellerType === 'BUSINESS' ? { businessName } : {}),
+        ...(sellerType === 'BUSINESS' ? { businessName, abn: abnDigits } : {}),
       });
       // Queue the appropriate first-run tour. Personal accounts get the
       // buyer tour on the homepage; business accounts go straight to the
@@ -192,23 +199,47 @@ export default function RegisterPage() {
           </div>
 
           {sellerType === 'BUSINESS' && (
-            <div>
-              <label
-                htmlFor="businessName"
-                className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]"
-              >
-                Business name
-              </label>
-              <input
-                id="businessName"
-                type="text"
-                required
-                value={businessName}
-                onChange={(e) => setBusinessName(e.target.value)}
-                className="input-cyber w-full px-3 py-2.5 text-sm"
-                placeholder="Your business name"
-              />
-            </div>
+            <>
+              <div>
+                <label
+                  htmlFor="businessName"
+                  className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]"
+                >
+                  Business name
+                </label>
+                <input
+                  id="businessName"
+                  type="text"
+                  required
+                  value={businessName}
+                  onChange={(e) => setBusinessName(e.target.value)}
+                  className="input-cyber w-full px-3 py-2.5 text-sm"
+                  placeholder="Your business name"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="abn"
+                  className="mb-1.5 block text-sm font-semibold text-[var(--text-primary)]"
+                >
+                  ABN
+                </label>
+                <input
+                  id="abn"
+                  type="text"
+                  inputMode="numeric"
+                  required
+                  value={abn}
+                  onChange={(e) => setAbn(e.target.value)}
+                  maxLength={14}
+                  className="input-cyber w-full px-3 py-2.5 text-sm"
+                  placeholder="11-digit Australian Business Number"
+                />
+                <p className="mt-1 text-xs text-[var(--text-muted)]">
+                  Required to sell as a business. Spaces are ignored.
+                </p>
+              </div>
+            </>
           )}
 
           <div>

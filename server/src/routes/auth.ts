@@ -72,7 +72,7 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
       return;
     }
 
-    const { password, name, location, bio, sellerType, businessName, turnstileToken } = parsed.data;
+    const { password, name, location, bio, sellerType, businessName, abn, turnstileToken } = parsed.data;
     const email = parsed.data.email.toLowerCase();
     const username = parsed.data.username.toLowerCase();
 
@@ -96,6 +96,22 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
       return;
     }
 
+    // ABN is 1:1 with a real Australian business — reject if another account
+    // already claimed it. Race-safe version would need a partial unique index
+    // (where abn is not null) but Prisma doesn't generate those, so check here.
+    // TODO: augment with ABR Lookup to confirm the ABN is currently active and
+    // auto-fill businessName from the registered entity name.
+    if (sellerType === 'BUSINESS' && abn) {
+      const abnClash = await prisma.user.findFirst({
+        where: { abn },
+        select: { id: true },
+      });
+      if (abnClash) {
+        res.status(409).json({ error: 'This ABN is already registered to another account.' });
+        return;
+      }
+    }
+
     const hashedPassword = await bcrypt.hash(password, AUTH_CONFIG.bcryptRounds);
     const verificationToken = generateVerificationToken();
 
@@ -104,6 +120,8 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
         email, username, password: hashedPassword, name, location, bio,
         sellerType,
         businessName: sellerType === 'BUSINESS' ? businessName : null,
+        abn: sellerType === 'BUSINESS' ? abn : null,
+        abnVerified: sellerType === 'BUSINESS',
         emailVerificationToken: verificationToken,
         emailVerificationExpires: new Date(Date.now() + EMAIL_CONFIG.verificationTokenExpires),
       },
