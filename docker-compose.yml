@@ -16,6 +16,24 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    # Backs BullMQ for the Square Catalog sync job queue. Persistence on
+    # ("appendonly yes") so a restart doesn't lose pending sync jobs — losing
+    # one means a seller's listing edit never propagates to Square until the
+    # nightly reconciliation catches it.
+    image: redis:7-alpine
+    restart: "no"
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
   server:
     build:
       context: ./server
@@ -47,6 +65,14 @@ services:
       SQUARE_ENV: ${SQUARE_ENV:-sandbox}
       SQUARE_WEBHOOK_SIGNATURE_KEY: ${SQUARE_WEBHOOK_SIGNATURE_KEY:-}
       SQUARE_WEBHOOK_URL: ${SQUARE_WEBHOOK_URL:-}
+      # Catalog sync — pulled from a single demo merchant's Square account
+      # (separate from per-seller OAuth) for the public Featured rail.
+      SQUARE_FEATURED_ACCESS_TOKEN: ${SQUARE_FEATURED_ACCESS_TOKEN:-}
+      SQUARE_FEATURED_LOCATION_ID: ${SQUARE_FEATURED_LOCATION_ID:-}
+      # BullMQ + Redis. Empty REDIS_URL disables the catalog sync workers
+      # gracefully — the toggles in the UI still appear, but sync jobs
+      # are not enqueued, and the seller sees a "queue offline" message.
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379}
     # Run prisma generate before starting so the src bind-mount below doesn't wipe
     # the generated client baked into the image at build time.
     command: sh -c "npx prisma generate && npm run dev"
@@ -54,6 +80,8 @@ services:
       - ./server/src:/app/src
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   client:
@@ -72,3 +100,4 @@ services:
 
 volumes:
   pgdata:
+  redisdata:

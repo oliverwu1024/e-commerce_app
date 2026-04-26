@@ -8,6 +8,11 @@ import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { getSellerStats } from '../services/sellerStats.js';
 import { FEATURES } from '../config/features.js';
 import { PUBLIC_LOCATION_SELECT, projectPublicSeller } from '../services/publicLocation.js';
+import {
+  createOutboxRow,
+  enqueueOutbox,
+  snapshotListing,
+} from '../services/squareCatalog/index.js';
 
 const router = Router();
 
@@ -280,21 +285,43 @@ router.post('/', authenticate, createListingLimiter, async (req: Request, res: R
 
     const { images, ...listingData } = parsed.data;
 
-    const listing = await prisma.listing.create({
-      data: {
-        ...listingData,
-        sellerId: req.userId!,
-        images: images?.length
-          ? { create: images.map((img) => ({ url: img.url, displayOrder: img.displayOrder })) }
-          : undefined,
-      },
-      include: {
-        images: { orderBy: { displayOrder: 'asc' } },
-        seller: {
-          select: { id: true, username: true, ...PUBLIC_LOCATION_SELECT },
+    // Wrap in a transaction so the outbox row is committed atomically
+    // with the Listing — we never end up with a synced listing that has
+    // no outbox row, or vice versa.
+    const { listing, outboxId } = await prisma.$transaction(async (tx) => {
+      const created = await tx.listing.create({
+        data: {
+          ...listingData,
+          sellerId: req.userId!,
+          images: images?.length
+            ? { create: images.map((img) => ({ url: img.url, displayOrder: img.displayOrder })) }
+            : undefined,
         },
-      },
+        include: {
+          images: { orderBy: { displayOrder: 'asc' } },
+          seller: {
+            select: { id: true, username: true, ...PUBLIC_LOCATION_SELECT },
+          },
+        },
+      });
+      const oid = await createOutboxRow({
+        tx,
+        listingId: created.id,
+        sellerId: req.userId!,
+        kind: 'LISTING_UPSERT',
+        payload: {
+          kind: 'LISTING_UPSERT',
+          listing: snapshotListing(created),
+        },
+      });
+      return { listing: created, outboxId: oid };
     });
+
+    // Enqueue OUTSIDE the tx — if BullMQ is down, the row stays PENDING
+    // and the reconciler picks it up later.
+    if (outboxId) {
+      void enqueueOutbox(outboxId);
+    }
 
     res.status(201).json({
       listing: { ...listing, seller: projectPublicSeller(listing.seller) },
@@ -342,7 +369,7 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
 
     const { images, ...updateData } = parsed.data;
 
-    const listing = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // Re-verify ownership + status inside transaction to prevent TOCTOU race
       const current = await tx.listing.findUnique({
         where: { id },
@@ -351,15 +378,66 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
       if (current?.status !== 'ACTIVE' || current.sellerId !== req.userId) return null;
 
       if (images !== undefined) {
-        await tx.listingImage.deleteMany({ where: { listingId: id } });
-        if (images.length > 0) {
-          await tx.listingImage.createMany({
-            data: images.map((img) => ({ listingId: id, url: img.url, displayOrder: img.displayOrder })),
+        // Preserve ListingImage rows whose URL is unchanged so their
+        // squareImageId (if any) carries over — otherwise every save would
+        // re-upload every image to Square Catalog. Two-phase update so
+        // displayOrder + URL collisions don't fight the (listingId,
+        // displayOrder) unique constraint mid-transaction:
+        //   Phase 1: drop rows whose URLs are gone from the new list
+        //   Phase 2: bump survivors to a high displayOrder (out of the way)
+        //   Phase 3: insert any genuinely-new URLs
+        //   Phase 4: assign final displayOrder to every row in one pass
+        const currentRows = await tx.listingImage.findMany({
+          where: { listingId: id },
+          select: { id: true, url: true },
+        });
+        const desiredUrls = new Set(images.map((img) => img.url));
+        const toDelete = currentRows.filter((r) => !desiredUrls.has(r.url));
+        if (toDelete.length > 0) {
+          await tx.listingImage.deleteMany({
+            where: { id: { in: toDelete.map((r) => r.id) } },
           });
+        }
+
+        const survivorByUrl = new Map(
+          currentRows
+            .filter((r) => desiredUrls.has(r.url))
+            .map((r) => [r.url, r.id] as const),
+        );
+
+        // Bump survivors to a temporary high displayOrder so the final
+        // assignment doesn't collide with rows still holding old slots.
+        let tempOrder = 1000;
+        for (const id of survivorByUrl.values()) {
+          await tx.listingImage.update({
+            where: { id },
+            data: { displayOrder: tempOrder++ },
+          });
+        }
+
+        for (const img of images) {
+          if (!survivorByUrl.has(img.url)) {
+            const created = await tx.listingImage.create({
+              data: { listingId: id, url: img.url, displayOrder: tempOrder++ },
+              select: { id: true, url: true },
+            });
+            survivorByUrl.set(created.url, created.id);
+          }
+        }
+
+        // Final pass: assign each image its requested displayOrder.
+        for (const img of images) {
+          const rowId = survivorByUrl.get(img.url);
+          if (rowId) {
+            await tx.listingImage.update({
+              where: { id: rowId },
+              data: { displayOrder: img.displayOrder },
+            });
+          }
         }
       }
 
-      return tx.listing.update({
+      const updated = await tx.listing.update({
         where: { id },
         data: updateData,
         include: {
@@ -369,15 +447,30 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
         },
         },
       });
+      const oid = await createOutboxRow({
+        tx,
+        listingId: updated.id,
+        sellerId: req.userId!,
+        kind: 'LISTING_UPSERT',
+        payload: {
+          kind: 'LISTING_UPSERT',
+          listing: snapshotListing(updated),
+        },
+      });
+      return { listing: updated, outboxId: oid };
     });
 
-    if (!listing) {
+    if (!result) {
       res.status(409).json({ error: 'Listing is no longer available for editing' });
       return;
     }
 
+    if (result.outboxId) {
+      void enqueueOutbox(result.outboxId);
+    }
+
     res.json({
-      listing: { ...listing, seller: projectPublicSeller(listing.seller) },
+      listing: { ...result.listing, seller: projectPublicSeller(result.listing.seller) },
     });
   } catch (err) {
     console.error('Update listing error:', err);
@@ -424,24 +517,41 @@ router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Re
       return;
     }
 
-    const removed = await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       // Re-verify ownership + status inside transaction to prevent TOCTOU race
       const current = await tx.listing.findUnique({
         where: { id },
         select: { status: true, sellerId: true },
       });
-      if (current?.status !== 'ACTIVE' || current.sellerId !== req.userId) return false;
+      if (current?.status !== 'ACTIVE' || current.sellerId !== req.userId) {
+        return { removed: false, outboxId: null as string | null };
+      }
 
-      await tx.listing.update({
+      const updated = await tx.listing.update({
         where: { id },
         data: { status: 'REMOVED' },
+        include: { images: { orderBy: { displayOrder: 'asc' } } },
       });
-      return true;
+      const oid = await createOutboxRow({
+        tx,
+        listingId: id,
+        sellerId: req.userId!,
+        kind: 'LISTING_DELETE',
+        payload: {
+          kind: 'LISTING_DELETE',
+          listing: snapshotListing(updated),
+        },
+      });
+      return { removed: true, outboxId: oid };
     });
 
-    if (!removed) {
+    if (!result.removed) {
       res.status(409).json({ error: 'Listing status changed. Please refresh and try again.' });
       return;
+    }
+
+    if (result.outboxId) {
+      void enqueueOutbox(result.outboxId);
     }
 
     res.json({ message: 'Listing removed successfully' });

@@ -42,20 +42,20 @@ enum OrderFulfillmentMethod {
 
 enum OrderStatus {
   PENDING_CONFIRMATION // buyer checked out, waiting for seller to confirm
-  CONFIRMED            // seller confirmed, item on hold, awaiting payment
-  PAID                 // payment captured (online) or marked paid (cash/bank); listing now SOLD; awaiting shipment
-  SHIPPED              // seller marked posted; in transit to buyer
-  COMPLETED            // buyer confirmed received; deal finished
-  CANCELLED            // either party cancelled
-  REFUNDED             // seller refunded the buyer post-payment (item returned, dispute outcome, etc.)
+  CONFIRMED // seller confirmed, item on hold, awaiting payment
+  PAID // payment captured (online) or marked paid (cash/bank); listing now SOLD; awaiting shipment
+  SHIPPED // seller marked posted; in transit to buyer
+  COMPLETED // buyer confirmed received; deal finished
+  CANCELLED // either party cancelled
+  REFUNDED // seller refunded the buyer post-payment (item returned, dispute outcome, etc.)
 }
 
 enum PaymentMethod {
-  CASH          // cash on meetup/pickup
+  CASH // cash on meetup/pickup
   BANK_TRANSFER // direct bank transfer
-  PAYPAL        // PayPal (all sellers)
-  SQUARE        // Square — business sellers only
-  STRIPE        // Stripe — business sellers only
+  PAYPAL // PayPal (all sellers)
+  SQUARE // Square — business sellers only
+  STRIPE // Stripe — business sellers only
 }
 
 // Tracks an online payment session in flight, independent of the order's
@@ -86,69 +86,110 @@ enum UserRole {
 }
 
 enum NotificationType {
-  ORDER_PLACED       // seller: buyer checked out
-  ORDER_CONFIRMED    // buyer: seller accepted
-  ORDER_CANCELLED    // other party: cancelled
-  ORDER_COMPLETED    // both: order fully complete (buyer received)
-  ORDER_PAID         // seller: payment captured / marked paid
-  ORDER_SHIPPED      // buyer: seller marked the item as posted
-  ORDER_REFUNDED     // buyer: seller issued a refund
-  ORDER_DISPUTED     // seller + admin: buyer opened a dispute
-  DISPUTE_RESOLVED   // buyer + seller: admin closed a dispute
-  NEW_MESSAGE        // receiver: counterparty sent a message on an order thread
-  NEW_INQUIRY        // seller: buyer opened a pre-purchase inquiry
-  NEW_INQUIRY_REPLY  // either: counterparty replied on an inquiry thread
-  NEW_REVIEW         // seller: buyer left a review
-  ID_APPROVED        // user: admin approved ID
-  ID_REJECTED        // user: admin rejected ID
+  ORDER_PLACED // seller: buyer checked out
+  ORDER_CONFIRMED // buyer: seller accepted
+  ORDER_CANCELLED // other party: cancelled
+  ORDER_COMPLETED // both: order fully complete (buyer received)
+  ORDER_PAID // seller: payment captured / marked paid
+  ORDER_SHIPPED // buyer: seller marked the item as posted
+  ORDER_REFUNDED // buyer: seller issued a refund
+  ORDER_DISPUTED // seller + admin: buyer opened a dispute
+  DISPUTE_RESOLVED // buyer + seller: admin closed a dispute
+  NEW_MESSAGE // receiver: counterparty sent a message on an order thread
+  NEW_INQUIRY // seller: buyer opened a pre-purchase inquiry
+  NEW_INQUIRY_REPLY // either: counterparty replied on an inquiry thread
+  NEW_REVIEW // seller: buyer left a review
+  ID_APPROVED // user: admin approved ID
+  ID_REJECTED // user: admin rejected ID
 }
 
 enum DisputeStatus {
-  OPEN              // buyer just filed; awaiting admin / seller action
-  RESOLVED_REFUND   // admin marked resolved with refund (informational; refund itself happens via the refund endpoint)
+  OPEN // buyer just filed; awaiting admin / seller action
+  RESOLVED_REFUND // admin marked resolved with refund (informational; refund itself happens via the refund endpoint)
   RESOLVED_NO_REFUND // admin marked resolved without refund (seller's position upheld)
-  WITHDRAWN         // buyer withdrew the dispute
+  WITHDRAWN // buyer withdrew the dispute
 }
 
 enum DisputeReason {
-  NOT_RECEIVED       // item never arrived
-  NOT_AS_DESCRIBED   // received but condition / model / spec doesn't match listing
-  DAMAGED            // arrived broken
-  OTHER              // free-text in `description`
+  NOT_RECEIVED // item never arrived
+  NOT_AS_DESCRIBED // received but condition / model / spec doesn't match listing
+  DAMAGED // arrived broken
+  OTHER // free-text in `description`
 }
 
 enum ContactStatus {
-  NEW       // arrived, no admin action (or customer just replied on a previously-replied thread)
-  REPLIED   // at least one admin reply sent and waiting on customer
-  CLOSED    // admin marked done; no more replies expected
+  NEW // arrived, no admin action (or customer just replied on a previously-replied thread)
+  REPLIED // at least one admin reply sent and waiting on customer
+  CLOSED // admin marked done; no more replies expected
 }
 
 enum ContactReplyDirection {
-  OUTBOUND  // admin → customer, sent via sendAdminContactReply
-  INBOUND   // customer → admin, received via /api/webhooks/email
+  OUTBOUND // admin → customer, sent via sendAdminContactReply
+  INBOUND // customer → admin, received via /api/webhooks/email
 }
 
 // Audience preset for a broadcast. KEEP IN SYNC with resolveAudience() in
 // services/broadcasts.ts — adding a value here without a server-side handler
 // will silently send to nobody.
 enum BroadcastAudience {
-  ALL_VERIFIED          // every user with emailVerified=true
-  ALL_SELLERS           // anyone marked as a seller
-  BUSINESS_SELLERS      // sellerType=BUSINESS only
-  PERSONAL_SELLERS      // sellerType=PERSONAL only
-  SELLERS_NO_PAYMENT    // sellers with zero ACTIVE SellerPaymentAccount rows
-  CUSTOM_EMAILS         // explicit list in Broadcast.targetEmails
+  ALL_VERIFIED // every user with emailVerified=true
+  ALL_SELLERS // anyone marked as a seller
+  BUSINESS_SELLERS // sellerType=BUSINESS only
+  PERSONAL_SELLERS // sellerType=PERSONAL only
+  SELLERS_NO_PAYMENT // sellers with zero ACTIVE SellerPaymentAccount rows
+  CUSTOM_EMAILS // explicit list in Broadcast.targetEmails
 }
 
 enum InquiryStatus {
-  OPEN    // active conversation
-  CLOSED  // either party manually archived (still readable, just hidden by default)
+  OPEN // active conversation
+  CLOSED // either party manually archived (still readable, just hidden by default)
 }
 
 enum PaymentProvider {
   STRIPE
   SQUARE
   PAYPAL
+}
+
+// Lifecycle of a single Listing↔Square Catalog mapping. Per-listing, not
+// per-event — a listing in ERROR has had at least one failed sync since its
+// last success.
+//   PENDING — outbox row written, worker hasn't picked it up yet
+//   SYNCING — worker started; an UpsertCatalog call is in flight
+//   SYNCED  — last attempt succeeded; squareObjectId/version reflect server
+//   ERROR   — last attempt failed (after retries); needs admin intervention
+//             OR a successful retry to recover
+enum SquareCatalogLinkStatus {
+  PENDING
+  SYNCING
+  SYNCED
+  ERROR
+}
+
+// What the outbox row represents — the kind of mutation we want to apply
+// to Square. Not the same as job-level retry status, which BullMQ owns.
+enum SquareSyncOutboxKind {
+  LISTING_UPSERT // create or update on Square (worker picks delta)
+  LISTING_DELETE // soft-delete (is_deleted=true) on Square
+  INVENTORY_ADJUST // push InventoryCount change for a variation
+}
+
+enum SquareSyncOutboxStatus {
+  PENDING // not yet enqueued
+  ENQUEUED // BullMQ has the job
+  PROCESSED // worker finished successfully; row kept for audit/retention
+  FAILED // exhausted attempts; admin can re-enqueue
+}
+
+// Catalog sync audit log. One row per attempt (success or failure). Never
+// truncated by application code — the cron in services/squareCatalog/retention
+// trims after 30 days.
+enum SquareSyncEventOutcome {
+  STARTED
+  SUCCESS
+  FAILURE
+  CONFLICT // remote version newer than expected; resolved with last-write-wins
+  SKIPPED // job ran but was a no-op (already in target state)
 }
 
 // Lifecycle of a seller's connected payment account.
@@ -168,16 +209,16 @@ enum SellerAccountStatus {
 }
 
 model User {
-  id             String   @id @default(uuid())
-  email          String   @unique @db.VarChar(255)
-  username       String   @unique @db.VarChar(50)
-  password       String   @db.VarChar(100) // bcrypt hash is fixed-length 60
-  name           String   @db.VarChar(100)
-  role           UserRole @default(USER)
+  id                         String             @id @default(uuid())
+  email                      String             @unique @db.VarChar(255)
+  username                   String             @unique @db.VarChar(50)
+  password                   String             @db.VarChar(100) // bcrypt hash is fixed-length 60
+  name                       String             @db.VarChar(100)
+  role                       UserRole           @default(USER)
   // Legacy free-form location ("Sydney, Australia"). Superseded by the
   // structured address fields below — kept nullable for back-compat with
   // pre-2026-04-29 data and not surfaced in any new UI.
-  location       String?  @db.VarChar(100)
+  location                   String?            @db.VarChar(100)
   // Structured address. All nullable so non-sellers don't have to fill them
   // in. Sellers are gated at listing-create time on having
   // addressLine1 + suburb + postcode + state.
@@ -185,119 +226,133 @@ model User {
   //    sellerType=BUSINESS && showFullAddressPublicly=true.
   //  - suburb is private (used in shipping address echo, not public).
   //  - postcode + state are always public on listings/seller pages.
-  addressLine1   String?  @db.VarChar(200)
-  addressLine2   String?  @db.VarChar(200)
-  suburb         String?  @db.VarChar(100)
-  postcode       String?  @db.VarChar(10)
-  state          String?  @db.VarChar(50)
-  country        String?  @db.VarChar(100)
+  addressLine1               String?            @db.VarChar(200)
+  addressLine2               String?            @db.VarChar(200)
+  suburb                     String?            @db.VarChar(100)
+  postcode                   String?            @db.VarChar(10)
+  state                      String?            @db.VarChar(50)
+  country                    String?            @db.VarChar(100)
   // Opt-in: BUSINESS sellers can flip this to true to show their full
   // street address publicly (storefronts that want walk-in customers).
   // PERSONAL sellers' addresses are never public, even if this is true.
-  showFullAddressPublicly Boolean @default(false)
-  bio            String?  @db.VarChar(500)
-  phone          String?  @db.VarChar(20)
+  showFullAddressPublicly    Boolean            @default(false)
+  bio                        String?            @db.VarChar(500)
+  phone                      String?            @db.VarChar(20)
   // Public profile picture. S3 URL under avatars/<userId>/. Public-read
   // (same policy as listings/*). Null = render initial-letter fallback.
-  avatarUrl      String?  @db.VarChar(500)
-  emailVerified           Boolean   @default(false)
-  emailVerificationToken  String?   @unique @db.VarChar(128)
-  emailVerificationExpires DateTime?
+  avatarUrl                  String?            @db.VarChar(500)
+  emailVerified              Boolean            @default(false)
+  emailVerificationToken     String?            @unique @db.VarChar(128)
+  emailVerificationExpires   DateTime?
   // Password-reset token: random 32-byte hex (64 chars), short 1h expiry.
   // Cleared on successful use, and tokenVersion is bumped so any JWTs issued
   // before the reset (including attacker-held ones) stop authenticating.
-  passwordResetToken       String?   @unique @db.VarChar(128)
-  passwordResetExpires     DateTime?
+  passwordResetToken         String?            @unique @db.VarChar(128)
+  passwordResetExpires       DateTime?
   // Two-phase email change: the new address sits here until the user clicks
   // the verification link sent to it. On verify, email ← pendingEmail and
   // pendingEmail is cleared. Keeps the old inbox live until the new one is
   // proven controlled by the same person (blocks session-steal lockout).
-  pendingEmail             String?  @db.VarChar(255)
-  phoneVerified           Boolean   @default(false)
-  phoneVerificationCode     String?   @db.VarChar(100) // bcrypt hash of 6-digit OTP
-  phoneVerificationExpires  DateTime?
-  phoneVerificationAttempts Int       @default(0)
-  sellerType     SellerType @default(PERSONAL)
-  businessName   String?    @db.VarChar(100) // only for BUSINESS sellers
-  abn            String?    @db.VarChar(11)  // Australian Business Number — 11 digits
-  abnVerified    Boolean    @default(false)
-  idDocumentUrl     String? @db.VarChar(500) // S3 URL — legacy manual flow (front), still kept for in-flight reviews
-  idDocumentBackUrl String? @db.VarChar(500) // S3 URL — legacy manual flow (back)
+  pendingEmail               String?            @db.VarChar(255)
+  phoneVerified              Boolean            @default(false)
+  phoneVerificationCode      String?            @db.VarChar(100) // bcrypt hash of 6-digit OTP
+  phoneVerificationExpires   DateTime?
+  phoneVerificationAttempts  Int                @default(0)
+  sellerType                 SellerType         @default(PERSONAL)
+  businessName               String?            @db.VarChar(100) // only for BUSINESS sellers
+  abn                        String?            @db.VarChar(11) // Australian Business Number — 11 digits
+  abnVerified                Boolean            @default(false)
+  idDocumentUrl              String?            @db.VarChar(500) // S3 URL — legacy manual flow (front), still kept for in-flight reviews
+  idDocumentBackUrl          String?            @db.VarChar(500) // S3 URL — legacy manual flow (back)
   // Stripe Identity verification session id (vs_...). Set when the user
   // clicks "Verify with Stripe"; webhook (`identity.verification_session.*`)
   // flips idVerification on completion. Cleared once verification reaches
   // a terminal state.
-  idVerificationSessionId String? @db.VarChar(200)
-  idVerification VerificationStatus @default(NOT_SUBMITTED)
-  idSubmittedAt  DateTime? // set when user POSTs /verify-id; admin queue orders by this (not updatedAt, which is bumped by unrelated profile edits)
-  idRejectionReason String? @db.VarChar(500) // set when admin rejects (or by Stripe Identity webhook); cleared on re-submit
+  idVerificationSessionId    String?            @db.VarChar(200)
+  idVerification             VerificationStatus @default(NOT_SUBMITTED)
+  idSubmittedAt              DateTime? // set when user POSTs /verify-id; admin queue orders by this (not updatedAt, which is bumped by unrelated profile edits)
+  idRejectionReason          String?            @db.VarChar(500) // set when admin rejects (or by Stripe Identity webhook); cleared on re-submit
   // Bumped on password change / logout-everywhere so JWTs issued before the
   // bump fail authentication. Added via `db push` in Day 19 — migration
   // history cleanup is a Day 21 item.
-  tokenVersion   Int        @default(0)
+  tokenVersion               Int                @default(0)
   // Soft-delete marker. When set, the user can no longer log in or act,
   // their PII has been anonymized, and `/api/users/:id` 404s. The row stays
   // so foreign keys from orders / reviews / messages remain valid for the
   // counterparties.
-  deletedAt      DateTime?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  deletedAt                  DateTime?
+  // Per-seller opt-in: when true, Listing CRUD enqueues sync jobs that mirror
+  // the listing into the seller's Square Catalog. Requires an ACTIVE
+  // SellerPaymentAccount(provider=SQUARE) — gated at toggle-flip time so we
+  // never attempt sync for sellers without OAuth tokens. Default false so
+  // existing sellers don't suddenly start writing to their Square inventory.
+  squareCatalogSyncEnabled   Boolean            @default(false)
+  // Set when the seller flipped the toggle on. Used by the
+  // first-enabled "backfill all listings" job and surfaced in admin UI.
+  squareCatalogSyncEnabledAt DateTime?
+  createdAt                  DateTime           @default(now())
+  updatedAt                  DateTime           @updatedAt
 
-  listings      Listing[]
-  purchases     Order[]        @relation("buyer")
-  sales         Order[]        @relation("seller")
-  reviews       Review[]       @relation("reviewer")
-  reviewsAbout  Review[]       @relation("reviewedSeller")
-  savedListings SavedListing[]
-  cart          Cart?
-  sentMessages     Message[] @relation("sender")
-  receivedMessages Message[] @relation("receiver")
-  buyerInquiries  Inquiry[]        @relation("inquiryBuyer")
-  sellerInquiries Inquiry[]        @relation("inquirySeller")
-  sentInquiryMessages     InquiryMessage[] @relation("inquiryMessageSender")
-  receivedInquiryMessages InquiryMessage[] @relation("inquiryMessageReceiver")
-  notifications Notification[] @relation("recipient")
-  triggeredNotifications Notification[] @relation("actor")
-  paymentAccounts SellerPaymentAccount[]
-  buyerDisputes  Dispute[] @relation("disputeBuyer")
-  sellerDisputes Dispute[] @relation("disputeSeller")
-  resolvedDisputes Dispute[] @relation("disputeResolver")
-  contactReplies ContactReply[]    @relation("contactReplyAdmin")
-  closedContacts ContactSubmission[] @relation("contactClosedBy")
-  sentBroadcasts Broadcast[]       @relation("broadcastSender")
+  listings                Listing[]
+  purchases               Order[]                @relation("buyer")
+  sales                   Order[]                @relation("seller")
+  reviews                 Review[]               @relation("reviewer")
+  reviewsAbout            Review[]               @relation("reviewedSeller")
+  savedListings           SavedListing[]
+  cart                    Cart?
+  sentMessages            Message[]              @relation("sender")
+  receivedMessages        Message[]              @relation("receiver")
+  buyerInquiries          Inquiry[]              @relation("inquiryBuyer")
+  sellerInquiries         Inquiry[]              @relation("inquirySeller")
+  sentInquiryMessages     InquiryMessage[]       @relation("inquiryMessageSender")
+  receivedInquiryMessages InquiryMessage[]       @relation("inquiryMessageReceiver")
+  notifications           Notification[]         @relation("recipient")
+  triggeredNotifications  Notification[]         @relation("actor")
+  paymentAccounts         SellerPaymentAccount[]
+  buyerDisputes           Dispute[]              @relation("disputeBuyer")
+  sellerDisputes          Dispute[]              @relation("disputeSeller")
+  resolvedDisputes        Dispute[]              @relation("disputeResolver")
+  contactReplies          ContactReply[]         @relation("contactReplyAdmin")
+  closedContacts          ContactSubmission[]    @relation("contactClosedBy")
+  sentBroadcasts          Broadcast[]            @relation("broadcastSender")
+  squareSyncOutbox        SquareSyncOutbox[]
+  squareSyncEvents        SquareSyncEvent[]
 
   @@index([deletedAt])
 }
 
 model Listing {
-  id          String        @id @default(uuid())
-  title       String        @db.VarChar(200)
-  description String        @db.VarChar(5000)
-  price       Decimal       @db.Decimal(10, 2)
-  category    String        @db.VarChar(50)
-  subcategory String?       @db.VarChar(50)
-  platform    String?       @db.VarChar(50)
-  brand       String?       @db.VarChar(50)
-  condition   Condition
-  status      ListingStatus @default(ACTIVE)
+  id                String            @id @default(uuid())
+  title             String            @db.VarChar(200)
+  description       String            @db.VarChar(5000)
+  price             Decimal           @db.Decimal(10, 2)
+  category          String            @db.VarChar(50)
+  subcategory       String?           @db.VarChar(50)
+  platform          String?           @db.VarChar(50)
+  brand             String?           @db.VarChar(50)
+  condition         Condition
+  status            ListingStatus     @default(ACTIVE)
   // Fulfillment offering. Defaults to PICKUP_ONLY so existing listings
   // that pre-date this column don't accidentally advertise free shipping.
   fulfillmentMethod FulfillmentMethod @default(PICKUP_ONLY)
   // Shipping price the seller charges when the buyer picks POST. Required
   // (non-null) when fulfillmentMethod is POST_ONLY or BOTH. May be 0
   // (seller offers free shipping). Null for PICKUP_ONLY.
-  shippingPrice Decimal? @db.Decimal(10, 2)
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  shippingPrice     Decimal?          @db.Decimal(10, 2)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   seller   User   @relation(fields: [sellerId], references: [id])
   sellerId String
 
-  images        ListingImage[]
-  orders        Order[]
-  savedByUsers  SavedListing[]
-  cartItems     CartItem[]
-  inquiries     Inquiry[]
+  images            ListingImage[]
+  orders            Order[]
+  savedByUsers      SavedListing[]
+  cartItems         CartItem[]
+  inquiries         Inquiry[]
+  squareCatalogLink SquareCatalogLink?
+  squareSyncOutbox  SquareSyncOutbox[]
+  squareSyncEvents  SquareSyncEvent[]
 
   @@index([status, createdAt])
   @@index([status, category])
@@ -306,9 +361,15 @@ model Listing {
 }
 
 model ListingImage {
-  id           String  @id @default(uuid())
-  url          String  @db.VarChar(500)
+  id           String @id @default(uuid())
+  url          String @db.VarChar(500)
   displayOrder Int
+  // Server-assigned id from Square Catalog after a successful image upload.
+  // Null while we've never uploaded this image, or while sync is disabled.
+  // Used by the worker to reuse the existing CatalogImage on subsequent
+  // listing edits instead of re-uploading the same bytes.
+  squareImageId         String?   @db.VarChar(64)
+  squareImageUploadedAt DateTime?
 
   listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   listingId String
@@ -331,8 +392,8 @@ model CartItem {
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
 
-  cart      Cart    @relation(fields: [cartId], references: [id], onDelete: Cascade)
-  cartId    String
+  cart   Cart   @relation(fields: [cartId], references: [id], onDelete: Cascade)
+  cartId String
 
   listing   Listing @relation(fields: [listingId], references: [id])
   listingId String
@@ -341,47 +402,47 @@ model CartItem {
 }
 
 model Order {
-  id            String        @id @default(uuid())
+  id                  String                 @id @default(uuid())
   // Total charged to the buyer = listing price + shippingPrice (0 for pickup).
   // Snapshotted at checkout so price/shipping changes on the listing don't
   // mutate an in-flight order.
-  amount        Decimal       @db.Decimal(10, 2)
-  status        OrderStatus   @default(PENDING_CONFIRMATION)
-  paymentMethod PaymentMethod?
+  amount              Decimal                @db.Decimal(10, 2)
+  status              OrderStatus            @default(PENDING_CONFIRMATION)
+  paymentMethod       PaymentMethod?
   // Buyer's fulfillment choice at checkout. PICKUP for legacy rows
   // (pre-fulfillment column) — they all settled in person.
-  fulfillmentMethod OrderFulfillmentMethod @default(PICKUP)
+  fulfillmentMethod   OrderFulfillmentMethod @default(PICKUP)
   // Shipping price snapshot from the listing at checkout time. 0 for PICKUP
   // orders. Stored on the order so per-row totals + receipts are stable
   // even if the listing's shippingPrice changes later.
-  shippingPrice Decimal @db.Decimal(10, 2) @default(0)
+  shippingPrice       Decimal                @default(0) @db.Decimal(10, 2)
   // Buyer-supplied delivery address. Set only for fulfillmentMethod=POST.
   // JSON shape: { name, line1, line2?, city, region, postcode, country }.
-  shippingAddress Json?
+  shippingAddress     Json?
   // Online-payment session tracking. Independent of `status`. Gates cancel
   // during a live charge. Manual completions (CASH/BANK_TRANSFER) leave this
   // at NONE and jump straight from status=CONFIRMED to status=COMPLETED.
-  paymentSessionState PaymentSessionState @default(NONE)
+  paymentSessionState PaymentSessionState    @default(NONE)
   // Fulfillment timestamps (nullable; set when seller/buyer click the
   // corresponding action). Used to render "Awaiting shipment" / "In transit"
   // / "Received on …" badges and for the dashboard in-progress filter.
-  trackingNumber String?   @db.VarChar(100)
-  shippedAt      DateTime?
-  deliveredAt    DateTime?
+  trackingNumber      String?                @db.VarChar(100)
+  shippedAt           DateTime?
+  deliveredAt         DateTime?
   // Provider-side payment identifier captured at PAID time, used for refunds.
   //  - Stripe: payment_intent id (pi_...)
   //  - Square: payment id (the tender behind the Order)
   //  - cash/bank: null (no provider call possible)
-  paymentProviderId String? @db.VarChar(200)
+  paymentProviderId   String?                @db.VarChar(200)
   // Refund metadata. refundedAt is set when status flips to REFUNDED;
   // refundReason is the seller's free-text justification (shown to buyer).
   // refundProviderId is the Stripe refund_id / Square refund_id for audit
   // — null for cash/bank where no provider was involved.
-  refundedAt       DateTime?
-  refundReason     String?  @db.VarChar(500)
-  refundProviderId String?  @db.VarChar(200)
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  refundedAt          DateTime?
+  refundReason        String?                @db.VarChar(500)
+  refundProviderId    String?                @db.VarChar(200)
+  createdAt           DateTime               @default(now())
+  updatedAt           DateTime               @updatedAt
 
   listing   Listing @relation(fields: [listingId], references: [id])
   listingId String
@@ -425,8 +486,8 @@ model SavedListing {
   id        String   @id @default(uuid())
   createdAt DateTime @default(now())
 
-  user      User    @relation(fields: [userId], references: [id])
-  userId    String
+  user   User   @relation(fields: [userId], references: [id])
+  userId String
 
   listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   listingId String
@@ -478,8 +539,8 @@ model Notification {
   // Optional denormalized references. The UI uses these to build click
   // targets (e.g., `/dashboard?tab=sales&order=<id>`). Strings — not FKs —
   // so a notification survives the referenced row being deleted.
-  orderId    String?
-  listingId  String?
+  orderId   String?
+  listingId String?
 
   @@index([recipientId, readAt])
   @@index([recipientId, createdAt])
@@ -554,15 +615,15 @@ model InquiryMessage {
 // Notifying admin on creation lets us mediate; resolution is admin-only via
 // the admin disputes queue.
 model Dispute {
-  id          String         @id @default(uuid())
-  status      DisputeStatus  @default(OPEN)
-  reason      DisputeReason
-  description String         @db.VarChar(2000)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
-  resolvedAt  DateTime?
+  id             String        @id @default(uuid())
+  status         DisputeStatus @default(OPEN)
+  reason         DisputeReason
+  description    String        @db.VarChar(2000)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  resolvedAt     DateTime?
   // Free-text resolution note from the admin (visible to buyer + seller).
-  resolutionNote String?     @db.VarChar(2000)
+  resolutionNote String?       @db.VarChar(2000)
 
   order   Order  @relation(fields: [orderId], references: [id])
   orderId String @unique
@@ -597,9 +658,9 @@ model ContactSubmission {
   createdAt DateTime      @default(now())
   updatedAt DateTime      @updatedAt
 
-  closedAt    DateTime?
-  closedBy    User?     @relation("contactClosedBy", fields: [closedById], references: [id])
-  closedById  String?
+  closedAt   DateTime?
+  closedBy   User?     @relation("contactClosedBy", fields: [closedById], references: [id])
+  closedById String?
 
   replies ContactReply[]
 
@@ -617,16 +678,16 @@ model ContactSubmission {
 // inbound email parsing so customers replying via Gmail land in /admin/contact
 // instead of the admin's personal inbox.
 model ContactReply {
-  id        String                  @id @default(uuid())
-  body      String                  @db.VarChar(10000)
-  sentAt    DateTime                @default(now())
-  direction ContactReplyDirection   @default(OUTBOUND)
+  id        String                @id @default(uuid())
+  body      String                @db.VarChar(10000)
+  sentAt    DateTime              @default(now())
+  direction ContactReplyDirection @default(OUTBOUND)
 
   submission   ContactSubmission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
   submissionId String
 
   // Set on OUTBOUND only (admin who composed the reply). NULL on INBOUND.
-  admin   User?  @relation("contactReplyAdmin", fields: [adminId], references: [id])
+  admin   User?   @relation("contactReplyAdmin", fields: [adminId], references: [id])
   adminId String?
 
   @@index([submissionId, sentAt])
@@ -638,21 +699,21 @@ model ContactReply {
 // sentCount + failedCount + sentAt prove WHAT happened. Body stored so the
 // admin can re-send the same content if needed.
 model Broadcast {
-  id              String           @id @default(uuid())
-  subject         String           @db.VarChar(200)
-  body            String           @db.VarChar(20000)
-  audience        BroadcastAudience
+  id            String            @id @default(uuid())
+  subject       String            @db.VarChar(200)
+  body          String            @db.VarChar(20000)
+  audience      BroadcastAudience
   // Comma-separated list when audience=CUSTOM_EMAILS; null otherwise.
-  targetEmails    String?          @db.VarChar(5000)
-  channelEmail    Boolean          @default(true)
-  channelInApp    Boolean          @default(true)
+  targetEmails  String?           @db.VarChar(5000)
+  channelEmail  Boolean           @default(true)
+  channelInApp  Boolean           @default(true)
   // Snapshot of audience size at send time.
-  audienceCount   Int
-  sentCount       Int              @default(0)
-  failedCount     Int              @default(0)
-  status          String           @default("SENDING") @db.VarChar(20) // SENDING | DONE | FAILED
-  createdAt       DateTime         @default(now())
-  finishedAt      DateTime?
+  audienceCount Int
+  sentCount     Int               @default(0)
+  failedCount   Int               @default(0)
+  status        String            @default("SENDING") @db.VarChar(20) // SENDING | DONE | FAILED
+  createdAt     DateTime          @default(now())
+  finishedAt    DateTime?
 
   sentBy   User   @relation("broadcastSender", fields: [sentById], references: [id])
   sentById String
@@ -675,21 +736,21 @@ model Broadcast {
 // Unique (userId, provider) — re-onboarding updates the row in place so
 // history (onboardedAt, status transitions) isn't lost.
 model SellerPaymentAccount {
-  id             String               @id @default(uuid())
+  id             String              @id @default(uuid())
   provider       PaymentProvider
-  status         SellerAccountStatus  @default(PENDING)
-  accountId      String               @db.VarChar(200)
-  accessToken    String?              @db.VarChar(5000)
-  refreshToken   String?              @db.VarChar(5000)
+  status         SellerAccountStatus @default(PENDING)
+  accountId      String              @db.VarChar(200)
+  accessToken    String?             @db.VarChar(5000)
+  refreshToken   String?             @db.VarChar(5000)
   tokenExpiresAt DateTime?
-  scope          String?              @db.VarChar(500)
-  locationId     String?              @db.VarChar(100)
-  chargesEnabled Boolean              @default(false)
-  payoutsEnabled Boolean              @default(false)
+  scope          String?             @db.VarChar(500)
+  locationId     String?             @db.VarChar(100)
+  chargesEnabled Boolean             @default(false)
+  payoutsEnabled Boolean             @default(false)
   onboardedAt    DateTime?
   lastSyncedAt   DateTime?
-  createdAt      DateTime             @default(now())
-  updatedAt      DateTime             @updatedAt
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
 
   user   User   @relation(fields: [userId], references: [id])
   userId String
@@ -718,4 +779,186 @@ model PhoneSmsCooldown {
   phone      String   @id @db.VarChar(20) // E.164 with leading +
   lastSentAt DateTime
   updatedAt  DateTime @updatedAt
+}
+
+// 1:1 mapping from a marketplace Listing to its mirrored Square Catalog
+// object. Created the first time a sync succeeds; updated on every successful
+// upsert (status, version, lastSyncedAt). `squareObjectId` is the catalog
+// object's id (e.g. `#listing-<uuid>` client id, replaced with Square's
+// `LX...` server id after the first round-trip). `version` is Square's
+// optimistic-concurrency version — sent back on next upsert to detect
+// concurrent edits from Square POS. `lastError` keeps the most recent
+// failure verbatim for surfacing in the seller UI.
+//
+// Composite unique on (listingId, squareMerchantId) — even though we expect
+// one row per listing, scoping to merchant_id makes the relationship
+// auditable if a seller ever migrates merchants (rare).
+model SquareCatalogLink {
+  id                String                  @id @default(uuid())
+  status            SquareCatalogLinkStatus @default(PENDING)
+  // Square's merchant_id — denormalized from SellerPaymentAccount so the
+  // row survives an account being disconnected (we still want to know what
+  // we last synced where).
+  squareMerchantId  String                  @db.VarChar(64)
+  // Server-assigned id from Square (`L...` for items, `Q...` for variations).
+  // Null while we've never had a successful sync.
+  squareObjectId    String?                 @db.VarChar(64)
+  // Server-assigned id of the primary variation (Square requires every Item
+  // to own at least one CatalogItemVariation; we model marketplace listings
+  // as one item + one variation).
+  squareVariationId String?                 @db.VarChar(64)
+  // Square optimistic-concurrency version. Used to (a) tell our worker if
+  // remote moved ahead since the last successful sync, and (b) feed back
+  // into the next upsert so Square rejects out-of-order writes.
+  version           BigInt?
+  // Hash of the listing payload we last successfully sent. If a new
+  // outbox row's hash equals this, the worker can short-circuit (no API
+  // call needed). Cuts down "edit then save without changes" no-ops.
+  lastSyncedHash    String?                 @db.VarChar(64)
+  lastSyncedAt      DateTime?
+  // Last failure — message + the catalog op the worker was attempting.
+  // Cleared on next success.
+  lastError         String?                 @db.VarChar(2000)
+  lastErrorAt       DateTime?
+  createdAt         DateTime                @default(now())
+  updatedAt         DateTime                @updatedAt
+
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listingId String  @unique
+
+  @@index([squareMerchantId, status])
+  @@index([status, lastErrorAt])
+}
+
+// Outbox pattern: every Listing CRUD that's eligible for sync writes a row
+// here in the SAME Prisma transaction as the Listing change. A separate
+// poller-or-direct-publisher enqueues these into BullMQ. This guarantees
+// that we never lose a sync intent on Redis outage — the row sits in
+// Postgres until the queue is back, then the reconciler/poller catches up.
+//
+// Why both an outbox and a job queue:
+//   - The outbox guarantees durability (no lost writes on Redis crash).
+//   - BullMQ gives us scheduled retry, concurrency, fan-out — features
+//     a Postgres-only design would need to reinvent.
+//   - The worker reads payload from the outbox row at execution time
+//     (not from the job's data), so even a job whose payload became stale
+//     in Redis still pulls the latest desired state.
+model SquareSyncOutbox {
+  id            String                 @id @default(uuid())
+  kind          SquareSyncOutboxKind
+  status        SquareSyncOutboxStatus @default(PENDING)
+  // Frozen at insertion: snapshot of the listing fields the worker needs.
+  // Worker still re-reads the live listing for the actual payload, but the
+  // snapshot lets us replay/debug what was true at write time.
+  payload       Json
+  // BullMQ job id once enqueued. Null while PENDING; populated on transition
+  // to ENQUEUED so admin can correlate to the BullMQ inspector.
+  jobId         String?                @db.VarChar(64)
+  attempts      Int                    @default(0)
+  lastError     String?                @db.VarChar(2000)
+  // When the worker most recently tried this outbox row. Used by the
+  // backfill cron to detect rows stuck in ENQUEUED for too long (BullMQ
+  // crash mid-job).
+  lastAttemptAt DateTime?
+  enqueuedAt    DateTime?
+  processedAt   DateTime?
+  createdAt     DateTime               @default(now())
+
+  // Soft references — we don't cascade on listing delete because we still
+  // want the LISTING_DELETE outbox row to fire AFTER the listing is gone.
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listingId String
+  seller    User    @relation(fields: [sellerId], references: [id])
+  sellerId  String
+
+  // Backs the poller: "what's PENDING, oldest first?". With the seller
+  // filter for the per-seller force-resync admin action.
+  @@index([status, createdAt])
+  @@index([sellerId, status, createdAt])
+  @@index([listingId])
+}
+
+// Per-attempt audit row. One row per worker attempt (start + finish OR
+// start + crash). Used for:
+//   - Admin sync-health dashboard (success/failure rates over time)
+//   - Per-seller drill-in showing recent failures
+//   - Postmortems when a seller asks "why did my listing disappear from POS"
+// The row is intentionally append-only and bounded by retention cron;
+// deleting individual rows is forbidden by application code.
+model SquareSyncEvent {
+  id             String                 @id @default(uuid())
+  outcome        SquareSyncEventOutcome
+  kind           SquareSyncOutboxKind
+  // Free-form action name for finer granularity than `kind` (e.g.
+  // "upsert.image" inside an upsert flow). Matches structured-log msg keys.
+  action         String                 @db.VarChar(64)
+  // Square API call duration, set on terminal outcomes.
+  durationMs     Int?
+  // For FAILURE / CONFLICT — the error message verbatim. Truncated to fit
+  // a varchar; full bodies are in the structured logger.
+  message        String?                @db.VarChar(2000)
+  // Square `errors[].code` (`OPTIMISTIC_LOCKING_FAILURE`, `RATE_LIMITED`, etc.)
+  // when the failure came from the API. Lets the dashboard group failures
+  // by cause without parsing free-text messages.
+  errorCode      String?                @db.VarChar(64)
+  // Backreference to the outbox row that drove this attempt. Nullable
+  // because some events (webhook-driven inbound, reconciler scans) aren't
+  // tied to an outbox row.
+  outboxId       String?                @db.VarChar(64)
+  squareObjectId String?                @db.VarChar(64)
+  squareEventId  String?                @db.VarChar(64) // for inbound webhook attribution
+  createdAt      DateTime               @default(now())
+
+  listing   Listing? @relation(fields: [listingId], references: [id], onDelete: SetNull)
+  listingId String?
+  seller    User     @relation(fields: [sellerId], references: [id])
+  sellerId  String
+
+  // Admin tab uses these to show "last 100 events for seller X" and
+  // "failures across the platform in the last 24h".
+  @@index([sellerId, createdAt])
+  @@index([outcome, createdAt])
+  @@index([listingId, createdAt])
+}
+
+// Replay-dedupe for inbound Square Catalog webhooks (catalog.version.updated
+// and inventory.count.updated). Separate from ProcessedWebhookEvent (which is
+// for payment events) because catalog event volume is much higher and we
+// want a different retention strategy.
+model SquareCatalogWebhookEvent {
+  id         String   @id @default(uuid())
+  eventId    String   @unique @db.VarChar(64) // Square `event_id`
+  type       String   @db.VarChar(64)
+  // The seller's merchant_id this event was for. Lets us narrow which
+  // tenant's data needs reconciliation if dedupe ever fails.
+  merchantId String   @db.VarChar(64)
+  createdAt  DateTime @default(now())
+
+  @@index([merchantId, createdAt])
+  @@index([createdAt])
+}
+
+// Seed data for the public Featured rail. Mirrors a curated selection of
+// CatalogItem ids from the demo merchant's Square Catalog. Refreshed by a
+// cron (or manual admin "rebuild" action) — not a write-through cache; the
+// rail endpoint reads from this table, not directly from Square. Lets the
+// homepage stay fast and survive a Square outage.
+model SquareFeaturedItem {
+  id             String   @id @default(uuid())
+  squareObjectId String   @unique @db.VarChar(64)
+  name           String   @db.VarChar(200)
+  description    String?  @db.VarChar(2000)
+  imageUrl       String?  @db.VarChar(500)
+  priceCents     Int
+  currency       String   @db.VarChar(3)
+  // Display order — admin can drag to reorder; lower = earlier.
+  rank           Int      @default(0)
+  // Set when the rebuild job last refreshed this row. Used to detect items
+  // that disappeared from Square (older than the last rebuild stamp).
+  lastSeenAt     DateTime
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([rank])
+  @@index([lastSeenAt])
 }

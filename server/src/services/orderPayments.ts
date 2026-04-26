@@ -2,6 +2,7 @@ import prisma from '../lib/prisma.js';
 import { Prisma } from '../generated/prisma/client.js';
 import type { PaymentMethod } from '../generated/prisma/client.js';
 import { createNotification } from './notifications.js';
+import { createOutboxRow, enqueueOutbox, snapshotListing } from './squareCatalog/index.js';
 
 export type PaidResult =
   | { status: 'completed' }
@@ -84,13 +85,43 @@ export async function markOrderPaid(
 
     // Listing flips to SOLD on PAID — item is off-market the moment the
     // seller has the money, regardless of when fulfilment completes.
-    await tx.listing.updateMany({
+    const flipped = await tx.listing.updateMany({
       where: { id: order.listingId, status: 'ON_HOLD' },
       data: { status: 'SOLD' },
     });
 
-    return { status: 'completed' } as const;
+    // Push inventory=0 to Square if the seller has catalog sync enabled
+    // — keeps their POS shelf in sync. Outbox-only inside the tx so the
+    // sync is durable even if BullMQ is down at the moment.
+    let outboxId: string | null = null;
+    if (flipped.count > 0) {
+      const fullListing = await tx.listing.findUnique({
+        where: { id: order.listingId },
+        include: { images: { orderBy: { displayOrder: 'asc' } } },
+      });
+      if (fullListing) {
+        outboxId = await createOutboxRow({
+          tx,
+          listingId: fullListing.id,
+          sellerId: fullListing.sellerId,
+          kind: 'INVENTORY_ADJUST',
+          payload: {
+            kind: 'INVENTORY_ADJUST',
+            listing: snapshotListing(fullListing),
+            inventoryDelta: 0,
+          },
+        });
+      }
+    }
+
+    return { status: 'completed' as const, outboxId };
   });
+
+  // Push the inventory=0 sync to Square once the tx has committed. Failure
+  // here is non-fatal — the row stays PENDING and the reconciler picks it up.
+  if (result.status === 'completed' && result.outboxId) {
+    void enqueueOutbox(result.outboxId);
+  }
 
   // Notify both sides on a successful capture. Happens outside the tx so a
   // notification failure can't roll back the payment. Only ORDER_PAID/

@@ -20,6 +20,7 @@ import webhookRoutes from './routes/webhooks.js';
 import contactRoutes from './routes/contact.js';
 import sellerPaymentRoutes from './routes/sellerPayments.js';
 import disputeRoutes from './routes/disputes.js';
+import squareCatalogRoutes from './routes/squareCatalog.js';
 import { validateSquareWebhookConfig } from './config/square.js';
 import { verifySmtpAtStartup } from './config/email.js';
 import { verifyFirebaseAtStartup } from './config/firebase.js';
@@ -27,6 +28,10 @@ import { csrfOriginGuard } from './middleware/csrf.js';
 import { requestLogger } from './middleware/requestLogger.js';
 import { logger } from './utils/logger.js';
 import { startOrderSweep, stopOrderSweep } from './services/orderSweep.js';
+import {
+  startSquareCatalogSync,
+  stopSquareCatalogSync,
+} from './services/squareCatalog/index.js';
 
 // Fail fast at boot on missing required env — the alternative is a service
 // that reports "ok" and 500s on the first real request. JWT_SECRET is already
@@ -119,6 +124,7 @@ app.use('/api/inbox', inboxRoutes);
 app.use('/api/inquiries', inquiryRoutes);
 app.use('/api/contact', contactRoutes);
 app.use('/api/seller/payments', sellerPaymentRoutes);
+app.use('/api/square-catalog', squareCatalogRoutes);
 // disputes mounts its own /orders/:id/disputes and /admin/disputes paths
 app.use('/api', disputeRoutes);
 
@@ -129,6 +135,9 @@ const server = app.listen(PORT, () => {
 // Background sweeps — kicked off after the server is listening so a crash on
 // the first run doesn't prevent the process from being debuggable.
 startOrderSweep();
+// Square Catalog sync (BullMQ worker + reconciler + daily summary). No-op
+// if REDIS_URL isn't set — the marketplace itself keeps working.
+startSquareCatalogSync();
 
 // Graceful shutdown: stop accepting new connections, let in-flight requests
 // finish, then close the Prisma pool. Without this, SIGTERM (docker stop,
@@ -143,6 +152,13 @@ function shutdown(signal: string): void {
   }, 15000);
   server.close(async () => {
     clearTimeout(timeout);
+    try {
+      await stopSquareCatalogSync();
+    } catch (err) {
+      logger.error('server.shutdown.square_catalog_stop_failed', {
+        err: String(err),
+      });
+    }
     try {
       await prisma.$disconnect();
     } catch (err) {

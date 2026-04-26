@@ -374,6 +374,11 @@ function QuickLinks({
           title="Broadcasts"
           subtitle="Send announcements via email + in-app to subgroups or specific users."
         />
+        <ToolCard
+          href="/admin/catalog-sync"
+          title="Square Catalog sync"
+          subtitle="Health of seller catalog mirroring + force-resync + featured-rail rebuild."
+        />
       </div>
     </section>
   );

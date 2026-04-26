@@ -32,6 +32,23 @@ services:
       timeout: 5s
       retries: 5
 
+  redis:
+    # Backs BullMQ for Square Catalog sync. AOF persistence on so a crash
+    # doesn't drop in-flight sync jobs (the alternative is silent listing
+    # drift between marketplace and Square POS until reconciliation runs).
+    # If you're running on Railway / Render, replace this with a managed
+    # Redis and point REDIS_URL at it; the rest of the stack is agnostic.
+    image: redis:7-alpine
+    restart: unless-stopped
+    volumes:
+      - redisdata:/data
+    command: ["redis-server", "--appendonly", "yes"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
   server:
     build:
       context: ./server
@@ -61,6 +78,18 @@ services:
       SQUARE_ENV: ${SQUARE_ENV:-production}
       SQUARE_WEBHOOK_SIGNATURE_KEY: ${SQUARE_WEBHOOK_SIGNATURE_KEY:-}
       SQUARE_WEBHOOK_URL: ${SQUARE_WEBHOOK_URL:-}
+      SQUARE_OAUTH_STATE_SECRET: ${SQUARE_OAUTH_STATE_SECRET:-}
+      SQUARE_APPLICATION_ID: ${SQUARE_APPLICATION_ID:-}
+      SQUARE_APPLICATION_SECRET: ${SQUARE_APPLICATION_SECRET:-}
+      # Square Catalog sync (per-seller two-way + public Featured rail).
+      # When unset, the catalog sync feature is disabled; the marketplace
+      # itself keeps working.
+      SQUARE_FEATURED_ACCESS_TOKEN: ${SQUARE_FEATURED_ACCESS_TOKEN:-}
+      SQUARE_FEATURED_LOCATION_ID: ${SQUARE_FEATURED_LOCATION_ID:-}
+      SQUARE_CATALOG_WEBHOOK_SIGNATURE_KEY: ${SQUARE_CATALOG_WEBHOOK_SIGNATURE_KEY:-}
+      SQUARE_CATALOG_WEBHOOK_URL: ${SQUARE_CATALOG_WEBHOOK_URL:-}
+      REDIS_URL: ${REDIS_URL:?REDIS_URL is required for the catalog sync queue}
+      PAYMENT_TOKEN_ENCRYPTION_KEY: ${PAYMENT_TOKEN_ENCRYPTION_KEY:?PAYMENT_TOKEN_ENCRYPTION_KEY is required}
     healthcheck:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:5000/api/health"]
       interval: 15s
@@ -69,6 +98,8 @@ services:
       start_period: 20s
     depends_on:
       db:
+        condition: service_healthy
+      redis:
         condition: service_healthy
 
   client:
@@ -87,3 +118,4 @@ services:
 
 volumes:
   pgdata:
+  redisdata:

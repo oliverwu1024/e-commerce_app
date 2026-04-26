@@ -224,6 +224,13 @@ export default function Home() {
           )}
         </div>
       </section>
+
+      {/* ============================================================
+         FEATURED FROM SQUARE — pulled live from a partner Square
+         Catalog (read-only). Demonstrates the platform's Square API
+         integration in a buyer-facing surface.
+         ============================================================ */}
+      <SquareFeaturedRail />
     </main>
   );
 }
@@ -614,6 +621,111 @@ function DealsStrip({
             </div>
           </Link>
         ))}
+      </div>
+    </div>
+  );
+}
+
+/* ================================================================
+   SQUARE FEATURED RAIL — server-cached pull from a curated demo
+   Square Catalog. Cached server-side for 60s and read here.
+   Shown as a buyer-facing rail; renders nothing if the demo
+   merchant isn't configured (no SQUARE_FEATURED_ACCESS_TOKEN).
+   ================================================================ */
+function SquareFeaturedRail() {
+  const [items, setItems] = useState<SquareFeaturedItemView[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    let cancelled = false;
+    api<{ items: SquareFeaturedItemView[] }>('/api/square-catalog/featured')
+      .then((r) => {
+        if (!cancelled) setItems(r.items);
+      })
+      .catch(() => {
+        // Quiet failure — the rail just doesn't render.
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, []);
+
+  // Quietly hide the section once we know there's nothing to show. This
+  // keeps the homepage clean for visitors when the demo merchant isn't
+  // configured (most local-dev environments).
+  if (!loading && items.length === 0) return null;
+
+  return (
+    <section className="relative border-t border-[var(--border-subtle)] bg-[var(--bg-base)] transition-colors">
+      <div className="mx-auto max-w-6xl px-4 py-16 lg:py-20">
+        <div className="mb-10 flex items-end justify-between gap-4">
+          <div>
+            <p className="font-serif-italic text-xl text-[var(--text-primary)]">
+              Powered by Square Catalog
+            </p>
+            <h2 className="mt-1 text-3xl font-bold tracking-tight text-[var(--text-primary)] sm:text-4xl">
+              Featured from our partners
+            </h2>
+            <p className="mt-2 max-w-xl text-sm text-[var(--text-muted)]">
+              Live pull from a partner merchant&apos;s Square Catalog — refreshed daily.
+            </p>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+          {loading
+            ? Array.from({ length: 6 }, (_, i) => (
+                <div
+                  key={i}
+                  className="aspect-[3/4] animate-pulse rounded-lg bg-[var(--bg-panel)]"
+                />
+              ))
+            : items.map((it) => (
+                <SquareFeaturedCard key={it.id} item={it} />
+              ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+type SquareFeaturedItemView = {
+  id: string;
+  squareObjectId: string;
+  name: string;
+  description: string | null;
+  imageUrl: string | null;
+  priceCents: number;
+  currency: string;
+};
+
+function SquareFeaturedCard({ item }: { item: SquareFeaturedItemView }) {
+  const price = (item.priceCents / 100).toFixed(2);
+  return (
+    <div className="overflow-hidden rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel)] transition-colors hover:border-[var(--neon-cyan)]">
+      <div className="aspect-square w-full bg-[var(--bg-base)]">
+        {item.imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={item.imageUrl}
+            alt={item.name}
+            className="h-full w-full object-cover"
+            loading="lazy"
+          />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-xs text-[var(--text-dim)]">
+            No image
+          </div>
+        )}
+      </div>
+      <div className="p-3">
+        <p className="line-clamp-2 text-sm font-medium text-[var(--text-primary)]">
+          {item.name}
+        </p>
+        <p className="mt-1 text-base font-bold text-[var(--neon-cyan)]">
+          {item.currency} ${price}
+        </p>
       </div>
     </div>
   );

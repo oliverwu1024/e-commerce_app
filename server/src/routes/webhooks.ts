@@ -14,6 +14,7 @@ import {
   getSquareWebhookUrl,
 } from '../config/square.js';
 import { markOrderPaid } from '../services/orderPayments.js';
+import { handleSquareCatalogWebhook } from '../services/squareCatalog/inbound.js';
 
 const router = Router();
 
@@ -604,6 +605,24 @@ router.post('/email', async (req: Request, res: Response) => {
     console.error('[email webhook] handler failed:', err);
     res.status(500).json({ error: 'Inbound handler failed' });
   }
+});
+
+// ---------------------------------------------------------------------------
+// POST /api/webhooks/square/catalog
+// Square Catalog + Inventory webhooks: catalog.version.updated and
+// inventory.count.updated. Subscribed in the Square Dashboard against the
+// signature key SQUARE_CATALOG_WEBHOOK_SIGNATURE_KEY (separate from the
+// payments webhook so they can be rotated independently). The notification
+// URL in the dashboard must equal SQUARE_CATALOG_WEBHOOK_URL byte-for-byte
+// (Square hashes the body + URL together).
+//
+// Local dev: ngrok port 5000, set SQUARE_CATALOG_WEBHOOK_URL to the ngrok
+// HTTPS URL + this path, copy the signature key from the dashboard into
+// SQUARE_CATALOG_WEBHOOK_SIGNATURE_KEY, then trigger an event by editing
+// any item in your Square sandbox catalog.
+// ---------------------------------------------------------------------------
+router.post('/square/catalog', async (req: Request, res: Response) => {
+  await handleSquareCatalogWebhook(req, res);
 });
 
 export default router;
