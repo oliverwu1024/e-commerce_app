@@ -13,6 +13,7 @@ import {
   enqueueOutbox,
   snapshotListing,
 } from '../services/squareCatalog/index.js';
+import { LISTING_IMAGE_TYPES, verifyS3Upload } from '../lib/s3Verify.js';
 
 const router = Router();
 
@@ -285,6 +286,29 @@ router.post('/', authenticate, createListingLimiter, async (req: Request, res: R
 
     const { images, ...listingData } = parsed.data;
 
+    // MIME-verify each image URL via S3 HEAD before persisting. The
+    // presigned-URL flow already constrains Content-Type at signature
+    // time, but AWS doesn't actually inspect the bytes — a hostile
+    // client could sign as image/jpeg and upload anything. Failing here
+    // means: didn't actually upload, or uploaded a different file type
+    // than declared. Either way, refuse the listing.
+    if (images && images.length > 0) {
+      for (const img of images) {
+        const result = await verifyS3Upload(img.url, {
+          allowedContentTypes: LISTING_IMAGE_TYPES,
+        });
+        if (!result.ok) {
+          res.status(400).json({
+            error:
+              result.reason === 'not_found'
+                ? 'Image upload not found. Please re-upload and try again.'
+                : 'Image type does not match what was uploaded. Please re-upload as JPEG, PNG, or WebP.',
+          });
+          return;
+        }
+      }
+    }
+
     // Wrap in a transaction so the outbox row is committed atomically
     // with the Listing — we never end up with a synced listing that has
     // no outbox row, or vice versa.
@@ -368,6 +392,35 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
     }
 
     const { images, ...updateData } = parsed.data;
+
+    // Verify any NEW image URLs (those not already on this listing). Old
+    // URLs were verified at their original upload; re-checking them on
+    // every save would double the latency for no security gain.
+    if (images && images.length > 0) {
+      const existingUrls = new Set(
+        (
+          await prisma.listingImage.findMany({
+            where: { listingId: id },
+            select: { url: true },
+          })
+        ).map((r) => r.url),
+      );
+      for (const img of images) {
+        if (existingUrls.has(img.url)) continue;
+        const verifyResult = await verifyS3Upload(img.url, {
+          allowedContentTypes: LISTING_IMAGE_TYPES,
+        });
+        if (!verifyResult.ok) {
+          res.status(400).json({
+            error:
+              verifyResult.reason === 'not_found'
+                ? 'Image upload not found. Please re-upload and try again.'
+                : 'Image type does not match what was uploaded. Please re-upload as JPEG, PNG, or WebP.',
+          });
+          return;
+        }
+      }
+    }
 
     const result = await prisma.$transaction(async (tx) => {
       // Re-verify ownership + status inside transaction to prevent TOCTOU race

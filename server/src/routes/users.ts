@@ -1,17 +1,21 @@
 import { Router, Request, Response } from 'express';
 import bcrypt from 'bcrypt';
 import crypto from 'crypto';
-import { HeadObjectCommand } from '@aws-sdk/client-s3';
 import prisma from '../lib/prisma.js';
 import { validateAbnChecksum } from '../lib/abn.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { AUTH_CONFIG } from '../config/auth.js';
 import { EMAIL_CONFIG } from '../config/email.js';
 import { clearTokenCookie } from '../utils/cookies.js';
-import { s3, S3_BUCKET, S3_REGION } from '../config/s3.js';
+import { S3_BUCKET, S3_REGION } from '../config/s3.js';
 import { authenticate } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { uuidSchema } from '../schemas/common.js';
+import {
+  AVATAR_TYPES,
+  ID_DOCUMENT_TYPES,
+  verifyS3Upload,
+} from '../lib/s3Verify.js';
 import {
   updateProfileSchema,
   changePasswordSchema,
@@ -429,23 +433,26 @@ router.post('/verify-id', authenticate, profileLimiter, async (req: Request, res
       return;
     }
 
-    // HEAD-check both uploads before flipping state. A syntactically-valid URL
-    // under the user's prefix proves nothing — the user could POST the path
-    // without having actually uploaded, leaving admins to click and 404.
+    // HEAD-check both uploads + verify Content-Type. A syntactically-valid
+    // URL under the user's prefix proves nothing — the user could POST the
+    // path without having actually uploaded, leaving admins to click and
+    // 404. The Content-Type check additionally catches "signed as JPEG,
+    // uploaded as PDF" (or worse, signed as JPEG, uploaded as HTML).
     for (const [label, url] of [
       ['front', documentUrl],
       ['back', documentBackUrl],
     ] as const) {
-      const key = url.slice(bucketRoot.length);
-      try {
-        await s3.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }));
-      } catch (err) {
-        const status = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
-        if (status === 404 || status === 403) {
-          res.status(400).json({ error: `${label === 'front' ? 'Front' : 'Back'} upload not found. Please try uploading again.` });
-          return;
-        }
-        throw err;
+      const verifyResult = await verifyS3Upload(url, {
+        allowedContentTypes: ID_DOCUMENT_TYPES,
+      });
+      if (!verifyResult.ok) {
+        res.status(400).json({
+          error:
+            verifyResult.reason === 'not_found'
+              ? `${label === 'front' ? 'Front' : 'Back'} upload not found. Please try uploading again.`
+              : `${label === 'front' ? 'Front' : 'Back'} file must be JPEG, PNG, or PDF. Please re-upload.`,
+        });
+        return;
       }
     }
 
@@ -819,16 +826,17 @@ router.put('/avatar', authenticate, profileLimiter, async (req: Request, res: Re
       return;
     }
 
-    const key = avatarUrl.slice(bucketRoot.length);
-    try {
-      await s3.send(new HeadObjectCommand({ Bucket: S3_BUCKET, Key: key }));
-    } catch (err) {
-      const status = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode;
-      if (status === 404 || status === 403) {
-        res.status(400).json({ error: 'Upload not found. Please try uploading again.' });
-        return;
-      }
-      throw err;
+    const verifyResult = await verifyS3Upload(avatarUrl, {
+      allowedContentTypes: AVATAR_TYPES,
+    });
+    if (!verifyResult.ok) {
+      res.status(400).json({
+        error:
+          verifyResult.reason === 'not_found'
+            ? 'Upload not found. Please try uploading again.'
+            : 'Avatar type must be JPEG, PNG, or WebP. Please re-upload.',
+      });
+      return;
     }
 
     const user = await prisma.user.update({
