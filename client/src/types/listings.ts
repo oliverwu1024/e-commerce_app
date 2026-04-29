@@ -69,6 +69,13 @@ export type ListingDetail = {
     url: string;
     displayOrder: number;
   }[];
+  videos: {
+    id: string;
+    url: string;
+    mimeType: string;
+    sizeBytes: number;
+    displayOrder: number;
+  }[];
 };
 
 export type Pagination = {

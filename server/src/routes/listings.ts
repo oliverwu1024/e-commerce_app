@@ -13,7 +13,7 @@ import {
   enqueueOutbox,
   snapshotListing,
 } from '../services/squareCatalog/index.js';
-import { LISTING_IMAGE_TYPES, verifyS3Upload } from '../lib/s3Verify.js';
+import { LISTING_IMAGE_TYPES, LISTING_VIDEO_TYPES, verifyS3Upload } from '../lib/s3Verify.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -386,7 +386,7 @@ router.post('/', authenticate, createListingLimiter, async (req: Request, res: R
       return;
     }
 
-    const { images, ...listingData } = parsed.data;
+    const { images, videos, ...listingData } = parsed.data;
 
     // MIME-verify each image URL via S3 HEAD before persisting. The
     // presigned-URL flow already constrains Content-Type at signature
@@ -411,6 +411,29 @@ router.post('/', authenticate, createListingLimiter, async (req: Request, res: R
       }
     }
 
+    // Same byte-level verification for videos. magic-byte mismatch on a
+    // video most often means the user signed as `video/mp4` but PUT a
+    // browser MOV/HEVC variant whose ftyp brand we don't accept.
+    if (videos && videos.length > 0) {
+      for (const vid of videos) {
+        const result = await verifyS3Upload(vid.url, {
+          allowedContentTypes: LISTING_VIDEO_TYPES,
+          maxBytes: 100 * 1024 * 1024,
+        });
+        if (!result.ok) {
+          res.status(400).json({
+            error:
+              result.reason === 'not_found'
+                ? 'Video upload not found. Please re-upload and try again.'
+                : result.reason === 'too_big'
+                ? 'Video must be under 100 MB.'
+                : 'Video type does not match what was uploaded. Please re-upload as MP4 or WebM.',
+          });
+          return;
+        }
+      }
+    }
+
     // Wrap in a transaction so the outbox row is committed atomically
     // with the Listing — we never end up with a synced listing that has
     // no outbox row, or vice versa.
@@ -422,9 +445,20 @@ router.post('/', authenticate, createListingLimiter, async (req: Request, res: R
           images: images?.length
             ? { create: images.map((img) => ({ url: img.url, displayOrder: img.displayOrder })) }
             : undefined,
+          videos: videos?.length
+            ? {
+                create: videos.map((vid) => ({
+                  url: vid.url,
+                  mimeType: vid.mimeType,
+                  sizeBytes: vid.sizeBytes,
+                  displayOrder: vid.displayOrder,
+                })),
+              }
+            : undefined,
         },
         include: {
           images: { orderBy: { displayOrder: 'asc' } },
+          videos: { orderBy: { displayOrder: 'asc' } },
           seller: {
             select: { id: true, username: true, ...PUBLIC_LOCATION_SELECT },
           },
@@ -493,7 +527,7 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
       return;
     }
 
-    const { images, ...updateData } = parsed.data;
+    const { images, videos, ...updateData } = parsed.data;
 
     // Verify any NEW image URLs (those not already on this listing). Old
     // URLs were verified at their original upload; re-checking them on
@@ -518,6 +552,37 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
               verifyResult.reason === 'not_found'
                 ? 'Image upload not found. Please re-upload and try again.'
                 : 'Image type does not match what was uploaded. Please re-upload as JPEG, PNG, or WebP.',
+          });
+          return;
+        }
+      }
+    }
+
+    // Same skip-if-existing approach for videos: we don't re-HEAD a URL
+    // that's already on this listing, only newly-introduced ones.
+    if (videos && videos.length > 0) {
+      const existingVideoUrls = new Set(
+        (
+          await prisma.listingVideo.findMany({
+            where: { listingId: id },
+            select: { url: true },
+          })
+        ).map((r) => r.url),
+      );
+      for (const vid of videos) {
+        if (existingVideoUrls.has(vid.url)) continue;
+        const verifyResult = await verifyS3Upload(vid.url, {
+          allowedContentTypes: LISTING_VIDEO_TYPES,
+          maxBytes: 100 * 1024 * 1024,
+        });
+        if (!verifyResult.ok) {
+          res.status(400).json({
+            error:
+              verifyResult.reason === 'not_found'
+                ? 'Video upload not found. Please re-upload and try again.'
+                : verifyResult.reason === 'too_big'
+                ? 'Video must be under 100 MB.'
+                : 'Video type does not match what was uploaded. Please re-upload as MP4 or WebM.',
           });
           return;
         }
@@ -615,11 +680,74 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
         }
       }
 
+      // Same four-phase reconcile for videos. With max=1 the two
+      // intermediate phases are no-ops, but mirroring the image flow
+      // means we don't have to revisit this if/when we raise the cap.
+      // Note: no IMAGE_DELETE-equivalent outbox row — videos aren't
+      // synced to Square Catalog, so removing one only deletes a DB row
+      // (the S3 object stays, same as images today).
+      if (videos !== undefined) {
+        const currentVideoRows = await tx.listingVideo.findMany({
+          where: { listingId: id },
+          select: { id: true, url: true },
+        });
+        const desiredVideoUrls = new Set(videos.map((v) => v.url));
+        const videosToDelete = currentVideoRows.filter(
+          (r) => !desiredVideoUrls.has(r.url),
+        );
+        if (videosToDelete.length > 0) {
+          await tx.listingVideo.deleteMany({
+            where: { id: { in: videosToDelete.map((r) => r.id) } },
+          });
+        }
+
+        const videoSurvivorByUrl = new Map(
+          currentVideoRows
+            .filter((r) => desiredVideoUrls.has(r.url))
+            .map((r) => [r.url, r.id] as const),
+        );
+
+        let tempVideoOrder = 1000;
+        for (const rowId of videoSurvivorByUrl.values()) {
+          await tx.listingVideo.update({
+            where: { id: rowId },
+            data: { displayOrder: tempVideoOrder++ },
+          });
+        }
+
+        for (const vid of videos) {
+          if (!videoSurvivorByUrl.has(vid.url)) {
+            const created = await tx.listingVideo.create({
+              data: {
+                listingId: id,
+                url: vid.url,
+                mimeType: vid.mimeType,
+                sizeBytes: vid.sizeBytes,
+                displayOrder: tempVideoOrder++,
+              },
+              select: { id: true, url: true },
+            });
+            videoSurvivorByUrl.set(created.url, created.id);
+          }
+        }
+
+        for (const vid of videos) {
+          const rowId = videoSurvivorByUrl.get(vid.url);
+          if (rowId) {
+            await tx.listingVideo.update({
+              where: { id: rowId },
+              data: { displayOrder: vid.displayOrder },
+            });
+          }
+        }
+      }
+
       const updated = await tx.listing.update({
         where: { id },
         data: updateData,
         include: {
           images: { orderBy: { displayOrder: 'asc' } },
+          videos: { orderBy: { displayOrder: 'asc' } },
           seller: {
           select: { id: true, username: true, ...PUBLIC_LOCATION_SELECT },
         },
@@ -812,6 +940,16 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
           select: {
             id: true,
             url: true,
+            displayOrder: true,
+          },
+        },
+        videos: {
+          orderBy: { displayOrder: 'asc' },
+          select: {
+            id: true,
+            url: true,
+            mimeType: true,
+            sizeBytes: true,
             displayOrder: true,
           },
         },

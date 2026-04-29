@@ -26,6 +26,27 @@ function imageSchemaForUser(userId: string) {
   });
 }
 
+// Listing videos sit under `listings/<userId>/videos/` in S3 and end in
+// .mp4 / .webm. The URL prefix check matches the upload route's key
+// scheme; the extension check rejects URLs that smuggle in a non-video
+// suffix even when the bytes happen to magic-match. Both checks are
+// belt-and-braces — verifyS3Upload still re-reads the bytes server-side.
+function videoSchemaForUser(userId: string) {
+  return z.object({
+    url: z.string().url('Invalid video URL').refine(
+      (u) => {
+        if (!s3Prefix) return false;
+        if (!u.startsWith(`${s3Prefix}${userId}/videos/`)) return false;
+        return /\.(mp4|webm)$/i.test(u);
+      },
+      { message: 'Video must be from your own uploads' },
+    ),
+    mimeType: z.enum(['video/mp4', 'video/webm']),
+    sizeBytes: z.number().int().positive().max(100 * 1024 * 1024, 'Video must be under 100 MB'),
+    displayOrder: z.number().int().min(0),
+  });
+}
+
 // Allow 0 for free items. Negative is still rejected. The cross-field
 // refines below enforce shipping rules.
 const priceSchema = z.number()
@@ -92,6 +113,7 @@ export const paginationSchema = z.object({
 
 export function createListingSchemaForUser(userId: string) {
   const imgSchema = imageSchemaForUser(userId);
+  const vidSchema = videoSchemaForUser(userId);
   return z.object({
     title: z.string().min(3, 'Title must be at least 3 characters').max(200),
     description: z.string().min(10, 'Description must be at least 10 characters').max(5000),
@@ -111,6 +133,10 @@ export function createListingSchemaForUser(userId: string) {
       .refine(imgs => new Set(imgs.map(i => i.displayOrder)).size === imgs.length,
         { message: 'Image display orders must be unique' })
       .optional(),
+    videos: z.array(vidSchema).max(1, 'Maximum 1 video allowed')
+      .refine(vids => new Set(vids.map(v => v.displayOrder)).size === vids.length,
+        { message: 'Video display orders must be unique' })
+      .optional(),
   }).superRefine(fulfillmentRefine);
 }
 
@@ -118,6 +144,7 @@ export type CreateListingInput = z.infer<ReturnType<typeof createListingSchemaFo
 
 export function updateListingSchemaForUser(userId: string) {
   const imgSchema = imageSchemaForUser(userId);
+  const vidSchema = videoSchemaForUser(userId);
   return z.object({
     title: z.string().min(3, 'Title must be at least 3 characters').max(200).optional(),
     description: z.string().min(10, 'Description must be at least 10 characters').max(5000).optional(),
@@ -132,6 +159,10 @@ export function updateListingSchemaForUser(userId: string) {
     images: z.array(imgSchema).max(10, 'Maximum 10 images allowed')
       .refine(imgs => new Set(imgs.map(i => i.displayOrder)).size === imgs.length,
         { message: 'Image display orders must be unique' })
+      .optional(),
+    videos: z.array(vidSchema).max(1, 'Maximum 1 video allowed')
+      .refine(vids => new Set(vids.map(v => v.displayOrder)).size === vids.length,
+        { message: 'Video display orders must be unique' })
       .optional(),
   }).superRefine(fulfillmentRefine);
 }

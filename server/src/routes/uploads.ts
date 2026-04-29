@@ -31,14 +31,27 @@ const AVATAR_TYPES: Record<string, string> = {
   'image/webp': 'webp',
 };
 
+// Listing videos: MP4 + WebM only. MOV is omitted on purpose — its
+// container is essentially the same `ftyp` box as MP4 but some MOV
+// files use codecs (ProRes, HEVC variants) that don't play in non-Safari
+// browsers without transcoding, and we don't have a transcode pipeline.
+const LISTING_VIDEO_TYPES: Record<string, string> = {
+  'video/mp4': 'mp4',
+  'video/webm': 'webm',
+};
+
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5 MB
 const MAX_AVATAR_SIZE = 2 * 1024 * 1024; // 2 MB
+const MAX_LISTING_VIDEO_SIZE = 100 * 1024 * 1024; // 100 MB
 const PRESIGNED_URL_EXPIRY = 300; // 5 minutes
 
 const presignedUrlSchema = z.object({
   fileType: z.string(),
   fileSize: z.number().int().positive(),
-  purpose: z.enum(['listing', 'id-document', 'avatar']).optional().default('listing'),
+  purpose: z
+    .enum(['listing', 'id-document', 'avatar', 'listing-video'])
+    .optional()
+    .default('listing'),
 });
 
 const uploadLimiter = createRateLimiter({
@@ -71,13 +84,23 @@ router.post(
 
       // Per-purpose type + size limits. Avatars use a smaller cap than
       // listings because they're shown at thumbnail dimensions everywhere.
+      // Videos get a much larger cap (100 MB) since 1080p H.264 runs
+      // ~5-15 MB / 30s and we want sellers to be able to post a short
+      // demo without aggressive transcoding on their end.
       const allowedTypes =
         purpose === 'id-document'
           ? ID_DOCUMENT_TYPES
           : purpose === 'avatar'
           ? AVATAR_TYPES
+          : purpose === 'listing-video'
+          ? LISTING_VIDEO_TYPES
           : LISTING_TYPES;
-      const sizeCap = purpose === 'avatar' ? MAX_AVATAR_SIZE : MAX_FILE_SIZE;
+      const sizeCap =
+        purpose === 'avatar'
+          ? MAX_AVATAR_SIZE
+          : purpose === 'listing-video'
+          ? MAX_LISTING_VIDEO_SIZE
+          : MAX_FILE_SIZE;
       if (fileSize > sizeCap) {
         res.status(400).json({
           error: `File size must be under ${Math.round(sizeCap / 1024 / 1024)} MB`,
@@ -88,6 +111,8 @@ router.post(
         const allowedList =
           purpose === 'id-document'
             ? 'image/jpeg, image/png, or application/pdf'
+            : purpose === 'listing-video'
+            ? 'video/mp4 or video/webm'
             : 'image/jpeg, image/png, or image/webp';
         res.status(400).json({ error: `File type must be ${allowedList}` });
         return;
@@ -97,12 +122,17 @@ router.post(
       // rather than the semantically-cleaner `avatars/<userId>/` so they
       // piggy-back on the existing `listings/*` IAM PutObject + bucket
       // public-read policy. Before prod: widen both policies to include
-      // `avatars/*` and flip this back to `avatars/${userId}`.
+      // `avatars/*` and flip this back to `avatars/${userId}`. Videos
+      // sit under `listings/<userId>/videos/` for the same reason — same
+      // IAM and bucket policy as listings/*, separate folder so search
+      // tooling can distinguish images from videos by key prefix.
       const prefix =
         purpose === 'id-document'
           ? `id-documents/${req.userId}`
           : purpose === 'avatar'
           ? `listings/avatars/${req.userId}`
+          : purpose === 'listing-video'
+          ? `listings/${req.userId}/videos`
           : `listings/${req.userId}`;
       const key = `${prefix}/${crypto.randomUUID()}.${ext}`;
 

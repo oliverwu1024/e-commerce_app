@@ -17,31 +17,66 @@ import Stars from '@/components/Stars';
 import Avatar from '@/components/Avatar';
 
 // ---------------------------------------------------------------------------
-// Image gallery
+// Media gallery — images followed by an optional video (per spec 3B).
 // ---------------------------------------------------------------------------
 
-function ImageGallery({ images, title }: { images: ListingDetail['images']; title: string }) {
+type MediaSlot =
+  | { kind: 'image'; id: string; url: string }
+  | { kind: 'video'; id: string; url: string; mimeType: string };
+
+function MediaGallery({
+  images,
+  videos,
+  title,
+}: {
+  images: ListingDetail['images'];
+  videos: ListingDetail['videos'];
+  title: string;
+}) {
+  const slots: MediaSlot[] = [
+    ...images.map((img) => ({ kind: 'image' as const, id: img.id, url: img.url })),
+    ...videos.map((vid) => ({
+      kind: 'video' as const,
+      id: vid.id,
+      url: vid.url,
+      mimeType: vid.mimeType,
+    })),
+  ];
   const [selectedIndex, setSelectedIndex] = useState(0);
-  const currentImage = images[selectedIndex]?.url;
+  const current = slots[selectedIndex];
 
   function handleKeyDown(e: React.KeyboardEvent) {
     if (e.key === 'ArrowLeft') {
-      setSelectedIndex((i) => (i > 0 ? i - 1 : images.length - 1));
+      setSelectedIndex((i) => (i > 0 ? i - 1 : slots.length - 1));
     } else if (e.key === 'ArrowRight') {
-      setSelectedIndex((i) => (i < images.length - 1 ? i + 1 : 0));
+      setSelectedIndex((i) => (i < slots.length - 1 ? i + 1 : 0));
     }
   }
 
   return (
     <div>
-      {/* Main image */}
+      {/* Main slot */}
       <div className="aspect-[4/3] rounded-xl bg-[var(--bg-panel-hi)] overflow-hidden">
-        {currentImage ? (
+        {current?.kind === 'image' ? (
           <img
-            src={currentImage}
+            src={current.url}
             alt={title}
             className="h-full w-full object-cover"
           />
+        ) : current?.kind === 'video' ? (
+          // `key` forces a fresh <video> on slot change so the previous
+          // clip stops + resets when the user clicks the thumb. controls
+          // + preload=metadata gives a poster + duration without
+          // streaming bytes until play.
+          <video
+            key={current.id}
+            src={current.url}
+            controls
+            preload="metadata"
+            className="h-full w-full bg-black object-contain"
+          >
+            <source src={current.url} type={current.mimeType} />
+          </video>
         ) : (
           <div className="flex h-full items-center justify-center text-[var(--text-dim)]">
             <svg className="h-16 w-16" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="1">
@@ -51,32 +86,62 @@ function ImageGallery({ images, title }: { images: ListingDetail['images']; titl
         )}
       </div>
 
-      {/* Thumbnails */}
-      {images.length > 1 && (
+      {/* Thumbnails — only render when there's more than one slot */}
+      {slots.length > 1 && (
         <div
           className="mt-3 flex gap-2 overflow-x-auto focus:outline-none"
           role="group"
-          aria-label="Image thumbnails"
+          aria-label="Media thumbnails"
           tabIndex={0}
           onKeyDown={handleKeyDown}
         >
-          {images.map((img, idx) => (
+          {slots.map((slot, idx) => (
             <button
-              key={img.id}
+              key={slot.id}
               onClick={() => setSelectedIndex(idx)}
-              aria-label={`View image ${idx + 1} of ${images.length}`}
+              aria-label={
+                slot.kind === 'video'
+                  ? `Play video ${idx + 1} of ${slots.length}`
+                  : `View image ${idx + 1} of ${slots.length}`
+              }
               aria-pressed={idx === selectedIndex}
-              className={`flex-shrink-0 h-16 w-16 rounded-lg overflow-hidden border-2 transition-colors ${
+              className={`relative flex-shrink-0 h-16 w-16 rounded-lg overflow-hidden border-2 transition-colors ${
                 idx === selectedIndex
                   ? 'border-[var(--neon-cyan)]'
                   : 'border-[var(--border-subtle)] hover:border-[var(--border-hi)]'
               }`}
             >
-              <img
-                src={img.url}
-                alt={`${title} - image ${idx + 1}`}
-                className="h-full w-full object-cover"
-              />
+              {slot.kind === 'image' ? (
+                <img
+                  src={slot.url}
+                  alt={`${title} - image ${idx + 1}`}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <>
+                  {/* preload=metadata pulls just enough to render the
+                      first frame as a poster; on browsers where that
+                      doesn't work (Safari pre-iOS 16) the dark bg + play
+                      badge still reads as "video". */}
+                  <video
+                    src={slot.url}
+                    preload="metadata"
+                    muted
+                    playsInline
+                    className="h-full w-full bg-black object-cover"
+                  />
+                  <span className="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/30">
+                    <svg
+                      className="h-6 w-6 text-white drop-shadow"
+                      viewBox="0 0 24 24"
+                      fill="currentColor"
+                      aria-hidden="true"
+                    >
+                      <path d="M8 5v14l11-7L8 5z" />
+                    </svg>
+                  </span>
+                </>
+              )}
             </button>
           ))}
         </div>
@@ -215,9 +280,13 @@ export default function ListingDetailClient() {
         </nav>
 
         <div className="lg:grid lg:grid-cols-5 lg:gap-10">
-          {/* ---- Left: Images ---- */}
+          {/* ---- Left: Media ---- */}
           <div className="lg:col-span-3">
-            <ImageGallery images={listing.images} title={listing.title} />
+            <MediaGallery
+              images={listing.images}
+              videos={listing.videos}
+              title={listing.title}
+            />
           </div>
 
           {/* ---- Right: Details ---- */}

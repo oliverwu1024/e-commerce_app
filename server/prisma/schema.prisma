@@ -366,6 +366,7 @@ model Listing {
   sellerId String
 
   images            ListingImage[]
+  videos            ListingVideo[]
   orders            Order[]
   savedByUsers      SavedListing[]
   cartItems         CartItem[]
@@ -390,6 +391,26 @@ model ListingImage {
   // listing edits instead of re-uploading the same bytes.
   squareImageId         String?   @db.VarChar(64)
   squareImageUploadedAt DateTime?
+
+  listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+  listingId String
+
+  @@unique([listingId, displayOrder])
+}
+
+// Listing videos. Separate from ListingImage because videos have different
+// validation (mime/size), aren't synced to Square Catalog (Square's POS
+// catalog has no equivalent video object on items), and render with a
+// <video> element rather than <img>. Listings cap at 1 video today; the
+// displayOrder column is here so the same two-phase reorder pattern used
+// for images can extend to multiple videos later without a migration.
+model ListingVideo {
+  id           String   @id @default(uuid())
+  url          String   @db.VarChar(500)
+  mimeType     String   @db.VarChar(64)
+  sizeBytes    Int
+  displayOrder Int
+  createdAt    DateTime @default(now())
 
   listing   Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
   listingId String

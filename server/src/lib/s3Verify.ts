@@ -26,20 +26,40 @@ export type S3VerifyResult =
   | { ok: false; reason: 'not_found' | 'wrong_type' | 'too_big' | 'misconfigured' | 'magic_mismatch'; detail?: string };
 
 // Magic-number signatures for the file types we accept. We read the first
-// 12 bytes via a Range GET (cheap — typically one round-trip, no body
+// 16 bytes via a Range GET (cheap — typically one round-trip, no body
 // streaming) and require the prefix to match one of these. Closes the
 // "uploaded a PDF as image/jpeg" hole that Content-Type alone can't see.
+//
+// video/mp4 is special: the ISO base-media-format spec puts the type box
+// at offset 4 (`ftyp`), not offset 0, and the brand at offset 8 has many
+// valid values (`isom`, `mp42`, `iso5`, `avc1`, ...). We just check the
+// `ftyp` marker — that's enough to rule out non-container junk and is
+// the same approach `file(1)` uses.
+//
+// video/webm is an EBML container; the magic 1A 45 DF A3 sits at offset 0
+// and is shared with .mkv (Matroska). We accept that overlap because
+// browsers gladly play .mkv-as-.webm via the same MSE pipeline.
 const MAGIC_BYTES: Record<string, readonly (readonly number[])[]> = {
   'image/jpeg': [[0xff, 0xd8, 0xff]],
   'image/png': [[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]],
   'image/webp': [[0x52, 0x49, 0x46, 0x46]], // "RIFF" — followed by size, then "WEBP" at byte 8
   'application/pdf': [[0x25, 0x50, 0x44, 0x46]], // "%PDF"
+  'video/mp4': [[0x66, 0x74, 0x79, 0x70]], // "ftyp" at offset 4
+  'video/webm': [[0x1a, 0x45, 0xdf, 0xa3]], // EBML header at offset 0
 };
 
 function prefixMatches(buf: Uint8Array, signature: readonly number[]): boolean {
   if (buf.length < signature.length) return false;
   for (let i = 0; i < signature.length; i++) {
     if (buf[i] !== signature[i]) return false;
+  }
+  return true;
+}
+
+function bytesMatchAt(buf: Uint8Array, offset: number, signature: readonly number[]): boolean {
+  if (buf.length < offset + signature.length) return false;
+  for (let i = 0; i < signature.length; i++) {
+    if (buf[offset + i] !== signature[i]) return false;
   }
   return true;
 }
@@ -52,6 +72,10 @@ function magicMatches(buf: Uint8Array, contentType: string): boolean {
     if (!prefixMatches(buf, sigs[0])) return false;
     if (buf.length < 12) return false;
     return buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50;
+  }
+  // MP4 stores the `ftyp` box header at offset 4, not 0.
+  if (contentType === 'video/mp4') {
+    return bytesMatchAt(buf, 4, sigs[0]);
   }
   return sigs.some((sig) => prefixMatches(buf, sig));
 }
@@ -150,3 +174,4 @@ export async function verifyS3Upload(
 export const LISTING_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 export const AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp'] as const;
 export const ID_DOCUMENT_TYPES = ['image/jpeg', 'image/png', 'application/pdf'] as const;
+export const LISTING_VIDEO_TYPES = ['video/mp4', 'video/webm'] as const;

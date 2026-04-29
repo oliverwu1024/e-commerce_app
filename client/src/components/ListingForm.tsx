@@ -4,6 +4,7 @@ import { useState, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import ImageUpload, { type ImageFile } from '@/components/ImageUpload';
+import VideoUpload, { type VideoFile } from '@/components/VideoUpload';
 import { api } from '@/lib/api';
 import {
   CATEGORIES,
@@ -22,6 +23,7 @@ type FormErrors = {
   shippingPrice?: string;
   description?: string;
   images?: string;
+  video?: string;
 };
 
 const FULFILLMENT_OPTIONS: { value: FulfillmentMethod; label: string; hint: string }[] = [
@@ -80,6 +82,19 @@ export default function ListingForm({ listing }: Props) {
       uploading: false,
       error: null,
     }));
+  });
+  const [video, setVideo] = useState<VideoFile | null>(() => {
+    const existing = listing?.videos?.[0];
+    if (!existing) return null;
+    return {
+      id: existing.id,
+      preview: existing.url,
+      url: existing.url,
+      mimeType: existing.mimeType,
+      sizeBytes: existing.sizeBytes,
+      uploading: false,
+      error: null,
+    };
   });
 
   const [errors, setErrors] = useState<FormErrors>({});
@@ -145,6 +160,12 @@ export default function ListingForm({ listing }: Props) {
       errs.images = 'Some images failed to upload. Remove them or try again.';
     }
 
+    if (video?.uploading) {
+      errs.video = 'Please wait for the video to finish uploading';
+    } else if (video?.error) {
+      errs.video = 'The video failed to upload. Remove it or try again.';
+    }
+
     return errs;
   }
 
@@ -185,6 +206,22 @@ export default function ListingForm({ listing }: Props) {
       else if (isEdit) body.platform = null;
 
       body.images = uploadedImages;
+
+      // Always send `videos` (as an empty array if cleared) so PUT can
+      // distinguish "remove the video" from "leave it alone" — the server
+      // treats undefined as "don't touch", same as images.
+      const videoPayload =
+        video && video.url
+          ? [
+              {
+                url: video.url,
+                mimeType: video.mimeType,
+                sizeBytes: video.sizeBytes,
+                displayOrder: 0,
+              },
+            ]
+          : [];
+      body.videos = videoPayload;
 
       if (isEdit) {
         await api<{ listing: { id: string } }>(`/api/listings/${listing.id}`, {
@@ -257,6 +294,22 @@ export default function ListingForm({ listing }: Props) {
             <ImageUpload images={images} onChange={setImages} maxImages={10} />
           </div>
           {errors.images && <p className="mt-1.5 text-sm text-[var(--neon-danger)]">{errors.images}</p>}
+        </section>
+
+        <hr className="border-[var(--border-subtle)]" />
+
+        {/* Video (optional) */}
+        <section>
+          <h2 className="text-lg font-semibold text-[var(--text-primary)]">
+            Video <span className="text-[var(--text-muted)] text-sm font-normal">(optional)</span>
+          </h2>
+          <p className="mt-1 text-sm text-[var(--text-muted)]">
+            One short demo or showcase clip. Shown after your photos on the listing.
+          </p>
+          <div className="mt-3">
+            <VideoUpload video={video} onChange={setVideo} />
+          </div>
+          {errors.video && <p className="mt-1.5 text-sm text-[var(--neon-danger)]">{errors.video}</p>}
         </section>
 
         <hr className="border-[var(--border-subtle)]" />
