@@ -36,6 +36,13 @@ export const metadata: Metadata = {
     "Phones, laptops, consoles, cameras and more, from trusted sellers across Australia.",
 };
 
+// CSP nonces are generated per-request in middleware.ts, which only works if
+// the page is rendered per-request. Without this, Vercel caches static HTML
+// from build time (no nonce stamped) but the CSP header carries a fresh nonce
+// each request — every inline hydration script then violates CSP and React
+// never mounts.
+export const dynamic = 'force-dynamic';
+
 export default function RootLayout({
   children,
 }: Readonly<{
