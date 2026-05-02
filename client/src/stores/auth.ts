@@ -99,11 +99,20 @@ export const useAuthStore = create<AuthState>((set) => ({
   },
 
   fetchUser: async () => {
+    // Hard 5s ceiling so a hung backend can't leave the navbar stuck on its
+    // loading skeleton forever — visitors see Sign in / Register as the
+    // fallback instead of a grey block.
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
     try {
-      const res = await api<{ user: User }>('/api/auth/me');
+      const res = await api<{ user: User }>('/api/auth/me', {
+        signal: controller.signal,
+      });
       set({ user: res.user, loading: false });
     } catch {
       set({ user: null, loading: false });
+    } finally {
+      clearTimeout(timeout);
     }
   },
 
