@@ -49,6 +49,9 @@ function buildCsp(nonce: string): string {
     'connect-src': [
       "'self'",
       API_URL,
+      // S3 needs to be in connect-src (not just img-src) because uploads PUT
+      // directly to a presigned URL — CSP blocks that fetch otherwise.
+      `https://${S3_HOST}`,
       'https://identitytoolkit.googleapis.com',
       'https://securetoken.googleapis.com',
       'https://www.googleapis.com',
