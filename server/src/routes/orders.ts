@@ -1407,6 +1407,16 @@ router.post(
             res.status(502).json({ error: 'Square did not return a payment URL' });
             return;
           }
+          // Stash the Square order ID so the confirm endpoint can call
+          // orders.retrieveOrder directly instead of relying on search,
+          // which has been returning empty in Sandbox even for orders we
+          // know exist. Overwritten with the payment ID at PAID time.
+          if (paymentLink.orderId) {
+            await prisma.order.update({
+              where: { id: order.id },
+              data: { paymentProviderId: paymentLink.orderId },
+            });
+          }
           res.json({
             provider: 'SQUARE',
             url: paymentLink.url,
@@ -1520,7 +1530,13 @@ router.post(
       }
       const order = await prisma.order.findUnique({
         where: { id },
-        select: { id: true, buyerId: true, sellerId: true, status: true },
+        select: {
+          id: true,
+          buyerId: true,
+          sellerId: true,
+          status: true,
+          paymentProviderId: true,
+        },
       });
       if (!order) {
         res.status(404).json({ error: 'Order not found' });
@@ -1542,44 +1558,57 @@ router.post(
             ? SquareEnvironment.Production
             : SquareEnvironment.Sandbox,
       });
-      // Square's Orders.search filters by referenceId to find our order.
-      // We pass the seller's location so the query is scoped to their
-      // merchant (their token wouldn't give us access to anyone else's
-      // anyway, but scoping reduces noise).
-      //
-      // We accept both OPEN and COMPLETED states because Square Sandbox
-      // (and occasionally production with checkout-flow latency) keeps the
-      // order in OPEN even after a successful tender is attached. Proof of
-      // payment is the tender row below, not the order state.
-      // No stateFilter — Square Sandbox sometimes leaves Checkout-API
-      // orders in states we didn't expect (DRAFT before publishing, etc.).
-      // Letting Square return everything at this location and filtering
-      // client-side by referenceId is more reliable than guessing the
-      // state. Volume per location is tiny (one buyer = one order), so
-      // returning a few unrelated orders is fine.
-      const search = await sellerSquare.orders.search({
-        locationIds: [sellerAccount.locationId],
-      });
-      const matching = search.orders?.find((o) => o.referenceId === id);
+      // Look up the Square order. Direct retrieve via the ID we stashed at
+      // PaymentLink creation is the reliable path — Square Sandbox's
+      // orders.search returns no rows for PaymentLink-created orders even
+      // when they exist, so search-by-reference can't be trusted as the
+      // primary lookup. We still fall back to search for legacy orders
+      // created before the orderId-stash fix shipped.
+      type SquareOrderShape = {
+        id?: string;
+        referenceId?: string;
+        state?: string;
+        tenders?: { id?: string; type?: string; paymentId?: string }[];
+        totalMoney?: { amount?: number | bigint; currency?: string };
+      };
+      let matching: SquareOrderShape | undefined;
+      if (order.paymentProviderId) {
+        try {
+          const direct = await sellerSquare.orders.get({
+            orderId: order.paymentProviderId,
+          });
+          matching = direct.order as SquareOrderShape | undefined;
+        } catch (err) {
+          logger.warn('orders.pay.square.confirm.retrieve_failed', {
+            orderId: id,
+            squareOrderId: order.paymentProviderId,
+            err: String(err),
+          });
+        }
+      }
       if (!matching) {
-        // Diagnostic: log what Square actually returned so we can see why
-        // the referenceId match failed (wrong location, empty result set,
-        // referenceId formatted differently, etc.).
-        logger.warn('orders.pay.square.confirm.no_match', {
-          orderId: id,
-          locationId: sellerAccount.locationId,
-          returnedCount: search.orders?.length ?? 0,
-          returnedSummary: search.orders?.slice(0, 5).map((o) => ({
-            id: o.id,
-            referenceId: o.referenceId ?? null,
-            state: o.state ?? null,
-            tenderTypes: o.tenders?.map((t) => t.type) ?? [],
-          })),
+        const search = await sellerSquare.orders.search({
+          locationIds: [sellerAccount.locationId],
         });
-        // Square hasn't surfaced any order with this referenceId yet —
-        // genuinely eventually-consistent. Tell the client to retry.
-        res.status(202).json({ pending: true });
-        return;
+        matching = search.orders?.find(
+          (o) => o.referenceId === id,
+        ) as SquareOrderShape | undefined;
+        if (!matching) {
+          logger.warn('orders.pay.square.confirm.no_match', {
+            orderId: id,
+            locationId: sellerAccount.locationId,
+            squareOrderId: order.paymentProviderId,
+            returnedCount: search.orders?.length ?? 0,
+            returnedSummary: search.orders?.slice(0, 5).map((o) => ({
+              id: o.id,
+              referenceId: o.referenceId ?? null,
+              state: o.state ?? null,
+              tenderTypes: o.tenders?.map((t) => t.type) ?? [],
+            })),
+          });
+          res.status(202).json({ pending: true });
+          return;
+        }
       }
       const tender = matching.tenders?.find((t) => t.type === 'CARD');
       // Without a CARD tender we can't prove the buyer actually paid; treat
