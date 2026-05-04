@@ -130,7 +130,7 @@ function Loaded() {
                   <Td>{u.email}</Td>
                   <Td>
                     <Link
-                      href={`/sellers/${u.username}`}
+                      href={`/sellers/${u.id}`}
                       className="text-[var(--neon-cyan)] hover:underline"
                     >
                       {u.username}
