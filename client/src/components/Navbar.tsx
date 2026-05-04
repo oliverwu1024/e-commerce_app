@@ -60,6 +60,7 @@ export default function Navbar() {
   const totalUnread = unreadNotif + unreadMsg;
 
   return (
+    <>
     <header className="sticky top-0 z-40 border-b border-[var(--border-subtle)] bg-[var(--bg-nav)] backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl items-center justify-between gap-3 px-4 py-3 md:py-3.5">
         {/* ---------- Brand + desktop primary links ---------- */}
@@ -240,19 +241,24 @@ export default function Navbar() {
           </Link>
         </div>
       )}
-
-      {/* ---------- Mobile drawer ---------- */}
-      <MobileDrawer
-        open={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        loading={loading}
-        user={user}
-        unreadNotif={unreadNotif}
-        unreadMsg={unreadMsg}
-        cartCount={cartCount}
-        logout={logout}
-      />
     </header>
+
+    {/* ---------- Mobile drawer ----------
+        Rendered as a sibling of <header> so its position:fixed children
+        sit in the document's root stacking context instead of the
+        header's z-40 context — otherwise page content bleeds through
+        the drawer panel on mobile. */}
+    <MobileDrawer
+      open={menuOpen}
+      onClose={() => setMenuOpen(false)}
+      loading={loading}
+      user={user}
+      unreadNotif={unreadNotif}
+      unreadMsg={unreadMsg}
+      cartCount={cartCount}
+      logout={logout}
+    />
+    </>
   );
 }
 
@@ -286,7 +292,7 @@ function MobileDrawer({
       <div
         aria-hidden={!open}
         onClick={onClose}
-        className={`fixed inset-0 z-40 bg-black/45 backdrop-blur-sm transition-opacity duration-200 md:hidden ${
+        className={`fixed inset-0 z-[60] bg-black/55 backdrop-blur-sm transition-opacity duration-200 md:hidden ${
           open ? 'opacity-100' : 'pointer-events-none opacity-0'
         }`}
       />
@@ -297,7 +303,11 @@ function MobileDrawer({
         aria-modal="true"
         aria-label="Site menu"
         aria-hidden={!open}
-        className={`fixed inset-y-0 right-0 z-50 flex w-[88%] max-w-sm flex-col border-l border-[var(--border-subtle)] bg-[var(--bg-panel)] shadow-2xl transition-transform duration-200 ease-out md:hidden ${
+        // Inline `background` defends against any CSS-variable cascade
+        // issue — the drawer must read as a fully opaque panel against the
+        // page or the text inside looks like it's "mixed with the page".
+        style={{ background: 'var(--bg-panel)' }}
+        className={`fixed inset-y-0 right-0 z-[70] flex w-[88%] max-w-sm flex-col border-l border-[var(--border-subtle)] shadow-2xl transition-transform duration-200 ease-out md:hidden ${
           open ? 'translate-x-0' : 'translate-x-full'
         }`}
       >
@@ -484,7 +494,7 @@ function IconLink({ href, label, badge = 0, badgeTone = 'danger', dataTour, chil
 function NavSection({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <div className="mb-4">
-      <p className="mb-1 px-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-[var(--text-dim)]">
+      <p className="mb-1 px-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-[var(--text-muted)]">
         {title}
       </p>
       <div className="flex flex-col">{children}</div>
