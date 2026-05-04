@@ -23,6 +23,8 @@ const STATUS_BADGE_STYLES: Record<DisputeDetail['status'], string> = {
   OPEN: 'bg-[var(--tint-amber)] text-[var(--neon-amber)] border border-[var(--neon-amber)]/40',
   RESOLVED_BY_SELLER:
     'bg-[var(--tint-cyan)] text-[var(--neon-cyan)] border border-[var(--neon-cyan)]/40',
+  ACCEPTED:
+    'bg-[var(--tint-green)] text-[var(--neon-green)] border border-[var(--neon-green)]/40',
   RESOLVED_REFUND:
     'bg-[var(--tint-green)] text-[var(--neon-green)] border border-[var(--neon-green)]/40',
   RESOLVED_NO_REFUND:
@@ -125,7 +127,8 @@ export default function DisputeSection({ order, currentUserId, role, onChange }:
   const isFinal =
     dispute.status === 'RESOLVED_REFUND' ||
     dispute.status === 'RESOLVED_NO_REFUND' ||
-    dispute.status === 'WITHDRAWN';
+    dispute.status === 'WITHDRAWN' ||
+    dispute.status === 'ACCEPTED';
   const canPost = isOpen || isSellerResolved;
 
   return (
@@ -260,20 +263,37 @@ export default function DisputeSection({ order, currentUserId, role, onChange }:
             Withdraw
           </button>
         )}
-        {role === 'buyer' && isSellerResolved && !dispute.reopenedAt && (
-          <button
-            onClick={() =>
-              handleAction(
-                'reopen',
-                undefined,
-                'Reopen this dispute? You can only do this once.',
-              )
-            }
-            disabled={actioning}
-            className="btn-cyber-primary text-xs disabled:opacity-50"
-          >
-            Reopen dispute
-          </button>
+        {role === 'buyer' && isSellerResolved && (
+          <>
+            <button
+              onClick={() =>
+                handleAction(
+                  'accept',
+                  undefined,
+                  'Accept this resolution? Once accepted, the dispute is permanently closed.',
+                )
+              }
+              disabled={actioning}
+              className="btn-cyber-primary text-xs disabled:opacity-50"
+            >
+              Accept resolution
+            </button>
+            {!dispute.reopenedAt && (
+              <button
+                onClick={() =>
+                  handleAction(
+                    'reopen',
+                    undefined,
+                    'Reopen this dispute? You can only do this once.',
+                  )
+                }
+                disabled={actioning}
+                className="btn-cyber-outline text-xs disabled:opacity-50"
+              >
+                Reopen dispute
+              </button>
+            )}
+          </>
         )}
         {role === 'seller' && isOpen && !showResolveForm && (
           <button

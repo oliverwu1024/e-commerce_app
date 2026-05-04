@@ -436,6 +436,71 @@ router.post(
   },
 );
 
+// ---------------------------------------------------------------------------
+// POST /api/orders/:orderId/disputes/accept — buyer accepts the seller's
+// resolution as final. After this, no more actions are possible (no reopen,
+// no withdraw). Equivalent to the buyer saying "OK, we're done here".
+// ---------------------------------------------------------------------------
+router.post(
+  '/orders/:orderId/disputes/accept',
+  authenticate,
+  disputeLimiter,
+  async (req: Request<{ orderId: string }>, res: Response) => {
+    const { orderId } = req.params;
+    if (!uuidSchema.safeParse(orderId).success) {
+      res.status(400).json({ error: 'Invalid order ID' });
+      return;
+    }
+    const dispute = await prisma.dispute.findUnique({
+      where: { orderId },
+      select: {
+        id: true,
+        status: true,
+        buyerId: true,
+        sellerId: true,
+        order: { select: { listing: { select: { id: true, title: true } } } },
+      },
+    });
+    if (!dispute) {
+      res.status(404).json({ error: 'No dispute on this order' });
+      return;
+    }
+    if (dispute.buyerId !== req.userId) {
+      res.status(403).json({ error: 'Only the buyer can accept a resolution' });
+      return;
+    }
+    if (dispute.status !== 'RESOLVED_BY_SELLER') {
+      res
+        .status(409)
+        .json({ error: 'Only a seller-closed dispute can be accepted' });
+      return;
+    }
+
+    const updated = await prisma.dispute.update({
+      where: { id: dispute.id },
+      data: {
+        status: 'ACCEPTED',
+        resolvedAt: new Date(),
+        // Buyer is the resolver here — overrides the seller's resolvedById
+        // so the audit trail reflects who finalised it.
+        resolvedById: req.userId!,
+      },
+    });
+
+    void createNotification({
+      recipientId: dispute.sellerId,
+      type: 'DISPUTE_ACCEPTED',
+      title: 'Buyer accepted your resolution',
+      body: `Buyer accepted the resolution on the dispute for "${dispute.order.listing.title}".`,
+      actorId: req.userId!,
+      orderId,
+      listingId: dispute.order.listing.id,
+    });
+
+    res.json({ dispute: updated });
+  },
+);
+
 // ===========================================================================
 // ADMIN — dispute queue + resolution
 // ===========================================================================
@@ -451,12 +516,14 @@ router.get(
     type DisputeStatusFilter =
       | 'OPEN'
       | 'RESOLVED_BY_SELLER'
+      | 'ACCEPTED'
       | 'RESOLVED_REFUND'
       | 'RESOLVED_NO_REFUND'
       | 'WITHDRAWN';
     const VALID_STATUSES: readonly DisputeStatusFilter[] = [
       'OPEN',
       'RESOLVED_BY_SELLER',
+      'ACCEPTED',
       'RESOLVED_REFUND',
       'RESOLVED_NO_REFUND',
       'WITHDRAWN',

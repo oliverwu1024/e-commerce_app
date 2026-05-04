@@ -9,6 +9,7 @@ import { api } from '@/lib/api';
 type DisputeStatus =
   | 'OPEN'
   | 'RESOLVED_BY_SELLER'
+  | 'ACCEPTED'
   | 'RESOLVED_REFUND'
   | 'RESOLVED_NO_REFUND'
   | 'WITHDRAWN';
@@ -52,6 +53,7 @@ const REASON_LABEL: Record<DisputeReason, string> = {
 const STATUS_FILTERS: { value: DisputeStatus; label: string }[] = [
   { value: 'OPEN', label: 'Open' },
   { value: 'RESOLVED_BY_SELLER', label: 'Closed by seller' },
+  { value: 'ACCEPTED', label: 'Accepted by buyer' },
   { value: 'RESOLVED_REFUND', label: 'Resolved (refunded)' },
   { value: 'RESOLVED_NO_REFUND', label: 'Resolved (no refund)' },
   { value: 'WITHDRAWN', label: 'Withdrawn' },
@@ -89,6 +91,7 @@ function Loaded() {
   const [counts, setCounts] = useState<Counts>({
     OPEN: 0,
     RESOLVED_BY_SELLER: 0,
+    ACCEPTED: 0,
     RESOLVED_REFUND: 0,
     RESOLVED_NO_REFUND: 0,
     WITHDRAWN: 0,

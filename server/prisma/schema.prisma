@@ -112,6 +112,7 @@ enum NotificationType {
   DISPUTE_MESSAGE // counterparty: new message in dispute thread
   DISPUTE_RESOLVED_BY_SELLER // buyer: seller closed the dispute on their side
   DISPUTE_REOPENED // seller + admin: buyer reopened a previously seller-resolved dispute
+  DISPUTE_ACCEPTED // seller: buyer accepted the seller's resolution; dispute is final
   NEW_MESSAGE // receiver: counterparty sent a message on an order thread
   NEW_INQUIRY // seller: buyer opened a pre-purchase inquiry
   NEW_INQUIRY_REPLY // either: counterparty replied on an inquiry thread
@@ -122,7 +123,8 @@ enum NotificationType {
 
 enum DisputeStatus {
   OPEN // buyer just filed; awaiting admin / seller action
-  RESOLVED_BY_SELLER // seller closed without admin involvement (typically after refunding); buyer can reopen
+  RESOLVED_BY_SELLER // seller closed without admin involvement (typically after refunding); buyer can reopen or accept
+  ACCEPTED // buyer accepted the seller's resolution; final, no more actions possible
   RESOLVED_REFUND // admin marked resolved with refund (informational; refund itself happens via the refund endpoint)
   RESOLVED_NO_REFUND // admin marked resolved without refund (seller's position upheld)
   WITHDRAWN // buyer withdrew the dispute

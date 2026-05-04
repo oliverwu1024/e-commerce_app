@@ -107,6 +107,7 @@ export type OrderListing = {
 export type DisputeStatus =
   | 'OPEN'
   | 'RESOLVED_BY_SELLER'
+  | 'ACCEPTED'
   | 'RESOLVED_REFUND'
   | 'RESOLVED_NO_REFUND'
   | 'WITHDRAWN';
@@ -196,6 +197,7 @@ export const DISPUTE_REASON_LABELS: DisputeReasonLabel = {
 export const DISPUTE_STATUS_LABELS: Record<DisputeStatus, string> = {
   OPEN: 'Open',
   RESOLVED_BY_SELLER: 'Resolved by seller',
+  ACCEPTED: 'Accepted by buyer',
   RESOLVED_REFUND: 'Closed — refund',
   RESOLVED_NO_REFUND: 'Closed — no refund',
   WITHDRAWN: 'Withdrawn',
