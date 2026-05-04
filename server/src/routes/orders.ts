@@ -1628,8 +1628,13 @@ router.post(
           return;
         }
       }
-      const tender = matching.tenders?.find((t) => t.type === 'CARD');
-      // Without a CARD tender we can't prove the buyer actually paid; treat
+      // Accept any tender — the presence of a tender (regardless of type)
+      // is proof Square has captured payment. Square Sandbox simulates
+      // checkouts with type OTHER; production typically attaches CARD; gift
+      // cards / digital wallets / cash all carry their own tender types but
+      // we treat them uniformly as "money received".
+      const tender = matching.tenders?.[0];
+      // Without any tender we can't prove the buyer actually paid; treat
       // as pending so the client retries (or surfaces a real error if the
       // buyer abandoned the checkout entirely).
       if (!tender) {
