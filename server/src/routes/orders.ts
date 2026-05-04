@@ -1411,6 +1411,12 @@ router.post(
           // orders.retrieveOrder directly instead of relying on search,
           // which has been returning empty in Sandbox even for orders we
           // know exist. Overwritten with the payment ID at PAID time.
+          logger.info('orders.pay.square.payment_link_created', {
+            orderId: order.id,
+            squareOrderId: paymentLink.orderId ?? null,
+            paymentLinkId: paymentLink.id ?? null,
+            paymentLinkUrl: paymentLink.url,
+          });
           if (paymentLink.orderId) {
             await prisma.order.update({
               where: { id: order.id },
@@ -1571,6 +1577,11 @@ router.post(
         tenders?: { id?: string; type?: string; paymentId?: string }[];
         totalMoney?: { amount?: number | bigint; currency?: string };
       };
+      logger.info('orders.pay.square.confirm.start', {
+        orderId: id,
+        haveSquareOrderId: Boolean(order.paymentProviderId),
+        squareOrderId: order.paymentProviderId,
+      });
       let matching: SquareOrderShape | undefined;
       if (order.paymentProviderId) {
         try {
@@ -1578,6 +1589,13 @@ router.post(
             orderId: order.paymentProviderId,
           });
           matching = direct.order as SquareOrderShape | undefined;
+          logger.info('orders.pay.square.confirm.retrieved', {
+            orderId: id,
+            squareOrderId: order.paymentProviderId,
+            state: matching?.state ?? null,
+            tenderTypes: matching?.tenders?.map((t) => t.type) ?? [],
+            hasTotalMoney: Boolean(matching?.totalMoney?.amount),
+          });
         } catch (err) {
           logger.warn('orders.pay.square.confirm.retrieve_failed', {
             orderId: id,
