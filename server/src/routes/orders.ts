@@ -1561,6 +1561,21 @@ router.post(
       });
       const matching = search.orders?.find((o) => o.referenceId === id);
       if (!matching) {
+        // Diagnostic: log what Square actually returned so we can see why
+        // the referenceId match failed (different state, wrong location,
+        // empty result set, etc.). Strip down to the fields we use to keep
+        // the log readable.
+        logger.warn('orders.pay.square.confirm.no_match', {
+          orderId: id,
+          locationId: sellerAccount.locationId,
+          returnedCount: search.orders?.length ?? 0,
+          returnedSummary: search.orders?.slice(0, 5).map((o) => ({
+            id: o.id,
+            referenceId: o.referenceId ?? null,
+            state: o.state ?? null,
+            tenderTypes: o.tenders?.map((t) => t.type) ?? [],
+          })),
+        });
         // Square hasn't surfaced any order with this referenceId yet —
         // genuinely eventually-consistent. Tell the client to retry.
         res.status(202).json({ pending: true });
