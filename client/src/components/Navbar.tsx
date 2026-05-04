@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { usePathname } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth';
 import { useCartStore } from '@/stores/cart';
 import { useInboxStore } from '@/stores/inbox';
@@ -11,7 +11,6 @@ import ThemeToggle from '@/components/ThemeToggle';
 
 export default function Navbar() {
   const pathname = usePathname();
-  const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const loading = useAuthStore((s) => s.loading);
   const logout = useAuthStore((s) => s.logout);
@@ -20,13 +19,13 @@ export default function Navbar() {
   const unreadMsg = useInboxStore((s) => s.counts.messages);
 
   // Logo click: on any other page, let Next.js Link navigate to "/". On the
-  // home page itself a Link is a no-op, so manually scroll to top and ask
-  // the App Router to re-fetch the page's server data.
+  // home page itself a Link is a no-op — and the page is a Client Component
+  // that fetches inside useEffect, so router.refresh() (which only re-runs
+  // Server Component data) wouldn't show anything new. Hard-reload instead.
   function handleLogoClick(e: React.MouseEvent<HTMLAnchorElement>) {
     if (pathname === '/') {
       e.preventDefault();
-      window.scrollTo({ top: 0, behavior: 'smooth' });
-      router.refresh();
+      window.location.reload();
     }
   }
 
