@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
 import { useAuthStore } from '@/stores/auth';
 import { useCartStore } from '@/stores/cart';
 import { useInboxStore } from '@/stores/inbox';
@@ -9,6 +10,8 @@ import Logo from '@/components/Logo';
 import ThemeToggle from '@/components/ThemeToggle';
 
 export default function Navbar() {
+  const pathname = usePathname();
+  const router = useRouter();
   const user = useAuthStore((s) => s.user);
   const loading = useAuthStore((s) => s.loading);
   const logout = useAuthStore((s) => s.logout);
@@ -16,12 +19,24 @@ export default function Navbar() {
   const unreadNotif = useInboxStore((s) => s.counts.notifications);
   const unreadMsg = useInboxStore((s) => s.counts.messages);
 
+  // Logo click: on any other page, let Next.js Link navigate to "/". On the
+  // home page itself a Link is a no-op, so manually scroll to top and ask
+  // the App Router to re-fetch the page's server data.
+  function handleLogoClick(e: React.MouseEvent<HTMLAnchorElement>) {
+    if (pathname === '/') {
+      e.preventDefault();
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      router.refresh();
+    }
+  }
+
   return (
     <header className="sticky top-0 z-40 border-b border-[var(--border-subtle)] bg-[var(--bg-nav)] backdrop-blur-md">
       <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5">
         <div className="flex items-center gap-7">
           <Link
             href="/"
+            onClick={handleLogoClick}
             className="font-display flex items-center gap-2 text-xl font-bold tracking-[0.02em] transition-opacity hover:opacity-90"
           >
             <Logo size={28} />
