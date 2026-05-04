@@ -1546,22 +1546,34 @@ router.post(
       // We pass the seller's location so the query is scoped to their
       // merchant (their token wouldn't give us access to anyone else's
       // anyway, but scoping reduces noise).
+      //
+      // We accept both OPEN and COMPLETED states because Square Sandbox
+      // (and occasionally production with checkout-flow latency) keeps the
+      // order in OPEN even after a successful tender is attached. Proof of
+      // payment is the tender row below, not the order state.
       const search = await sellerSquare.orders.search({
         locationIds: [sellerAccount.locationId],
         query: {
           filter: {
-            stateFilter: { states: ['COMPLETED'] },
+            stateFilter: { states: ['OPEN', 'COMPLETED'] },
           },
         },
       });
       const matching = search.orders?.find((o) => o.referenceId === id);
       if (!matching) {
-        // Either the buyer never paid, or Square is eventually-consistent
-        // and hasn't surfaced the order yet. Tell the client to retry.
+        // Square hasn't surfaced any order with this referenceId yet —
+        // genuinely eventually-consistent. Tell the client to retry.
         res.status(202).json({ pending: true });
         return;
       }
       const tender = matching.tenders?.find((t) => t.type === 'CARD');
+      // Without a CARD tender we can't prove the buyer actually paid; treat
+      // as pending so the client retries (or surfaces a real error if the
+      // buyer abandoned the checkout entirely).
+      if (!tender) {
+        res.status(202).json({ pending: true });
+        return;
+      }
       const amountMoney = matching.totalMoney;
       if (!amountMoney?.amount || !amountMoney?.currency) {
         res.status(502).json({ error: 'Square order missing amount/currency' });

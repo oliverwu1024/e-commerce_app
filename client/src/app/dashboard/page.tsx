@@ -226,27 +226,43 @@ function Dashboard() {
       captureFiredRef.current = true;
 
       async function confirmSquare() {
-        const doConfirm = () =>
-          fetch(
+        const doConfirm = async () => {
+          const resp = await fetch(
             `${process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000'}/api/orders/${paymentOrderId}/pay/square/confirm`,
             { method: 'POST', credentials: 'include' },
           );
+          // Parse the body up front. 202 still has Response.ok=true so the
+          // shape `{ pending: true }` is the only signal that the server
+          // hasn't actually marked the order paid yet.
+          const text = await resp.text();
+          const body = text ? (JSON.parse(text) as { pending?: boolean; error?: string }) : {};
+          return { resp, body };
+        };
         try {
-          let resp = await doConfirm();
-          if (resp.status === 202) {
-            // Square is eventually consistent — give it a beat and try again.
+          let { resp, body } = await doConfirm();
+          // Retry once with a short delay if Square hasn't surfaced the
+          // order yet — Square Sandbox in particular is slow.
+          if (resp.status === 202 || body.pending) {
             await new Promise((r) => setTimeout(r, 1500));
-            resp = await doConfirm();
+            ({ resp, body } = await doConfirm());
           }
           if (!resp.ok) {
-            const text = await resp.text();
-            const parsed = text ? JSON.parse(text) : {};
-            throw new Error(parsed.error || 'Square confirmation failed');
+            throw new Error(body.error || 'Square confirmation failed');
           }
-          setPaymentBanner({
-            type: 'success',
-            message: 'Payment completed successfully.',
-          });
+          if (body.pending) {
+            // Server still says pending after retry — surface honestly so the
+            // buyer doesn't think their order is paid when it isn't.
+            setPaymentBanner({
+              type: 'info',
+              message:
+                'Square is still confirming your payment. Refresh in a moment, or use Release lock if it does not clear.',
+            });
+          } else {
+            setPaymentBanner({
+              type: 'success',
+              message: 'Payment completed successfully.',
+            });
+          }
           setOrdersRefreshKey((k) => k + 1);
         } catch (err) {
           setPaymentBanner({
