@@ -15,6 +15,16 @@ import { StarInput } from '@/components/Stars';
 
 type Role = 'buyer' | 'seller';
 
+// Mirror of the server-side window in routes/disputes.ts. Buyers can still
+// dispute after marking an order received, but only within this window.
+const DISPUTE_WINDOW_DAYS = 30;
+const DISPUTE_WINDOW_MS = DISPUTE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
+function canDisputeCompleted(order: Order): boolean {
+  if (order.status !== 'COMPLETED' || !order.deliveredAt) return false;
+  return Date.now() - new Date(order.deliveredAt).getTime() < DISPUTE_WINDOW_MS;
+}
+
 type Props = {
   order: Order;
   role: Role;
@@ -426,17 +436,31 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           Open dispute
         </button>,
       );
-    } else if (order.status === 'COMPLETED' && !order.review) {
-      actions.push(
-        <button
-          key="review"
-          onClick={() => setShowReviewForm((v) => !v)}
-          disabled={busy}
-          className="rounded-lg bg-[var(--neon-amber)] px-3 py-1.5 text-xs font-medium text-white hover:brightness-110 disabled:opacity-50 transition-colors"
-        >
-          Leave a review
-        </button>,
-      );
+    } else if (order.status === 'COMPLETED') {
+      if (!order.review) {
+        actions.push(
+          <button
+            key="review"
+            onClick={() => setShowReviewForm((v) => !v)}
+            disabled={busy}
+            className="rounded-lg bg-[var(--neon-amber)] px-3 py-1.5 text-xs font-medium text-white hover:brightness-110 disabled:opacity-50 transition-colors"
+          >
+            Leave a review
+          </button>,
+        );
+      }
+      if (canDisputeCompleted(order)) {
+        actions.push(
+          <button
+            key="dispute"
+            onClick={() => setShowDisputeForm((v) => !v)}
+            disabled={busy}
+            className="btn-cyber-outline text-xs"
+          >
+            Open dispute
+          </button>,
+        );
+      }
     }
   }
 

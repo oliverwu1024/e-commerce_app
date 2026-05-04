@@ -13,6 +13,13 @@ import { logger } from '../utils/logger.js';
 
 const router = Router();
 
+// Buyers can dispute a COMPLETED order within this window of delivery. After
+// the window the order is final — eBay uses 30, Stripe chargebacks run 60-180.
+// 30 days strikes a balance: long enough to discover hidden defects ("battery
+// dies after first charge"), short enough that sellers can close their books.
+const DISPUTE_WINDOW_DAYS = 30;
+const DISPUTE_WINDOW_MS = DISPUTE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
+
 // Disputes are infrequent + high-stakes, so the rate limit can be tight.
 // 10 per 15 min per IP is plenty for a real human and stops a script that
 // tries to spray complaints across orders.
@@ -50,6 +57,7 @@ router.post(
           buyerId: true,
           sellerId: true,
           status: true,
+          deliveredAt: true,
           listing: { select: { id: true, title: true } },
           buyer: { select: { username: true } },
         },
@@ -75,6 +83,17 @@ router.post(
             'Disputes can only be opened on paid, shipped or completed orders',
         });
         return;
+      }
+      // Window check on COMPLETED orders. Pre-completion (PAID/SHIPPED) has
+      // no time bound — those buyers haven't said they're satisfied yet.
+      if (order.status === 'COMPLETED' && order.deliveredAt) {
+        const elapsed = Date.now() - order.deliveredAt.getTime();
+        if (elapsed > DISPUTE_WINDOW_MS) {
+          res.status(409).json({
+            error: `Disputes must be opened within ${DISPUTE_WINDOW_DAYS} days of marking the order received`,
+          });
+          return;
+        }
       }
 
       const dispute = await prisma.dispute.create({
