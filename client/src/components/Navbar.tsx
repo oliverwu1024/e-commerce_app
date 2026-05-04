@@ -194,16 +194,20 @@ export default function Navbar() {
         </div>
 
         {/* ---------- Mobile right cluster ---------- */}
-        <div className="flex items-center gap-1 md:hidden">
+        <div className="flex items-center gap-2 md:hidden">
           {!loading && user && (
-            <IconLink
+            <Link
               href="/cart"
-              label={`Cart${cartCount > 0 ? ` (${cartCount} item${cartCount === 1 ? '' : 's'})` : ''}`}
-              badge={cartCount}
-              badgeTone="cyan"
+              aria-label={`Cart${cartCount > 0 ? ` (${cartCount} item${cartCount === 1 ? '' : 's'})` : ''}`}
+              className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--border-hi)] bg-[var(--bg-panel)] text-[var(--text-primary)] shadow-sm transition-colors hover:bg-[var(--bg-panel-hi)] active:bg-[var(--bg-panel-hi)]"
             >
               <CartIcon />
-            </IconLink>
+              {cartCount > 0 && (
+                <span className="absolute -right-1 -top-1 flex h-4 min-w-[1rem] items-center justify-center rounded-full bg-[var(--neon-cyan)] px-1 text-[10px] font-bold text-[var(--btn-primary-text)]">
+                  {cartCount > 99 ? '99+' : cartCount}
+                </span>
+              )}
+            </Link>
           )}
 
           <button
@@ -212,13 +216,13 @@ export default function Navbar() {
             aria-expanded={menuOpen}
             aria-controls="mobile-menu"
             onClick={() => setMenuOpen((v) => !v)}
-            className="relative rounded-md p-2 text-[var(--text-muted)] transition-colors hover:bg-[var(--bg-panel-hi)] hover:text-[var(--text-primary)]"
+            className="relative inline-flex h-10 w-10 items-center justify-center rounded-md border border-[var(--border-hi)] bg-[var(--bg-panel)] text-[var(--text-primary)] shadow-sm transition-colors hover:bg-[var(--bg-panel-hi)] active:bg-[var(--bg-panel-hi)]"
           >
             {menuOpen ? <CloseIcon /> : <MenuIcon />}
             {!menuOpen && !loading && user && totalUnread > 0 && (
               <span
                 aria-hidden="true"
-                className="absolute right-1.5 top-1.5 h-2 w-2 rounded-full bg-[var(--neon-danger)] ring-2 ring-[var(--bg-nav)]"
+                className="absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full bg-[var(--neon-danger)] ring-2 ring-[var(--bg-nav)]"
               />
             )}
           </button>
@@ -581,7 +585,7 @@ function CartIcon() {
 
 function MenuIcon() {
   return (
-    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M4 6h16M4 12h16M4 18h16" />
     </svg>
   );
@@ -589,7 +593,7 @@ function MenuIcon() {
 
 function CloseIcon() {
   return (
-    <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+    <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2.5}>
       <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M6 18L18 6" />
     </svg>
   );
