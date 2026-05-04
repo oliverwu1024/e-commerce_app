@@ -1551,20 +1551,20 @@ router.post(
       // (and occasionally production with checkout-flow latency) keeps the
       // order in OPEN even after a successful tender is attached. Proof of
       // payment is the tender row below, not the order state.
+      // No stateFilter — Square Sandbox sometimes leaves Checkout-API
+      // orders in states we didn't expect (DRAFT before publishing, etc.).
+      // Letting Square return everything at this location and filtering
+      // client-side by referenceId is more reliable than guessing the
+      // state. Volume per location is tiny (one buyer = one order), so
+      // returning a few unrelated orders is fine.
       const search = await sellerSquare.orders.search({
         locationIds: [sellerAccount.locationId],
-        query: {
-          filter: {
-            stateFilter: { states: ['OPEN', 'COMPLETED'] },
-          },
-        },
       });
       const matching = search.orders?.find((o) => o.referenceId === id);
       if (!matching) {
         // Diagnostic: log what Square actually returned so we can see why
-        // the referenceId match failed (different state, wrong location,
-        // empty result set, etc.). Strip down to the fields we use to keep
-        // the log readable.
+        // the referenceId match failed (wrong location, empty result set,
+        // referenceId formatted differently, etc.).
         logger.warn('orders.pay.square.confirm.no_match', {
           orderId: id,
           locationId: sellerAccount.locationId,
