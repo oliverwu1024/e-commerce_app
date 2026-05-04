@@ -89,6 +89,38 @@ const TAB_LABELS: Record<Tab, string> = {
   past_purchases: 'Past Purchases',
 };
 
+// Past tabs grow unbounded; a count there is noise rather than signal so we
+// skip the badge for them.
+const COUNTLESS_TABS: ReadonlySet<Tab> = new Set([
+  'past_sales',
+  'past_purchases',
+]);
+
+type TabCounts = {
+  selling: { active: number; in_progress: number; disputed: number };
+  buying: { saved: number; in_progress: number; disputed: number };
+};
+
+function tabCountFor(tab: Tab, counts: TabCounts | null): number | null {
+  if (!counts) return null;
+  switch (tab) {
+    case 'active':
+      return counts.selling.active;
+    case 'in_sales':
+      return counts.selling.in_progress;
+    case 'disputed_sales':
+      return counts.selling.disputed;
+    case 'saved':
+      return counts.buying.saved;
+    case 'in_purchases':
+      return counts.buying.in_progress;
+    case 'disputed_purchases':
+      return counts.buying.disputed;
+    default:
+      return null;
+  }
+}
+
 export default function DashboardPage() {
   return (
     <ProtectedRoute>
@@ -134,6 +166,24 @@ function Dashboard() {
   // Bumped whenever a server-side order state change completes (e.g., Square
   // confirm). PurchasesTab subscribes to this via a prop and re-fetches.
   const [ordersRefreshKey, setOrdersRefreshKey] = useState(0);
+  const [tabCounts, setTabCounts] = useState<TabCounts | null>(null);
+
+  // Tab counts — re-fetched whenever order state changes so badges stay
+  // current after a buyer files a dispute / accepts / etc.
+  useEffect(() => {
+    let cancelled = false;
+    api<TabCounts>('/api/dashboard/tab-counts')
+      .then((data) => {
+        if (!cancelled) setTabCounts(data);
+      })
+      .catch(() => {
+        // Silently fall back to no-count rendering — the counts are a polish,
+        // not load-bearing for any of the actual workflows.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [ordersRefreshKey]);
   // Prevents a double-confirm in React StrictMode (dev) or a user refreshing
   // mid-return. markOrderPaid is idempotent but the extra round-trip is
   // wasteful.
@@ -318,6 +368,8 @@ function Dashboard() {
         >
           {visibleTabs.map((tab) => {
             const selected = activeTab === tab;
+            const showCount = !COUNTLESS_TABS.has(tab);
+            const count = showCount ? tabCountFor(tab, tabCounts) : null;
             return (
               <button
                 key={tab}
@@ -335,6 +387,11 @@ function Dashboard() {
                 }`}
               >
                 {TAB_LABELS[tab]}
+                {showCount && count !== null && (
+                  <span className="ml-1.5 text-[11px] text-[var(--text-dim)]">
+                    ({count})
+                  </span>
+                )}
               </button>
             );
           })}

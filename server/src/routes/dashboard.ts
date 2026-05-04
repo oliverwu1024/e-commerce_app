@@ -1,0 +1,90 @@
+import { Router, Request, Response } from 'express';
+import prisma from '../lib/prisma.js';
+import { authenticate } from '../middleware/auth.js';
+import { logger } from '../utils/logger.js';
+
+const router = Router();
+
+// ---------------------------------------------------------------------------
+// GET /api/dashboard/tab-counts
+//
+// Single round-trip count for every non-Past tab on the dashboard. Past tabs
+// (Past Sales, Past Purchases) intentionally omitted — they grow unbounded
+// and a count there is noise rather than signal.
+//
+// Active dispute = OPEN | RESOLVED_BY_SELLER (matches the order list filter
+// in routes/orders.ts). An order with one of those statuses is pulled OUT of
+// In Progress / Past and into the In Dispute tab; counts mirror that.
+// ---------------------------------------------------------------------------
+router.get('/tab-counts', authenticate, async (req: Request, res: Response) => {
+  const userId = req.userId!;
+  const ACTIVE_DISPUTE_STATUSES = ['OPEN', 'RESOLVED_BY_SELLER'] as const;
+
+  try {
+    const [
+      activeListings,
+      inSales,
+      disputedSales,
+      saved,
+      inPurchases,
+      disputedPurchases,
+    ] = await Promise.all([
+      // Selling — Active Listings
+      prisma.listing.count({
+        where: { sellerId: userId, status: 'ACTIVE' },
+      }),
+      // Selling — In Progress (no active dispute)
+      prisma.order.count({
+        where: {
+          sellerId: userId,
+          status: { in: ['PENDING_CONFIRMATION', 'CONFIRMED', 'PAID', 'SHIPPED'] },
+          dispute: { is: null },
+        },
+      }),
+      // Selling — In Dispute
+      prisma.order.count({
+        where: {
+          sellerId: userId,
+          dispute: { status: { in: [...ACTIVE_DISPUTE_STATUSES] } },
+        },
+      }),
+      // Buying — Saved
+      prisma.savedListing.count({
+        where: { userId },
+      }),
+      // Buying — In Progress (no active dispute)
+      prisma.order.count({
+        where: {
+          buyerId: userId,
+          status: { in: ['PENDING_CONFIRMATION', 'CONFIRMED', 'PAID', 'SHIPPED'] },
+          dispute: { is: null },
+        },
+      }),
+      // Buying — In Dispute
+      prisma.order.count({
+        where: {
+          buyerId: userId,
+          dispute: { status: { in: [...ACTIVE_DISPUTE_STATUSES] } },
+        },
+      }),
+    ]);
+
+    res.json({
+      selling: {
+        active: activeListings,
+        in_progress: inSales,
+        disputed: disputedSales,
+      },
+      buying: {
+        saved,
+        in_progress: inPurchases,
+        disputed: disputedPurchases,
+      },
+    });
+  } catch (err) {
+    logger.error('dashboard.tab_counts.failed', { err: String(err) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+export default router;
