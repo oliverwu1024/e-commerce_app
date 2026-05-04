@@ -1,4 +1,4 @@
-export type ListingStatus = 'ACTIVE' | 'ON_HOLD' | 'SOLD' | 'REMOVED';
+export type ListingStatus = 'ACTIVE' | 'HIDDEN' | 'ON_HOLD' | 'SOLD' | 'REMOVED';
 
 export type FulfillmentMethod = 'POST_ONLY' | 'PICKUP_ONLY' | 'BOTH';
 
@@ -34,6 +34,7 @@ export type ListingSummary = {
 
 export const STATUS_STYLES: Record<ListingStatus, { label: string; bg: string }> = {
   ACTIVE: { label: 'Active', bg: 'bg-[var(--tint-green)] text-[var(--neon-green)] border border-[var(--neon-green)]/40' },
+  HIDDEN: { label: 'Hidden', bg: 'bg-[var(--bg-panel-hi)] text-[var(--text-dim)] border border-[var(--border-subtle)]' },
   SOLD: { label: 'Sold', bg: 'bg-[var(--tint-cyan)] text-[var(--neon-cyan)] border border-[var(--neon-cyan)]/40' },
   ON_HOLD: { label: 'On Hold', bg: 'bg-[var(--tint-magenta)] text-[var(--neon-magenta)] border border-[var(--neon-magenta)]/40' },
   REMOVED: { label: 'Removed', bg: 'bg-[var(--bg-panel-hi)] text-[var(--text-dim)] border border-[var(--border-subtle)]' },

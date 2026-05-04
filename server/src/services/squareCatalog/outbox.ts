@@ -248,7 +248,7 @@ export type ListingForSnapshot = {
   category: string;
   brand: string | null;
   condition: 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'POOR';
-  status: 'ACTIVE' | 'ON_HOLD' | 'SOLD' | 'REMOVED';
+  status: 'ACTIVE' | 'HIDDEN' | 'ON_HOLD' | 'SOLD' | 'REMOVED';
   images: { url: string; displayOrder: number }[];
 };
 

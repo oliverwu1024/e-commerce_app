@@ -29,10 +29,11 @@ enum Condition {
 }
 
 enum ListingStatus {
-  ACTIVE
-  ON_HOLD
-  SOLD
-  REMOVED
+  ACTIVE // public, browseable, can be added to cart
+  HIDDEN // seller toggled off public visibility; still owned, can be unhidden
+  ON_HOLD // system-managed: a buyer is mid-checkout, briefly locked
+  SOLD // payment captured; terminal
+  REMOVED // seller deleted; terminal (soft delete)
 }
 
 // What fulfillment options a listing supports. Sellers pick this when

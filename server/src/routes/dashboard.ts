@@ -29,9 +29,10 @@ router.get('/tab-counts', authenticate, async (req: Request, res: Response) => {
       inPurchases,
       disputedPurchases,
     ] = await Promise.all([
-      // Selling — Active Listings
+      // Selling — Active Listings (includes HIDDEN since the dashboard's
+      // Active tab is "stuff I own and could un-hide", not just public ones).
       prisma.listing.count({
-        where: { sellerId: userId, status: 'ACTIVE' },
+        where: { sellerId: userId, status: { in: ['ACTIVE', 'HIDDEN'] } },
       }),
       // Selling — In Progress (no active dispute)
       prisma.order.count({

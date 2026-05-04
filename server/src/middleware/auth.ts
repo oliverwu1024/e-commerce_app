@@ -67,3 +67,32 @@ export function requireAdmin(req: Request, res: Response, next: NextFunction): v
   }
   next();
 }
+
+// Sets req.userId / req.userRole when a valid token is present, but never
+// rejects the request — used by public-by-default routes that want to vary
+// behaviour for the owner (e.g. show a HIDDEN listing only to its seller).
+export async function optionalAuth(req: Request, _res: Response, next: NextFunction): Promise<void> {
+  const token = req.cookies?.[AUTH_CONFIG.cookie.name];
+  if (!token) {
+    next();
+    return;
+  }
+  let decoded: JwtPayload;
+  try {
+    decoded = jwt.verify(token, AUTH_CONFIG.jwtSecret) as JwtPayload;
+  } catch {
+    next();
+    return;
+  }
+  const user = await prisma.user.findUnique({
+    where: { id: decoded.userId },
+    select: { tokenVersion: true, role: true, deletedAt: true },
+  });
+  if (!user || user.tokenVersion !== decoded.tv || user.deletedAt) {
+    next();
+    return;
+  }
+  req.userId = decoded.userId;
+  req.userRole = user.role;
+  next();
+}

@@ -256,7 +256,7 @@ router.get('/stats', async (_req: Request, res: Response) => {
       prisma.dispute.count({ where: { status: 'OPEN' } }),
     ]);
 
-    const listings = { ACTIVE: 0, ON_HOLD: 0, SOLD: 0, REMOVED: 0 };
+    const listings = { ACTIVE: 0, HIDDEN: 0, ON_HOLD: 0, SOLD: 0, REMOVED: 0 };
     for (const row of listingCounts) listings[row.status] = row._count._all;
 
     const orders = {

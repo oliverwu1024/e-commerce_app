@@ -47,7 +47,7 @@ export type ListingSnapshot = {
   condition: 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'POOR';
   brand: string | null;
   category: string;
-  status: 'ACTIVE' | 'ON_HOLD' | 'SOLD' | 'REMOVED';
+  status: 'ACTIVE' | 'HIDDEN' | 'ON_HOLD' | 'SOLD' | 'REMOVED';
   // Sorted by displayOrder ascending. Empty array OK.
   images: { url: string }[];
 };

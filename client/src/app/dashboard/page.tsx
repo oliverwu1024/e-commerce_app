@@ -405,7 +405,7 @@ function Dashboard() {
         aria-labelledby={`dashboard-tab-${activeTab}`}
         className="mt-6"
       >
-        {activeTab === 'active' && <MyListingsTab statusFilter="ACTIVE" />}
+        {activeTab === 'active' && <MyListingsTab statusFilter="ACTIVE,HIDDEN" />}
         {activeTab === 'saved' && <SavedListingsTab />}
         {activeTab === 'in_purchases' && (
           <OrdersTab role="buyer" bucket="in_progress" refreshKey={ordersRefreshKey} />
@@ -440,7 +440,10 @@ function Dashboard() {
 // My Listings tab
 // ---------------------------------------------------------------------------
 
-function MyListingsTab({ statusFilter }: { statusFilter?: ListingStatus }) {
+// `statusFilter` accepts a single status (`"ACTIVE"`) or a comma-separated
+// list (`"ACTIVE,HIDDEN"`) — passed through to the server, which understands
+// both forms.
+function MyListingsTab({ statusFilter }: { statusFilter?: string }) {
   const router = useRouter();
   const [listings, setListings] = useState<ListingSummary[]>([]);
   const [pagination, setPagination] = useState<Pagination | null>(null);
@@ -452,6 +455,10 @@ function MyListingsTab({ statusFilter }: { statusFilter?: ListingStatus }) {
   // Remove dialog state
   const [removeId, setRemoveId] = useState<string | null>(null);
   const [removing, setRemoving] = useState(false);
+  // Tracks the id of a listing currently mid-toggle (Hide / Unhide). Used
+  // to disable the button so a double-click can't fire a second request
+  // before the first resolves.
+  const [togglingVisibilityId, setTogglingVisibilityId] = useState<string | null>(null);
 
   const fetchListings = useCallback(
     async (p: number) => {
@@ -498,6 +505,24 @@ function MyListingsTab({ statusFilter }: { statusFilter?: ListingStatus }) {
       setError(err instanceof Error ? err.message : 'Failed to remove listing');
     } finally {
       setRemoving(false);
+    }
+  }
+
+  async function toggleVisibility(listingId: string, currentStatus: ListingStatus) {
+    const action = currentStatus === 'HIDDEN' ? 'unhide' : 'hide';
+    setTogglingVisibilityId(listingId);
+    setError('');
+    try {
+      await api(`/api/listings/${listingId}/${action}`, { method: 'POST' });
+      fetchListings(page);
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : `Failed to ${action} listing`,
+      );
+    } finally {
+      setTogglingVisibilityId(null);
     }
   }
 
@@ -617,13 +642,24 @@ function MyListingsTab({ statusFilter }: { statusFilter?: ListingStatus }) {
 
                 {/* Actions */}
                 <div className="flex flex-shrink-0 gap-2">
-                  {listing.status === 'ACTIVE' && (
+                  {(listing.status === 'ACTIVE' || listing.status === 'HIDDEN') && (
                     <>
                       <button
                         onClick={() => router.push(`/listings/${listing.id}/edit`)}
                         className="btn-cyber-outline text-xs"
                       >
                         Edit
+                      </button>
+                      <button
+                        onClick={() => toggleVisibility(listing.id, listing.status)}
+                        disabled={togglingVisibilityId === listing.id}
+                        className="btn-cyber-outline text-xs disabled:opacity-50"
+                      >
+                        {togglingVisibilityId === listing.id
+                          ? '…'
+                          : listing.status === 'HIDDEN'
+                            ? 'Unhide'
+                            : 'Hide'}
                       </button>
                       <button
                         onClick={() => setRemoveId(listing.id)}

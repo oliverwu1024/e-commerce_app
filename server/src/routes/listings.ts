@@ -3,7 +3,7 @@ import prisma from '../lib/prisma.js';
 import { Prisma } from '../generated/prisma/client.js';
 import { listingQuerySchema, createListingSchemaForUser, updateListingSchemaForUser, paginationSchema } from '../schemas/listings.js';
 import { uuidSchema } from '../schemas/common.js';
-import { authenticate } from '../middleware/auth.js';
+import { authenticate, optionalAuth } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { getSellerStats } from '../services/sellerStats.js';
 import { FEATURES } from '../config/features.js';
@@ -108,7 +108,7 @@ router.get('/', browseLimiter, async (req: Request, res: Response) => {
       category: string;
       brand: string | null;
       condition: 'LIKE_NEW' | 'GOOD' | 'FAIR' | 'POOR';
-      status: 'ACTIVE' | 'ON_HOLD' | 'SOLD' | 'REMOVED';
+      status: 'ACTIVE' | 'HIDDEN' | 'ON_HOLD' | 'SOLD' | 'REMOVED';
       createdAt: Date;
       seller: {
         id: string;
@@ -249,8 +249,11 @@ router.get('/', browseLimiter, async (req: Request, res: Response) => {
   }
 });
 
-// GET /api/listings/my — Current user's listings (all statuses by default;
-// pass ?status=ACTIVE|ON_HOLD|SOLD|REMOVED to filter)
+// GET /api/listings/my — Current user's listings (all statuses by default).
+// `?status=ACTIVE|HIDDEN|ON_HOLD|SOLD|REMOVED` filters to one status.
+// Comma-separated forms are accepted too — the dashboard's "Active Listings"
+// tab passes `status=ACTIVE,HIDDEN` so the seller sees both their public
+// listings and their hidden-but-still-owned ones in the same place.
 router.get('/my', authenticate, async (req: Request, res: Response) => {
   try {
     const parsed = paginationSchema.safeParse(req.query);
@@ -261,17 +264,30 @@ router.get('/my', authenticate, async (req: Request, res: Response) => {
     const { page, limit } = parsed.data;
     const skip = (page - 1) * limit;
 
+    const VALID_STATUSES = ['ACTIVE', 'HIDDEN', 'ON_HOLD', 'SOLD', 'REMOVED'] as const;
+    type ListingStatusFilter = (typeof VALID_STATUSES)[number];
     const statusParam = req.query.status;
-    const validStatus =
-      typeof statusParam === 'string' &&
-      ['ACTIVE', 'ON_HOLD', 'SOLD', 'REMOVED'].includes(statusParam)
-        ? (statusParam as 'ACTIVE' | 'ON_HOLD' | 'SOLD' | 'REMOVED')
-        : undefined;
+    let validStatuses: ListingStatusFilter[] = [];
+    if (typeof statusParam === 'string' && statusParam.length > 0) {
+      validStatuses = statusParam
+        .split(',')
+        .map((s) => s.trim())
+        .filter((s): s is ListingStatusFilter =>
+          (VALID_STATUSES as readonly string[]).includes(s),
+        );
+    }
 
-    const where: { sellerId: string; status?: typeof validStatus } = {
+    const where: {
+      sellerId: string;
+      status?: ListingStatusFilter | { in: ListingStatusFilter[] };
+    } = {
       sellerId: req.userId!,
     };
-    if (validStatus) where.status = validStatus;
+    if (validStatuses.length === 1) {
+      where.status = validStatuses[0];
+    } else if (validStatuses.length > 1) {
+      where.status = { in: validStatuses };
+    }
 
     const [listings, total, statusCounts] = await Promise.all([
       prisma.listing.findMany({
@@ -308,7 +324,7 @@ router.get('/my', authenticate, async (req: Request, res: Response) => {
       }),
     ]);
 
-    const counts = { ACTIVE: 0, ON_HOLD: 0, SOLD: 0, REMOVED: 0 };
+    const counts = { ACTIVE: 0, HIDDEN: 0, ON_HOLD: 0, SOLD: 0, REMOVED: 0 };
     for (const row of statusCounts) counts[row.status] = row._count.status;
 
     res.json({
@@ -516,8 +532,8 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
       return;
     }
 
-    if (existing.status !== 'ACTIVE') {
-      res.status(400).json({ error: 'Only active listings can be edited' });
+    if (existing.status !== 'ACTIVE' && existing.status !== 'HIDDEN') {
+      res.status(400).json({ error: 'Only active or hidden listings can be edited' });
       return;
     }
 
@@ -787,6 +803,68 @@ router.put('/:id', authenticate, async (req: Request<{ id: string }>, res: Respo
   }
 });
 
+// POST /api/listings/:id/hide — Seller hides their own ACTIVE listing from
+// public browse / search. Listing stays in their dashboard so they can
+// unhide it later. Refuses on ON_HOLD (mid-checkout) so a hide can't strand
+// a buyer's payment session.
+router.post(
+  '/:id/hide',
+  authenticate,
+  async (req: Request<{ id: string }>, res: Response) => {
+    const { id } = req.params;
+    if (!uuidSchema.safeParse(id).success) {
+      res.status(400).json({ error: 'Invalid listing ID' });
+      return;
+    }
+    try {
+      const { count } = await prisma.listing.updateMany({
+        where: { id, sellerId: req.userId!, status: 'ACTIVE' },
+        data: { status: 'HIDDEN' },
+      });
+      if (count === 0) {
+        res.status(409).json({
+          error: 'Listing must be active and owned by you to hide',
+        });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error('listings.hide.failed', { err: String(err) });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// POST /api/listings/:id/unhide — Bring a HIDDEN listing back to ACTIVE so
+// it shows up in browse again.
+router.post(
+  '/:id/unhide',
+  authenticate,
+  async (req: Request<{ id: string }>, res: Response) => {
+    const { id } = req.params;
+    if (!uuidSchema.safeParse(id).success) {
+      res.status(400).json({ error: 'Invalid listing ID' });
+      return;
+    }
+    try {
+      const { count } = await prisma.listing.updateMany({
+        where: { id, sellerId: req.userId!, status: 'HIDDEN' },
+        data: { status: 'ACTIVE' },
+      });
+      if (count === 0) {
+        res.status(409).json({
+          error: 'Listing must be hidden and owned by you to unhide',
+        });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (err) {
+      logger.error('listings.unhide.failed', { err: String(err) });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
 // DELETE /api/listings/:id — Soft delete (set status to REMOVED)
 router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Response) => {
   try {
@@ -832,7 +910,10 @@ router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Re
         where: { id },
         select: { status: true, sellerId: true },
       });
-      if (current?.status !== 'ACTIVE' || current.sellerId !== req.userId) {
+      if (
+        (current?.status !== 'ACTIVE' && current?.status !== 'HIDDEN') ||
+        current.sellerId !== req.userId
+      ) {
         return {
           removed: false,
           outboxId: null as string | null,
@@ -901,7 +982,7 @@ router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Re
 });
 
 // GET /api/listings/:id — Single listing with seller info
-router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
+router.get('/:id', optionalAuth, async (req: Request<{ id: string }>, res: Response) => {
   try {
     const { id } = req.params;
     if (!uuidSchema.safeParse(id).success) {
@@ -924,6 +1005,7 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
         brand: true,
         condition: true,
         status: true,
+        sellerId: true,
         createdAt: true,
         updatedAt: true,
         seller: {
@@ -957,6 +1039,13 @@ router.get('/:id', async (req: Request<{ id: string }>, res: Response) => {
     });
 
     if (!listing || listing.status === 'REMOVED') {
+      res.status(404).json({ error: 'Listing not found' });
+      return;
+    }
+    // HIDDEN listings are visible only to their owner — anyone else gets a
+    // generic 404 (not 403 — the existence of the listing is itself private
+    // for unhidden enumeration).
+    if (listing.status === 'HIDDEN' && listing.sellerId !== req.userId) {
       res.status(404).json({ error: 'Listing not found' });
       return;
     }
