@@ -870,6 +870,159 @@ router.post(
   },
 );
 
+// POST /api/listings/:id/duplicate — Clone an owned listing as a fresh ACTIVE
+// one. Same verification gate and rate limit as plain create — duplicate
+// MUST NOT be a back door around either. Image S3 keys are shared with the
+// source: listings never hard-delete (they go to status=REMOVED and the row
+// stays around for cart-snapshot integrity), so the source's bytes outlive
+// any duplicate. squareImageId is intentionally NOT copied so the sync
+// worker uploads fresh CatalogImage rows for the new item rather than
+// re-pointing at the source's catalog image.
+router.post(
+  '/:id/duplicate',
+  authenticate,
+  createListingLimiter,
+  async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const { id } = req.params;
+      if (!uuidSchema.safeParse(id).success) {
+        res.status(400).json({ error: 'Invalid listing ID' });
+        return;
+      }
+
+      const source = await prisma.listing.findUnique({
+        where: { id },
+        include: {
+          images: { orderBy: { displayOrder: 'asc' } },
+          videos: { orderBy: { displayOrder: 'asc' } },
+        },
+      });
+      if (!source) {
+        res.status(404).json({ error: 'Listing not found' });
+        return;
+      }
+      if (source.sellerId !== req.userId) {
+        res.status(403).json({ error: 'You can only duplicate your own listings' });
+        return;
+      }
+
+      // Same gate as POST /. Mirror the missing[] shape exactly so the
+      // client can reuse its verification-prompt UI.
+      const seller = await prisma.user.findUnique({
+        where: { id: req.userId! },
+        select: {
+          sellerType: true,
+          emailVerified: true,
+          phoneVerified: true,
+          abnVerified: true,
+          idVerification: true,
+          addressLine1: true,
+          suburb: true,
+          postcode: true,
+          state: true,
+        },
+      });
+      if (!seller) {
+        res.status(404).json({ error: 'User not found' });
+        return;
+      }
+      const missing: string[] = [];
+      if (!seller.emailVerified) missing.push('email');
+      if (!seller.phoneVerified) missing.push('phone');
+      if (seller.sellerType === 'PERSONAL') {
+        if (FEATURES.idVerificationEnabled && seller.idVerification !== 'APPROVED') {
+          missing.push('id');
+        }
+      } else if (!seller.abnVerified) {
+        missing.push('abn');
+      }
+      if (
+        !seller.addressLine1 ||
+        !seller.suburb ||
+        !seller.postcode ||
+        !seller.state
+      ) {
+        missing.push('address');
+      }
+      if (missing.length > 0) {
+        res.status(403).json({
+          error: 'Complete seller verification before listing.',
+          missing,
+        });
+        return;
+      }
+
+      const { listing, outboxId } = await prisma.$transaction(async (tx) => {
+        const created = await tx.listing.create({
+          data: {
+            title: source.title,
+            description: source.description,
+            price: source.price,
+            category: source.category,
+            subcategory: source.subcategory,
+            platform: source.platform,
+            brand: source.brand,
+            condition: source.condition,
+            fulfillmentMethod: source.fulfillmentMethod,
+            shippingPrice: source.shippingPrice,
+            // Always ACTIVE; source could be SOLD/HIDDEN/REMOVED and that's
+            // not the duplicate's concern.
+            status: 'ACTIVE',
+            sellerId: req.userId!,
+            images: source.images.length
+              ? {
+                  create: source.images.map((img) => ({
+                    url: img.url,
+                    displayOrder: img.displayOrder,
+                  })),
+                }
+              : undefined,
+            videos: source.videos.length
+              ? {
+                  create: source.videos.map((vid) => ({
+                    url: vid.url,
+                    mimeType: vid.mimeType,
+                    sizeBytes: vid.sizeBytes,
+                    displayOrder: vid.displayOrder,
+                  })),
+                }
+              : undefined,
+          },
+          include: {
+            images: { orderBy: { displayOrder: 'asc' } },
+            videos: { orderBy: { displayOrder: 'asc' } },
+            seller: {
+              select: { id: true, username: true, ...PUBLIC_LOCATION_SELECT },
+            },
+          },
+        });
+        const oid = await createOutboxRow({
+          tx,
+          listingId: created.id,
+          sellerId: req.userId!,
+          kind: 'LISTING_UPSERT',
+          payload: {
+            kind: 'LISTING_UPSERT',
+            listing: snapshotListing(created),
+          },
+        });
+        return { listing: created, outboxId: oid };
+      });
+
+      if (outboxId) {
+        void enqueueOutbox(outboxId);
+      }
+
+      res.status(201).json({
+        listing: { ...listing, seller: projectPublicSeller(listing.seller) },
+      });
+    } catch (err) {
+      logger.error('listings.duplicate.failed', { err: String(err) });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
 // DELETE /api/listings/:id — Soft delete (set status to REMOVED)
 router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Response) => {
   try {

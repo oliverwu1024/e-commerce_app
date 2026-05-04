@@ -197,6 +197,7 @@ export default function ListingDetailClient() {
   // Remove listing state
   const [showRemoveConfirm, setShowRemoveConfirm] = useState(false);
   const [removing, setRemoving] = useState(false);
+  const [duplicating, setDuplicating] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -226,6 +227,21 @@ export default function ListingDetailClient() {
       setError(err instanceof Error ? err.message : 'Failed to remove listing');
       setRemoving(false);
       setShowRemoveConfirm(false);
+    }
+  }
+
+  async function handleDuplicate() {
+    if (!listing || duplicating) return;
+    setDuplicating(true);
+    try {
+      const data = await api<{ listing: { id: string } }>(
+        `/api/listings/${listing.id}/duplicate`,
+        { method: 'POST' },
+      );
+      router.push(`/listings/${data.listing.id}/edit`);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to duplicate listing');
+      setDuplicating(false);
     }
   }
 
@@ -331,8 +347,15 @@ export default function ListingDetailClient() {
                     href={`/listings/${listing.id}/edit`}
                     className="btn-cyber-outline flex-1 text-center"
                   >
-                    Edit Listing
+                    Edit
                   </Link>
+                  <button
+                    onClick={handleDuplicate}
+                    disabled={duplicating}
+                    className="flex-1 rounded-lg border border-[var(--border-hi)] bg-[var(--bg-panel-hi)] px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-panel)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                  >
+                    {duplicating ? 'Duplicating…' : 'Duplicate'}
+                  </button>
                   <button
                     onClick={() => setShowRemoveConfirm(true)}
                     className="flex-1 rounded-lg border border-[var(--neon-danger)]/40 px-4 py-2.5 text-sm font-medium text-[var(--neon-danger)] hover:bg-[var(--tint-danger)] transition-colors"
