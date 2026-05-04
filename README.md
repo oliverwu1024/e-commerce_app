@@ -1,160 +1,287 @@
-# Used Electronics Marketplace
+# ElectroMarket
 
-A peer-to-peer platform for buying and selling used electronics. Users can list
-their devices, browse listings from other sellers, and purchase items via
-Stripe Connect, Square, or PayPal — funds settle directly to each seller's
-own account, never through the platform. Live at
-[electromarket-app.com](https://electromarket-app.com).
+> A production peer-to-peer marketplace for buying and selling used electronics. Funds settle **directly** to each seller's own Stripe / Square / PayPal account — the platform never custodies money.
 
-## Tech Stack
+**Live at [electromarket-app.com](https://electromarket-app.com)**
 
-- **Frontend**: Next.js 16 (App Router, TypeScript, Tailwind CSS)
-- **Backend**: Express 5 (TypeScript), Prisma 7
-- **Database**: PostgreSQL 16
-- **Queue**: BullMQ on Redis (Square Catalog sync worker + reconciler)
-- **Payments**: Stripe Connect Standard, Square OAuth, PayPal Partner
-- **ID verification**: Stripe Identity
-- **Image / file storage**: AWS S3 (presigned PUT/GET, regional bucket)
-- **Catalog integration**: Two-way sync to seller's Square Catalog
-- **Email**: Resend (transactional + inbound)
-- **Phone OTP**: Firebase Auth (free up to 10k/mo)
-- **DNS / TLS / DDoS**: Cloudflare
-- **Containerisation**: Docker (multi-stage builds, dev + prod compose)
+![Next.js](https://img.shields.io/badge/Next.js-16-black?logo=next.js)
+![React](https://img.shields.io/badge/React-19-61dafb?logo=react)
+![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6?logo=typescript)
+![Express](https://img.shields.io/badge/Express-5-000000?logo=express)
+![Prisma](https://img.shields.io/badge/Prisma-7-2d3748?logo=prisma)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791?logo=postgresql)
+![Redis](https://img.shields.io/badge/Redis-BullMQ-dc382d?logo=redis)
+![Docker](https://img.shields.io/badge/Docker-multi--stage-2496ed?logo=docker)
+![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)
 
-### Where it runs
+---
 
-| Layer | Runs on |
+## Table of Contents
+
+- [What it does](#what-it-does)
+- [Engineering highlights](#engineering-highlights)
+- [Tech stack](#tech-stack)
+- [Architecture](#architecture)
+- [Project structure](#project-structure)
+- [Getting started](#getting-started)
+- [Environment variables](#environment-variables)
+- [Testing](#testing)
+- [Further reading](#further-reading)
+- [License](#license)
+
+---
+
+## What it does
+
+ElectroMarket is a full-stack marketplace where individuals and small businesses list used electronics, browse with rich filters and full-text search, and check out via the seller's own payment account. Each listing represents a single physical item.
+
+### For buyers
+- Search + filters across category, condition, brand, price, fulfilment method
+- Saved listings, cart, multi-seller checkout
+- Order timeline (`PENDING → CONFIRMED → PAID → SHIPPED → COMPLETED`)
+- In-app chat thread with seller, dispute flow with admin oversight
+- Reviews after purchase
+
+### For sellers
+- Multi-image + video listings with reorderable galleries
+- Connect Stripe, Square, or PayPal — funds land in your account directly
+- Stripe Identity verification for higher trust tier
+- Two-way Square Catalog sync (edits in either system propagate)
+- Earnings dashboard with provider-fee breakdown
+
+### For admins
+- ID verification queue, dispute resolution, contact inbox (with inbound email threading)
+- User browser, broadcast announcements (email + in-app, audience-targeted)
+- Square Catalog sync health dashboard with per-seller force resync
+
+---
+
+## Engineering highlights
+
+These are the parts of the codebase that go beyond a typical CRUD marketplace.
+
+### Outbox pattern for catalog sync
+Every Listing mutation writes a `SquareSyncOutbox` row in the **same Postgres transaction** as the Listing change. A BullMQ worker drains the outbox; if Redis is down, a 60-second reconciler picks up the slack. This eliminates the two classic failure modes — *"Listing committed, queue enqueue failed"* and *"queue succeeded, Listing rolled back"*.
+
+### Optimistic concurrency with Square
+`SquareCatalogLink.version` mirrors Square's catalog version. Outbound writes include the version; on `OPTIMISTIC_LOCKING_FAILURE` we drop it and let the next sync re-fetch. Inbound webhooks (`catalog.version.updated`) only apply when the remote version is strictly greater. Net behaviour: last writer wins, with a one-side bias toward the marketplace.
+
+### Encryption-at-rest for OAuth tokens
+Square + PayPal access/refresh tokens are encrypted with **AES-256-GCM** (12-byte IV, 16-byte auth tag) before hitting Postgres. Key lives in `PAYMENT_TOKEN_ENCRYPTION_KEY`. Backups, accidental dumps, and read-only DB access don't leak seller credentials.
+
+### Defence-in-depth rate limiting
+Redis-backed `express-rate-limit` buckets with memory fallback. Per-user and per-IP. Notable rules: contact form ≥4/hr blocked, login ≥6/hr blocked, daily SMS budget cap, **per-phone cooldown across all accounts** (defeats account-spraying on a shared phone number).
+
+### CSRF + SameSite hardening
+SameSite=Lax JWT cookie + Origin-header allowlist on every state-changing request. Missing or mismatched Origin → rejected. Helmet ships strict CSP, frameguard deny, HSTS preload-eligible.
+
+### Soft deletion that respects counterparties
+Deleted users are anonymised (`deletedAt` set, PII cleared) but their orders, reviews, and messages remain so buyers/sellers on the other side keep their history. Removed listings stay readable so existing cart snapshots don't 404.
+
+### Direct-settlement payments (no platform custody)
+Three providers behind one abstraction: **Stripe Connect Standard**, **Square OAuth**, **PayPal Partner**. Money goes directly from buyer → seller account; the platform never holds funds (regulatory + insolvency-risk win). Each provider's `/pay` endpoint returns 503 if not configured, so the marketplace stays online if a single provider is down.
+
+### Money as integers
+Newer columns (`Refund.amountCents`, `SquareFeaturedItem.priceCents`) use `Int` cents to dodge floating-point drift. Legacy `Decimal(10,2)` columns are being migrated.
+
+### Full-text search via tsvector
+Listings have a `STORED` generated `tsvector` column. Search runs through `$queryRaw` with `plainto_tsquery`, so it survives misspellings without a separate Elastic/Meili process.
+
+---
+
+## Tech stack
+
+| Layer | Choice |
+|---|---|
+| Frontend | Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS 4 |
+| State (client) | Zustand (`auth`, `cart`, `inbox`, `saved`) |
+| Backend | Express 5 (TypeScript) |
+| ORM | Prisma 7 |
+| Database | PostgreSQL 16 |
+| Queue | BullMQ on Redis (catalog sync worker + reconciler) |
+| Payments | Stripe Connect Standard, Square OAuth, PayPal Partner |
+| ID verification | Stripe Identity |
+| File storage | AWS S3 (presigned PUT/GET) |
+| Email | Resend (transactional + inbound via Cloudflare Worker) |
+| Phone OTP | Firebase Auth |
+| Containerisation | Docker (multi-stage; dev + prod compose) |
+
+### Where it runs in production
+
+| Layer | Hosted on |
 |---|---|
 | Frontend (Next.js) | Vercel |
 | Backend (Express + worker) | Railway |
 | PostgreSQL | Railway managed |
-| Redis (BullMQ backing store) | Railway managed |
+| Redis (BullMQ) | Railway managed |
 | File storage | AWS S3 (`ap-southeast-2`) |
-| Email | Resend |
-| DNS / edge | Cloudflare |
+| Transactional email | Resend |
+| DNS / TLS / DDoS | Cloudflare |
 
-The stack is intentionally polyglot: each service is the strongest fit for its
-job (S3 for blob storage, Vercel for Next.js, Resend over SES to skip sender-
-domain warm-up, Cloudflare for free DDoS + edge caching).
+The stack is intentionally polyglot — each piece is the strongest fit for its job. S3 for blobs, Vercel for Next.js, Resend over SES to skip sender-domain warm-up, Cloudflare for free DDoS + edge caching.
 
-## Features
+---
 
-- JWT auth (httpOnly cookies, bcrypt, email + phone verification, ID upload)
-- Listings with multi-image upload, fulfilment options, search + filters
-- Cart (Zustand client-side + Prisma server-side)
-- Per-seller checkout via Stripe Connect / Square / PayPal sandboxes
-- Order lifecycle (PENDING → CONFIRMED → PAID → SHIPPED → COMPLETED) with
-  buyer-seller chat thread and dispute flow
-- Reviews, saved listings, inquiries
-- Admin tooling: user browser, broadcasts, contact inbox, dispute queue,
-  Square Catalog sync health
-- Two-way Square Catalog sync (outbox pattern, BullMQ worker, webhook-driven
-  reconciliation, image upload) — see `docs/square-catalog-sync.md`
-- Public Featured rail powered by a partner Square Catalog
+## Architecture
 
-## Project Structure
+```
+┌──────────────┐    HTTPS     ┌──────────────┐    Postgres    ┌──────────────┐
+│  Next.js 16  │◄────────────►│  Express 5   │◄───────────────►│ PostgreSQL   │
+│   (Vercel)   │   JWT cookie │  (Railway)   │                 │  (Railway)   │
+└──────┬───────┘              └──────┬───────┘                 └──────────────┘
+       │                             │
+       │ presigned PUT/GET           │ enqueue
+       ▼                             ▼
+┌──────────────┐              ┌──────────────┐    BullMQ       ┌──────────────┐
+│   AWS S3     │              │ outbox tx    │────────────────►│ Square sync  │
+│              │              │ (atomic)     │                 │  worker      │
+└──────────────┘              └──────────────┘                 └──────┬───────┘
+                                                                      │
+                                                                      ▼
+                                                              ┌──────────────┐
+                                                              │ Square       │
+                                                              │ Catalog API  │
+                                                              └──────────────┘
+```
+
+**Request flow** — Browser → Cloudflare → Vercel → Express → Postgres. Cookies are httpOnly + SameSite=Lax. Every mutating request carries an Origin allowlist check.
+
+**Catalog-sync flow** — Listing mutation writes Listing + outbox row in one transaction. Worker drains outbox, calls Square, records audit row. Inbound webhooks dedupe via `SquareCatalogWebhookEvent` and apply only if remote version > local version.
+
+---
+
+## Project structure
 
 ```
 e-commerce_app/
-├── client/                          # Next.js frontend
+├── client/                          # Next.js 16 frontend (28 routes)
 │   └── src/
-│       ├── app/                     # App router pages
+│       ├── app/                     # App Router pages
 │       ├── components/
 │       ├── lib/
-│       ├── stores/                  # Zustand stores
+│       ├── stores/                  # Zustand: auth, cart, inbox, saved
 │       └── types/
-├── server/                          # Express backend
+├── server/                          # Express 5 backend (~9k LOC)
 │   ├── prisma/
-│   │   ├── schema.prisma
+│   │   ├── schema.prisma            # 32 models incl. Square subsystem
 │   │   └── migrations/
 │   └── src/
-│       ├── config/                  # S3, Stripe, Square, email config
-│       ├── lib/                     # prisma, crypto, password helpers
+│       ├── config/                  # S3, Stripe, Square, PayPal, email
+│       ├── lib/                     # prisma singleton, crypto, password
 │       ├── middleware/              # auth, csrf, rate limiter, request log
-│       ├── queue/                   # BullMQ + ioredis
-│       ├── routes/                  # HTTP handlers
+│       ├── queue/                   # BullMQ + ioredis singleton
+│       ├── routes/                  # 17 route files, 100+ endpoints
 │       ├── services/
-│       │   └── squareCatalog/       # OAuth, mapper, worker, webhooks…
+│       │   └── squareCatalog/       # oauth, mapper, worker, reconciler,
+│       │                            # imageUpload, inbound, featured,
+│       │                            # observability (+ mapper.test.ts)
 │       └── utils/
+├── cloudflare-worker/
+│   └── inbound-email/               # Parses inbound mail → /api/webhooks/email
 ├── docs/
 │   ├── inbound-email-setup.md
-│   └── square-catalog-sync.md
+│   ├── square-catalog-sync.md
+│   └── release_test_plan.md
 ├── docker-compose.yml               # dev (db, redis, server, client)
 ├── docker-compose.prod.yml          # prod (no bind-mounts, secrets required)
 └── README.md
 ```
 
-## Getting Started
+---
+
+## Getting started
 
 ### Prerequisites
-
 - Node.js 20+
 - Docker Desktop (recommended — handles Postgres + Redis automatically)
 - npm
 
-### Running with Docker
+### With Docker (recommended)
 
 ```bash
 cp server/.env.example server/.env   # fill in JWT_SECRET + AWS keys
 docker compose up --build
 ```
 
-This brings up Postgres, Redis, the Express server, and the Next.js client.
-Run migrations on first start:
+Brings up Postgres, Redis, the Express server, and the Next.js client. On first run apply migrations:
 
 ```bash
 docker compose exec server npx prisma migrate deploy
 ```
 
-### Running locally without Docker
+Optional — seed an admin user and a few listings:
 
 ```bash
-# in one terminal
+docker compose exec server npm run seed
+```
+
+### Without Docker
+
+```bash
+# Terminal 1
 cd server
 npm install
 npx prisma migrate deploy
 npm run dev
 
-# in another terminal
+# Terminal 2
 cd client
 npm install
 npm run dev
 ```
 
-The client runs on `http://localhost:3000`, the server on `http://localhost:5000`.
+Client → `http://localhost:3000` · Server → `http://localhost:5000`
 
-### Tests
-
-```bash
-cd server
-npm test     # node:test runner — Square Catalog mapper unit tests
-```
+---
 
 ## Environment variables
 
-See `docker-compose.yml` for the full list. The critical ones at minimum:
+Full list lives in `docker-compose.yml`. Minimum required:
 
-- `JWT_SECRET` — auth signing key (32+ random bytes)
-- `DATABASE_URL` — Postgres connection string
-- `REDIS_URL` — required if you want catalog sync; otherwise the feature
-  silently disables and the marketplace runs as before
-- `PAYMENT_TOKEN_ENCRYPTION_KEY` — 32-byte hex; encrypts seller OAuth tokens
-- `AWS_ACCESS_KEY_ID` + `AWS_SECRET_ACCESS_KEY` + `AWS_S3_BUCKET` + `AWS_REGION`
-- Per-provider payment env vars (`STRIPE_SECRET_KEY`, `SQUARE_APPLICATION_ID`,
-  etc.) — empty values are fine; each provider's `/pay` endpoint returns 503
-  if it's not configured
-- `ADMIN_PASSWORD_HASH` — bcrypt hash for the seeded admin user (seed.ts only).
-  Generate with:
-  ```bash
-  node -e "require('bcrypt').hash(process.argv[1], 12).then(console.log)" 'your-password'
-  ```
-- `FIREBASE_SERVICE_ACCOUNT` — base64-encoded service-account JSON for the
-  Firebase Admin SDK (used to verify client-issued phone-auth ID tokens).
-  Generate the JSON in Firebase Console → Project Settings → Service accounts,
-  then `base64 -w0 firebase-admin.json`. Treat as a secret.
+| Variable | Purpose |
+|---|---|
+| `JWT_SECRET` | Auth signing key (32+ random bytes) |
+| `DATABASE_URL` | Postgres connection string |
+| `REDIS_URL` | Required for catalog sync; if absent, sync silently disables |
+| `PAYMENT_TOKEN_ENCRYPTION_KEY` | 32-byte hex; encrypts seller OAuth tokens |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_S3_BUCKET` / `AWS_REGION` | S3 image + video storage |
+| `STRIPE_SECRET_KEY`, `SQUARE_APPLICATION_ID`, `PAYPAL_CLIENT_ID`, … | Per-provider payment keys (any subset is fine — missing providers return 503) |
+| `FIREBASE_SERVICE_ACCOUNT` | Base64 JSON for Firebase Admin (verifies client phone-OTP tokens) |
+| `ADMIN_PASSWORD_HASH` | bcrypt hash for the seeded admin user (seed.ts only) |
 
-### Running the Cloudflare Worker (inbound email)
+Generate the bcrypt hash with:
 
-The `cloudflare-worker/inbound-email/` directory holds a Worker that parses
-inbound mail and POSTs to `/api/webhooks/email`. Setup is documented in
-[`docs/inbound-email-setup.md`](docs/inbound-email-setup.md).
+```bash
+node -e "require('bcrypt').hash(process.argv[1], 12).then(console.log)" 'your-password'
+```
+
+Generate the Firebase service account: Firebase Console → Project Settings → Service accounts → Generate new private key → `base64 -w0 firebase-admin.json`.
+
+### Cloudflare Worker (inbound email)
+
+`cloudflare-worker/inbound-email/` parses inbound mail and POSTs to `/api/webhooks/email`. Setup walkthrough in [`docs/inbound-email-setup.md`](docs/inbound-email-setup.md).
+
+---
+
+## Testing
+
+```bash
+cd server
+npm test          # node:test runner — Square Catalog mapper unit tests
+```
+
+Currently focused unit coverage on the catalog mapper (the trickiest pure logic). End-to-end coverage is a manual checklist in [`docs/release_test_plan.md`](docs/release_test_plan.md) (171 items across buyer, individual seller, business seller, and cross-persona flows).
+
+---
+
+## Further reading
+
+- [`docs/square-catalog-sync.md`](docs/square-catalog-sync.md) — Outbox + BullMQ + optimistic concurrency architecture, failure modes, and runbook
+- [`docs/inbound-email-setup.md`](docs/inbound-email-setup.md) — Wiring `support@` mail into the in-app contact inbox via Cloudflare Worker / Resend / Mailgun
+- [`docs/release_test_plan.md`](docs/release_test_plan.md) — Manual smoke-test plan organised by persona
+
+---
+
+## License
+
+[GNU Affero General Public License v3.0](LICENSE) — you're free to use, modify, and self-host this code, but if you run a modified version as a network service you must also publish your changes under the same licence.
