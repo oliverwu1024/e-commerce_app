@@ -31,3 +31,28 @@ export const resolveDisputeSchema = z.object({
 });
 
 export type ResolveDisputeInput = z.infer<typeof resolveDisputeSchema>;
+
+// Buyer or seller posts a message on the dispute thread. Same length cap as
+// the initial description.
+export const disputeMessageSchema = z.object({
+  content: z
+    .string()
+    .trim()
+    .min(1, 'Message cannot be empty')
+    .max(2000, 'Message must be 2000 characters or fewer'),
+});
+
+export type DisputeMessageInput = z.infer<typeof disputeMessageSchema>;
+
+// Seller closes a dispute on their own (typically after refunding). Note is
+// optional — sometimes "I refunded you, here's the receipt" doesn't need
+// extra words.
+export const resolveBySellerSchema = z.object({
+  resolutionNote: z
+    .string()
+    .trim()
+    .max(2000, 'Resolution note must be 2000 characters or fewer')
+    .optional(),
+});
+
+export type ResolveBySellerInput = z.infer<typeof resolveBySellerSchema>;

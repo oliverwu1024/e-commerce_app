@@ -6,8 +6,20 @@ import ProtectedRoute from '@/components/ProtectedRoute';
 import { useAuthStore } from '@/stores/auth';
 import { api } from '@/lib/api';
 
-type DisputeStatus = 'OPEN' | 'RESOLVED_REFUND' | 'RESOLVED_NO_REFUND' | 'WITHDRAWN';
+type DisputeStatus =
+  | 'OPEN'
+  | 'RESOLVED_BY_SELLER'
+  | 'RESOLVED_REFUND'
+  | 'RESOLVED_NO_REFUND'
+  | 'WITHDRAWN';
 type DisputeReason = 'NOT_RECEIVED' | 'NOT_AS_DESCRIBED' | 'DAMAGED' | 'OTHER';
+
+type AdminDisputeMessage = {
+  id: string;
+  content: string;
+  createdAt: string;
+  fromUser: { id: string; username: string; avatarUrl: string | null };
+};
 
 type AdminDispute = {
   id: string;
@@ -16,6 +28,7 @@ type AdminDispute = {
   description: string;
   createdAt: string;
   resolvedAt: string | null;
+  reopenedAt: string | null;
   resolutionNote: string | null;
   buyer: { id: string; username: string };
   seller: { id: string; username: string };
@@ -26,6 +39,7 @@ type AdminDispute = {
     paymentMethod: string | null;
     listing: { id: string; title: string };
   };
+  messages: AdminDisputeMessage[];
 };
 
 const REASON_LABEL: Record<DisputeReason, string> = {
@@ -37,10 +51,13 @@ const REASON_LABEL: Record<DisputeReason, string> = {
 
 const STATUS_FILTERS: { value: DisputeStatus; label: string }[] = [
   { value: 'OPEN', label: 'Open' },
+  { value: 'RESOLVED_BY_SELLER', label: 'Closed by seller' },
   { value: 'RESOLVED_REFUND', label: 'Resolved (refunded)' },
   { value: 'RESOLVED_NO_REFUND', label: 'Resolved (no refund)' },
   { value: 'WITHDRAWN', label: 'Withdrawn' },
 ];
+
+type Counts = Record<DisputeStatus, number>;
 
 export default function AdminDisputesPage() {
   return (
@@ -69,15 +86,23 @@ function Inner() {
 function Loaded() {
   const [filter, setFilter] = useState<DisputeStatus>('OPEN');
   const [disputes, setDisputes] = useState<AdminDispute[]>([]);
+  const [counts, setCounts] = useState<Counts>({
+    OPEN: 0,
+    RESOLVED_BY_SELLER: 0,
+    RESOLVED_REFUND: 0,
+    RESOLVED_NO_REFUND: 0,
+    WITHDRAWN: 0,
+  });
   const [loading, setLoading] = useState(true);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api<{ disputes: AdminDispute[] }>(
+      const res = await api<{ disputes: AdminDispute[]; counts: Counts }>(
         `/api/admin/disputes?status=${filter}`,
       );
       setDisputes(res.disputes);
+      setCounts(res.counts);
     } finally {
       setLoading(false);
     }
@@ -111,6 +136,9 @@ function Loaded() {
             }`}
           >
             {s.label}
+            <span className="ml-1.5 text-[10px] text-[var(--text-dim)]">
+              ({counts[s.value] ?? 0})
+            </span>
           </button>
         ))}
       </div>
@@ -205,6 +233,14 @@ function DisputeCard({
             {new Date(dispute.createdAt).toLocaleString()}
           </dd>
         </div>
+        {dispute.reopenedAt && (
+          <div>
+            <dt>Reopened by buyer</dt>
+            <dd className="text-[var(--neon-amber)]">
+              {new Date(dispute.reopenedAt).toLocaleString()}
+            </dd>
+          </div>
+        )}
         {dispute.resolvedAt && (
           <div>
             <dt>Resolved</dt>
@@ -220,6 +256,29 @@ function DisputeCard({
           <strong className="text-[var(--text-primary)]">Resolution:</strong>{' '}
           {dispute.resolutionNote}
         </p>
+      )}
+
+      {dispute.messages.length > 0 && (
+        <div className="mt-3 space-y-2">
+          <p className="text-[10px] uppercase tracking-[0.15em] text-[var(--text-dim)]">
+            Conversation between parties (read-only)
+          </p>
+          <div className="space-y-1.5 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-3">
+            {dispute.messages.map((m) => (
+              <div key={m.id} className="text-xs">
+                <span className="font-semibold text-[var(--text-primary)]">
+                  {m.fromUser.username}
+                </span>
+                <span className="ml-2 text-[10px] text-[var(--text-dim)]">
+                  {new Date(m.createdAt).toLocaleString()}
+                </span>
+                <p className="mt-0.5 whitespace-pre-wrap text-[var(--text-muted)]">
+                  {m.content}
+                </p>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
 
       {dispute.status === 'OPEN' && (

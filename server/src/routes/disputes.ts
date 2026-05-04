@@ -6,6 +6,8 @@ import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { uuidSchema } from '../schemas/common.js';
 import {
   createDisputeSchema,
+  disputeMessageSchema,
+  resolveBySellerSchema,
   resolveDisputeSchema,
 } from '../schemas/disputes.js';
 import { createNotification } from '../services/notifications.js';
@@ -153,6 +155,12 @@ router.get(
         buyer: { select: { id: true, username: true, avatarUrl: true } },
         seller: { select: { id: true, username: true, avatarUrl: true } },
         resolvedBy: { select: { id: true, username: true } },
+        messages: {
+          orderBy: { createdAt: 'asc' },
+          include: {
+            fromUser: { select: { id: true, username: true, avatarUrl: true } },
+          },
+        },
       },
     });
     if (!dispute) {
@@ -202,39 +210,301 @@ router.post(
   },
 );
 
+// ---------------------------------------------------------------------------
+// POST /api/orders/:orderId/disputes/messages — post a message on the dispute
+// thread. Buyer or seller (no admin posting; admin reads only). Allowed in
+// any non-final state (OPEN or RESOLVED_BY_SELLER) so a buyer who reopens
+// has a place to explain why.
+// ---------------------------------------------------------------------------
+router.post(
+  '/orders/:orderId/disputes/messages',
+  authenticate,
+  disputeLimiter,
+  async (req: Request<{ orderId: string }>, res: Response) => {
+    const { orderId } = req.params;
+    if (!uuidSchema.safeParse(orderId).success) {
+      res.status(400).json({ error: 'Invalid order ID' });
+      return;
+    }
+    const parsed = disputeMessageSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+    const { content } = parsed.data;
+    const dispute = await prisma.dispute.findUnique({
+      where: { orderId },
+      select: {
+        id: true,
+        status: true,
+        buyerId: true,
+        sellerId: true,
+        order: { select: { listing: { select: { id: true, title: true } } } },
+      },
+    });
+    if (!dispute) {
+      res.status(404).json({ error: 'No dispute on this order' });
+      return;
+    }
+    const isBuyer = dispute.buyerId === req.userId;
+    const isSeller = dispute.sellerId === req.userId;
+    if (!isBuyer && !isSeller) {
+      res.status(403).json({ error: 'Only the buyer or seller can post here' });
+      return;
+    }
+    // Final-state disputes are read-only — no point in continuing the
+    // conversation once admin has decided. Buyer wants to dispute again →
+    // they can file a fresh dispute via the standard create route once we
+    // support it (out of scope here).
+    if (
+      dispute.status === 'RESOLVED_REFUND' ||
+      dispute.status === 'RESOLVED_NO_REFUND' ||
+      dispute.status === 'WITHDRAWN'
+    ) {
+      res
+        .status(409)
+        .json({ error: 'This dispute is closed and no longer accepts messages' });
+      return;
+    }
+
+    const message = await prisma.disputeMessage.create({
+      data: {
+        disputeId: dispute.id,
+        fromUserId: req.userId!,
+        content,
+      },
+      include: {
+        fromUser: { select: { id: true, username: true, avatarUrl: true } },
+      },
+    });
+
+    const otherPartyId = isBuyer ? dispute.sellerId : dispute.buyerId;
+    void createNotification({
+      recipientId: otherPartyId,
+      type: 'DISPUTE_MESSAGE',
+      title: 'New dispute message',
+      body: `New message on the dispute for "${dispute.order.listing.title}"`,
+      actorId: req.userId!,
+      orderId,
+      listingId: dispute.order.listing.id,
+    });
+
+    res.status(201).json({ message });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/orders/:orderId/disputes/resolve-by-seller — seller closes the
+// dispute on their own. Typically after refunding, but we don't enforce that
+// link here (refunds are their own audit trail). Buyer can reopen within the
+// dispute window.
+// ---------------------------------------------------------------------------
+router.post(
+  '/orders/:orderId/disputes/resolve-by-seller',
+  authenticate,
+  disputeLimiter,
+  async (req: Request<{ orderId: string }>, res: Response) => {
+    const { orderId } = req.params;
+    if (!uuidSchema.safeParse(orderId).success) {
+      res.status(400).json({ error: 'Invalid order ID' });
+      return;
+    }
+    const parsed = resolveBySellerSchema.safeParse(req.body);
+    if (!parsed.success) {
+      res.status(400).json({ error: parsed.error.issues[0].message });
+      return;
+    }
+    const { resolutionNote } = parsed.data;
+
+    const dispute = await prisma.dispute.findUnique({
+      where: { orderId },
+      select: {
+        id: true,
+        status: true,
+        buyerId: true,
+        sellerId: true,
+        order: { select: { listing: { select: { id: true, title: true } } } },
+      },
+    });
+    if (!dispute) {
+      res.status(404).json({ error: 'No dispute on this order' });
+      return;
+    }
+    if (dispute.sellerId !== req.userId) {
+      res.status(403).json({ error: 'Only the seller can close their own dispute' });
+      return;
+    }
+    if (dispute.status !== 'OPEN') {
+      res.status(409).json({ error: 'Only an open dispute can be closed' });
+      return;
+    }
+
+    const updated = await prisma.dispute.update({
+      where: { id: dispute.id },
+      data: {
+        status: 'RESOLVED_BY_SELLER',
+        resolvedAt: new Date(),
+        resolvedById: req.userId!,
+        resolutionNote: resolutionNote ?? null,
+      },
+    });
+
+    void createNotification({
+      recipientId: dispute.buyerId,
+      type: 'DISPUTE_RESOLVED_BY_SELLER',
+      title: 'Seller closed the dispute',
+      body: `Seller closed your dispute on "${dispute.order.listing.title}". Reopen if it's not actually resolved.`,
+      actorId: req.userId!,
+      orderId,
+      listingId: dispute.order.listing.id,
+    });
+
+    res.json({ dispute: updated });
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/orders/:orderId/disputes/reopen — buyer reopens a previously
+// seller-closed dispute. One reopen per dispute — after that the buyer must
+// either let it stand or escalate via the contact form.
+// ---------------------------------------------------------------------------
+router.post(
+  '/orders/:orderId/disputes/reopen',
+  authenticate,
+  disputeLimiter,
+  async (req: Request<{ orderId: string }>, res: Response) => {
+    const { orderId } = req.params;
+    if (!uuidSchema.safeParse(orderId).success) {
+      res.status(400).json({ error: 'Invalid order ID' });
+      return;
+    }
+    const dispute = await prisma.dispute.findUnique({
+      where: { orderId },
+      select: {
+        id: true,
+        status: true,
+        buyerId: true,
+        sellerId: true,
+        reopenedAt: true,
+        order: { select: { listing: { select: { id: true, title: true } } } },
+      },
+    });
+    if (!dispute) {
+      res.status(404).json({ error: 'No dispute on this order' });
+      return;
+    }
+    if (dispute.buyerId !== req.userId) {
+      res.status(403).json({ error: 'Only the buyer can reopen a dispute' });
+      return;
+    }
+    if (dispute.status !== 'RESOLVED_BY_SELLER') {
+      res
+        .status(409)
+        .json({ error: 'Only a seller-closed dispute can be reopened' });
+      return;
+    }
+    if (dispute.reopenedAt) {
+      res
+        .status(409)
+        .json({ error: 'This dispute has already been reopened once. Contact admin via the support form.' });
+      return;
+    }
+
+    const updated = await prisma.dispute.update({
+      where: { id: dispute.id },
+      data: {
+        status: 'OPEN',
+        // Clear seller's resolution markers but keep resolutionNote in
+        // history — the message thread is the audit log going forward.
+        resolvedAt: null,
+        resolvedById: null,
+        reopenedAt: new Date(),
+      },
+    });
+
+    void createNotification({
+      recipientId: dispute.sellerId,
+      type: 'DISPUTE_REOPENED',
+      title: 'Dispute reopened',
+      body: `Buyer reopened the dispute on "${dispute.order.listing.title}".`,
+      actorId: req.userId!,
+      orderId,
+      listingId: dispute.order.listing.id,
+    });
+
+    res.json({ dispute: updated });
+  },
+);
+
 // ===========================================================================
 // ADMIN — dispute queue + resolution
 // ===========================================================================
 
-// GET /api/admin/disputes?status=OPEN — admin queue
+// GET /api/admin/disputes?status=OPEN — admin queue. Returns counts for every
+// status alongside the filtered list so the UI can render tab badges without
+// extra round-trips.
 router.get(
   '/admin/disputes',
   authenticate,
   requireAdmin,
   async (req: Request, res: Response) => {
-    const status = typeof req.query.status === 'string' ? req.query.status : 'OPEN';
-    const where = ['OPEN', 'RESOLVED_REFUND', 'RESOLVED_NO_REFUND', 'WITHDRAWN'].includes(status)
-      ? { status: status as 'OPEN' | 'RESOLVED_REFUND' | 'RESOLVED_NO_REFUND' | 'WITHDRAWN' }
+    type DisputeStatusFilter =
+      | 'OPEN'
+      | 'RESOLVED_BY_SELLER'
+      | 'RESOLVED_REFUND'
+      | 'RESOLVED_NO_REFUND'
+      | 'WITHDRAWN';
+    const VALID_STATUSES: readonly DisputeStatusFilter[] = [
+      'OPEN',
+      'RESOLVED_BY_SELLER',
+      'RESOLVED_REFUND',
+      'RESOLVED_NO_REFUND',
+      'WITHDRAWN',
+    ];
+    const raw = typeof req.query.status === 'string' ? req.query.status : 'OPEN';
+    const where = VALID_STATUSES.includes(raw as DisputeStatusFilter)
+      ? { status: raw as DisputeStatusFilter }
       : {};
-    const disputes = await prisma.dispute.findMany({
-      where,
-      orderBy: { createdAt: 'asc' },
-      take: 100,
-      include: {
-        buyer: { select: { id: true, username: true } },
-        seller: { select: { id: true, username: true } },
-        order: {
-          select: {
-            id: true,
-            amount: true,
-            status: true,
-            paymentMethod: true,
-            listing: { select: { id: true, title: true } },
+
+    const [disputes, grouped] = await Promise.all([
+      prisma.dispute.findMany({
+        where,
+        orderBy: { createdAt: 'asc' },
+        take: 100,
+        include: {
+          buyer: { select: { id: true, username: true } },
+          seller: { select: { id: true, username: true } },
+          order: {
+            select: {
+              id: true,
+              amount: true,
+              status: true,
+              paymentMethod: true,
+              listing: { select: { id: true, title: true } },
+            },
+          },
+          messages: {
+            orderBy: { createdAt: 'asc' },
+            include: {
+              fromUser: { select: { id: true, username: true, avatarUrl: true } },
+            },
           },
         },
-      },
-    });
-    res.json({ disputes });
+      }),
+      prisma.dispute.groupBy({
+        by: ['status'],
+        _count: { _all: true },
+      }),
+    ]);
+
+    const counts = Object.fromEntries(
+      VALID_STATUSES.map((s) => [s, 0]),
+    ) as Record<DisputeStatusFilter, number>;
+    for (const row of grouped) {
+      counts[row.status as DisputeStatusFilter] = row._count._all;
+    }
+
+    res.json({ disputes, counts });
   },
 );
 

@@ -10,6 +10,9 @@ export type NotificationType =
   | 'ORDER_REFUNDED'
   | 'ORDER_DISPUTED'
   | 'DISPUTE_RESOLVED'
+  | 'DISPUTE_MESSAGE'
+  | 'DISPUTE_RESOLVED_BY_SELLER'
+  | 'DISPUTE_REOPENED'
   | 'NEW_MESSAGE'
   | 'NEW_INQUIRY'
   | 'NEW_INQUIRY_REPLY'
@@ -96,8 +99,11 @@ export function notificationHref(n: Notification): string {
       // Seller-facing — they need to see the order they're being disputed on.
       return `/dashboard?tab=sales&order=${n.orderId ?? ''}`;
     case 'DISPUTE_RESOLVED':
-      // Both buyer and seller receive this; deep-link to the order so they
-      // can read the resolution note in context.
+    case 'DISPUTE_RESOLVED_BY_SELLER':
+    case 'DISPUTE_REOPENED':
+    case 'DISPUTE_MESSAGE':
+      // Both parties hit these; deep-link to the order so they land on the
+      // dispute section + thread in context.
       return `/dashboard?order=${n.orderId ?? ''}`;
     case 'NEW_MESSAGE':
       return `/account/messages?order=${n.orderId ?? ''}`;

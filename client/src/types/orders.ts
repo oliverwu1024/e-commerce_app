@@ -104,6 +104,33 @@ export type OrderListing = {
   images: { id: string; url: string }[];
 };
 
+export type DisputeStatus =
+  | 'OPEN'
+  | 'RESOLVED_BY_SELLER'
+  | 'RESOLVED_REFUND'
+  | 'RESOLVED_NO_REFUND'
+  | 'WITHDRAWN';
+
+export type DisputeReason =
+  | 'NOT_RECEIVED'
+  | 'NOT_AS_DESCRIBED'
+  | 'DAMAGED'
+  | 'OTHER';
+
+// Inline summary on the order. Full thread (messages) lives behind a
+// separate fetch (GET /api/orders/:id/disputes) so list queries stay light.
+export type OrderDisputeSummary = {
+  id: string;
+  status: DisputeStatus;
+  reason: DisputeReason;
+  description: string;
+  resolutionNote: string | null;
+  resolvedAt: string | null;
+  reopenedAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export type Order = {
   id: string;
   amount: string;
@@ -129,6 +156,7 @@ export type Order = {
   buyer: OrderParty;
   seller: OrderSeller;
   review: { id: string; rating: number } | null;
+  dispute: OrderDisputeSummary | null;
 };
 
 export type OrderMessage = {
@@ -136,6 +164,41 @@ export type OrderMessage = {
   content: string;
   createdAt: string;
   sender: { id: string; username: string; avatarUrl: string | null };
+};
+
+export type DisputeMessage = {
+  id: string;
+  content: string;
+  createdAt: string;
+  fromUser: { id: string; username: string; avatarUrl: string | null };
+};
+
+// Full dispute returned by GET /api/orders/:orderId/disputes — includes
+// thread, parties, and resolver. Used by the dispute section UI.
+export type DisputeDetail = OrderDisputeSummary & {
+  buyerId: string;
+  sellerId: string;
+  buyer: { id: string; username: string; avatarUrl: string | null };
+  seller: { id: string; username: string; avatarUrl: string | null };
+  resolvedBy: { id: string; username: string } | null;
+  messages: DisputeMessage[];
+};
+
+export type DisputeReasonLabel = Record<DisputeReason, string>;
+
+export const DISPUTE_REASON_LABELS: DisputeReasonLabel = {
+  NOT_RECEIVED: 'Never received',
+  NOT_AS_DESCRIBED: 'Not as described',
+  DAMAGED: 'Arrived damaged',
+  OTHER: 'Other',
+};
+
+export const DISPUTE_STATUS_LABELS: Record<DisputeStatus, string> = {
+  OPEN: 'Open',
+  RESOLVED_BY_SELLER: 'Resolved by seller',
+  RESOLVED_REFUND: 'Closed — refund',
+  RESOLVED_NO_REFUND: 'Closed — no refund',
+  WITHDRAWN: 'Withdrawn',
 };
 
 export type OrderListResponse = {

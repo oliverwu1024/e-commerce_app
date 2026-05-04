@@ -11,6 +11,7 @@ import {
   PAYMENT_METHOD_LABELS,
 } from '@/types/orders';
 import MessageThread from '@/components/MessageThread';
+import DisputeSection from '@/components/DisputeSection';
 import { StarInput } from '@/components/Stars';
 
 type Role = 'buyer' | 'seller';
@@ -21,6 +22,10 @@ const DISPUTE_WINDOW_DAYS = 30;
 const DISPUTE_WINDOW_MS = DISPUTE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
 function canDisputeCompleted(order: Order): boolean {
+  // One dispute per order — once the buyer files (or had one filed historically)
+  // they take all further action through the dispute thread, not by opening a
+  // new dispute.
+  if (order.dispute) return false;
   if (order.status !== 'COMPLETED' || !order.deliveredAt) return false;
   return Date.now() - new Date(order.deliveredAt).getTime() < DISPUTE_WINDOW_MS;
 }
@@ -414,28 +419,36 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
         >
           Mark Received
         </button>,
-        <button
-          key="dispute"
-          onClick={() => setShowDisputeForm((v) => !v)}
-          disabled={busy}
-          className="btn-cyber-outline text-xs"
-        >
-          Open dispute
-        </button>,
       );
+      // Existing dispute hides the Open-dispute button — buyer interacts with
+      // it via the dispute section in the expanded view instead.
+      if (!order.dispute) {
+        actions.push(
+          <button
+            key="dispute"
+            onClick={() => setShowDisputeForm((v) => !v)}
+            disabled={busy}
+            className="btn-cyber-outline text-xs"
+          >
+            Open dispute
+          </button>,
+        );
+      }
     } else if (order.status === 'PAID') {
       // Buyer can dispute even before shipment — "I paid but the seller went
       // dark" is a real failure mode and shouldn't require waiting for ship.
-      actions.push(
-        <button
-          key="dispute"
-          onClick={() => setShowDisputeForm((v) => !v)}
-          disabled={busy}
-          className="btn-cyber-outline text-xs"
-        >
-          Open dispute
-        </button>,
-      );
+      if (!order.dispute) {
+        actions.push(
+          <button
+            key="dispute"
+            onClick={() => setShowDisputeForm((v) => !v)}
+            disabled={busy}
+            className="btn-cyber-outline text-xs"
+          >
+            Open dispute
+          </button>,
+        );
+      }
     } else if (order.status === 'COMPLETED') {
       if (!order.review) {
         actions.push(
@@ -882,6 +895,15 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           </div>
 
           <FulfillmentSummary order={order} />
+
+          {order.dispute && (
+            <DisputeSection
+              order={order}
+              currentUserId={currentUserId}
+              role={role}
+              onChange={onChange}
+            />
+          )}
 
           <MessageThread
             endpoint={`/api/orders/${order.id}/messages`}

@@ -104,6 +104,23 @@ const ORDER_SUMMARY_SELECT = {
     },
   },
   review: { select: { id: true, rating: true } },
+  // Dispute summary on the order — UI uses this to render the dispute section
+  // inline on the order row (status badge, link to thread). Messages are
+  // fetched separately from /api/orders/:id/disputes so the order list stays
+  // light when most rows have no dispute.
+  dispute: {
+    select: {
+      id: true,
+      status: true,
+      reason: true,
+      description: true,
+      resolutionNote: true,
+      resolvedAt: true,
+      reopenedAt: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  },
 } satisfies Prisma.OrderSelect;
 
 // Strip structured address fields from both parties before sending an
