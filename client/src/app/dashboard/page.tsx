@@ -375,12 +375,16 @@ function Dashboard() {
       </div>
 
       {/* Sub-tabs */}
-      <div className="mt-4 border-b border-[var(--border-subtle)]" data-tour="dashboard-tabs">
+      <div
+        className="mt-4 -mx-4 overflow-x-auto border-b border-[var(--border-subtle)] px-4 sm:mx-0 sm:px-0"
+        data-tour="dashboard-tabs"
+        style={{ scrollbarWidth: 'thin' }}
+      >
         <div
           role="tablist"
           aria-label={`${role === 'selling' ? 'Selling' : 'Buying'} tabs`}
           onKeyDown={handleTabsKeyDown}
-          className="flex gap-6"
+          className="flex gap-4 sm:gap-6"
         >
           {visibleTabs.map((tab) => {
             const selected = activeTab === tab;
@@ -396,7 +400,7 @@ function Dashboard() {
                 aria-controls={`dashboard-panel-${tab}`}
                 tabIndex={selected ? 0 : -1}
                 onClick={() => selectTab(tab)}
-                className={`pb-3 text-sm font-medium transition-colors ${
+                className={`shrink-0 whitespace-nowrap pb-3 text-sm font-medium transition-colors ${
                   selected
                     ? 'border-b-2 border-[var(--neon-cyan)] text-[var(--neon-cyan)]'
                     : 'text-[var(--text-muted)] hover:text-[var(--text-primary)]'

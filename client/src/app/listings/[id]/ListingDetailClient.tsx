@@ -340,25 +340,25 @@ export default function ListingDetailClient() {
             </div>
 
             {/* Action buttons */}
-            <div className="mt-6 flex gap-3">
+            <div className="mt-6 flex flex-wrap gap-2 sm:gap-3">
               {isOwner ? (
                 <>
                   <Link
                     href={`/listings/${listing.id}/edit`}
-                    className="btn-cyber-outline flex-1 text-center"
+                    className="btn-cyber-outline min-w-[6rem] flex-1 text-center"
                   >
                     Edit
                   </Link>
                   <button
                     onClick={handleDuplicate}
                     disabled={duplicating}
-                    className="flex-1 rounded-lg border border-[var(--border-hi)] bg-[var(--bg-panel-hi)] px-4 py-2.5 text-sm font-medium text-[var(--text-primary)] hover:bg-[var(--bg-panel)] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                    className="min-w-[6rem] flex-1 rounded-lg border border-[var(--border-hi)] bg-[var(--bg-panel-hi)] px-3 py-2.5 text-sm font-medium text-[var(--text-primary)] transition-colors hover:bg-[var(--bg-panel)] disabled:cursor-not-allowed disabled:opacity-50 sm:px-4"
                   >
                     {duplicating ? 'Duplicating…' : 'Duplicate'}
                   </button>
                   <button
                     onClick={() => setShowRemoveConfirm(true)}
-                    className="flex-1 rounded-lg border border-[var(--neon-danger)]/40 px-4 py-2.5 text-sm font-medium text-[var(--neon-danger)] hover:bg-[var(--tint-danger)] transition-colors"
+                    className="min-w-[6rem] flex-1 rounded-lg border border-[var(--neon-danger)]/40 px-3 py-2.5 text-sm font-medium text-[var(--neon-danger)] transition-colors hover:bg-[var(--tint-danger)] sm:px-4"
                   >
                     Remove
                   </button>

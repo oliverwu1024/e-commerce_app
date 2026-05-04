@@ -67,11 +67,11 @@ export default function Home() {
       <section className="relative overflow-hidden border-b border-[var(--border-subtle)]">
         <div className="hero-glow absolute inset-0" aria-hidden="true" />
 
-        <div className="relative mx-auto max-w-6xl px-4 py-16 lg:py-20">
-          <div className="grid items-center gap-12 lg:grid-cols-[1.05fr_1fr]">
+        <div className="relative mx-auto max-w-6xl px-4 py-10 sm:py-14 lg:py-20">
+          <div className="grid items-center gap-8 lg:grid-cols-[1.05fr_1fr] lg:gap-12">
             {/* LEFT */}
             <div>
-              <h1 className="text-4xl font-medium leading-[1.05] tracking-tight text-[var(--text-primary)] sm:text-5xl lg:text-6xl">
+              <h1 className="text-[2rem] font-medium leading-[1.08] tracking-tight text-[var(--text-primary)] sm:text-5xl lg:text-6xl">
                 Buy &amp; sell
                 <br />
                 <span className="font-display font-semibold text-[var(--neon-cyan)]">
@@ -79,16 +79,16 @@ export default function Home() {
                 </span>
                 <span className="text-[var(--text-dim)]">.</span>
               </h1>
-              <p className="mt-5 max-w-xl text-base font-medium leading-relaxed text-[var(--text-muted)] sm:text-lg">
+              <p className="mt-4 max-w-xl text-sm font-medium leading-relaxed text-[var(--text-muted)] sm:mt-5 sm:text-lg">
                 Phones, laptops, consoles, cameras and peripherals — from trusted
                 sellers across Australia.
               </p>
 
-              <form onSubmit={handleSearch} className="mt-7 max-w-xl" data-tour="search">
+              <form onSubmit={handleSearch} className="mt-6 max-w-xl sm:mt-7" data-tour="search">
                 <div className="flex overflow-hidden rounded-lg border border-[var(--border-hi)] bg-[var(--bg-input)] backdrop-blur-sm focus-within:border-[var(--neon-cyan)] focus-within:shadow-[0_0_0_3px_color-mix(in_oklab,var(--neon-cyan)_18%,transparent)] transition-all">
                   <div className="relative flex-1">
                     <svg
-                      className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-[var(--text-dim)]"
+                      className="pointer-events-none absolute left-3.5 top-1/2 -translate-y-1/2 h-5 w-5 text-[var(--text-dim)] sm:left-4"
                       fill="none"
                       viewBox="0 0 24 24"
                       stroke="currentColor"
@@ -104,14 +104,14 @@ export default function Home() {
                       type="text"
                       value={searchQuery}
                       onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Search phones, laptops, cameras…"
+                      placeholder="Search phones, laptops…"
                       aria-label="Search listings"
-                      className="w-full bg-transparent py-4 pl-12 pr-4 text-[var(--text-primary)] placeholder-[var(--text-dim)] focus:outline-none"
+                      className="w-full bg-transparent py-3 pl-11 pr-3 text-sm text-[var(--text-primary)] placeholder-[var(--text-dim)] focus:outline-none sm:py-4 sm:pl-12 sm:pr-4 sm:text-base"
                     />
                   </div>
                   <button
                     type="submit"
-                    className="px-7 bg-[var(--neon-cyan)] font-semibold text-[var(--btn-primary-text)] hover:bg-[var(--accent-soft)] transition-colors"
+                    className="bg-[var(--neon-cyan)] px-4 text-sm font-semibold text-[var(--btn-primary-text)] transition-colors hover:bg-[var(--accent-soft)] sm:px-7 sm:text-base"
                   >
                     Search
                   </button>
@@ -132,12 +132,12 @@ export default function Home() {
          BENTO CATEGORIES — white band on light
          ============================================================ */}
       <section className="relative bg-[var(--bg-band)] transition-colors">
-        <div className="mx-auto max-w-6xl px-4 py-16 lg:py-20">
-          <div className="mb-10">
-            <p className="font-serif-italic text-xl text-[var(--text-primary)]">
+        <div className="mx-auto max-w-6xl px-4 py-12 sm:py-16 lg:py-20">
+          <div className="mb-6 sm:mb-10">
+            <p className="font-serif-italic text-base text-[var(--text-primary)] sm:text-xl">
               Curated categories
             </p>
-            <h2 className="mt-1 text-3xl font-bold tracking-tight text-[var(--text-primary)] sm:text-4xl">
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--text-primary)] sm:text-4xl">
               Browse by category
             </h2>
           </div>
@@ -150,19 +150,19 @@ export default function Home() {
          ============================================================ */}
       {(loading || featured.length > 0) && (
         <section className="relative">
-          <div className="mx-auto max-w-6xl px-4 py-16 lg:py-20">
-            <div className="mb-10 flex items-end justify-between gap-4">
-              <div>
-                <p className="font-serif-italic text-xl text-[var(--text-primary)]">
+          <div className="mx-auto max-w-6xl px-4 py-12 sm:py-16 lg:py-20">
+            <div className="mb-6 flex items-end justify-between gap-3 sm:mb-10 sm:gap-4">
+              <div className="min-w-0">
+                <p className="font-serif-italic text-base text-[var(--text-primary)] sm:text-xl">
                   What&rsquo;s moving today
                 </p>
-                <h2 className="mt-1 flex items-center gap-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
+                <h2 className="mt-1 flex items-center gap-2 text-2xl font-extrabold tracking-tight sm:gap-3 sm:text-4xl">
                   <span
                     aria-hidden="true"
-                    className="relative inline-flex h-3 w-3 shrink-0"
+                    className="relative inline-flex h-2.5 w-2.5 shrink-0 sm:h-3 sm:w-3"
                   >
                     <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--neon-cyan)] opacity-60"></span>
-                    <span className="relative inline-flex h-3 w-3 rounded-full bg-[var(--neon-cyan)] shadow-[0_0_10px_color-mix(in_oklab,var(--neon-cyan)_50%,transparent)]"></span>
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[var(--neon-cyan)] shadow-[0_0_10px_color-mix(in_oklab,var(--neon-cyan)_50%,transparent)] sm:h-3 sm:w-3"></span>
                   </span>
                   <span>
                     <span className="text-[var(--neon-cyan)]">Trending</span>
@@ -172,7 +172,7 @@ export default function Home() {
               </div>
               <Link
                 href="/browse?sort=newest"
-                className="shrink-0 text-sm font-semibold text-[var(--neon-cyan)] transition-colors hover:text-[var(--accent-soft)]"
+                className="shrink-0 text-xs font-semibold text-[var(--neon-cyan)] transition-colors hover:text-[var(--accent-soft)] sm:text-sm"
               >
                 View more →
               </Link>
@@ -186,25 +186,25 @@ export default function Home() {
          RECENT LISTINGS — white band
          ============================================================ */}
       <section className="relative bg-[var(--bg-band)] transition-colors">
-        <div className="mx-auto max-w-6xl px-4 py-16 lg:py-20">
-          <div className="mb-10 flex items-end justify-between gap-4">
-            <div>
-              <p className="font-serif-italic text-xl text-[var(--text-primary)]">
+        <div className="mx-auto max-w-6xl px-4 py-12 sm:py-16 lg:py-20">
+          <div className="mb-6 flex items-end justify-between gap-3 sm:mb-10 sm:gap-4">
+            <div className="min-w-0">
+              <p className="font-serif-italic text-base text-[var(--text-primary)] sm:text-xl">
                 Just listed
               </p>
-              <h2 className="mt-1 text-3xl font-bold tracking-tight text-[var(--text-primary)] sm:text-4xl">
+              <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--text-primary)] sm:text-4xl">
                 Recent listings
               </h2>
             </div>
             <Link
               href="/browse"
-              className="shrink-0 text-sm font-semibold text-[var(--neon-cyan)] transition-colors hover:text-[var(--accent-soft)]"
+              className="shrink-0 text-xs font-semibold text-[var(--neon-cyan)] transition-colors hover:text-[var(--accent-soft)] sm:text-sm"
             >
               View all →
             </Link>
           </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-2 sm:gap-4 md:grid-cols-3 lg:grid-cols-4">
             {loading
               ? Array.from({ length: 8 }, (_, i) => <ListingCardSkeleton key={i} />)
               : recent.map((listing) => (
@@ -262,10 +262,10 @@ function TrendingMiniGrid({
 
   return (
     <div>
-      <p className="mb-4 flex items-center gap-2.5 text-lg font-extrabold uppercase tracking-[0.18em]">
-        <span aria-hidden="true" className="relative inline-flex h-3 w-3 shrink-0">
+      <p className="mb-3 flex items-center gap-2 text-sm font-extrabold uppercase tracking-[0.16em] sm:mb-4 sm:gap-2.5 sm:text-lg sm:tracking-[0.18em]">
+        <span aria-hidden="true" className="relative inline-flex h-2.5 w-2.5 shrink-0 sm:h-3 sm:w-3">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--neon-cyan)] opacity-70"></span>
-          <span className="relative inline-flex h-3 w-3 rounded-full bg-[var(--neon-cyan)] shadow-[0_0_10px_color-mix(in_oklab,var(--neon-cyan)_60%,transparent)]"></span>
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[var(--neon-cyan)] shadow-[0_0_10px_color-mix(in_oklab,var(--neon-cyan)_60%,transparent)] sm:h-3 sm:w-3"></span>
         </span>
         <span className="text-bling">Trending right now</span>
       </p>
@@ -379,16 +379,16 @@ function TrustStrip({ totalCount }: { totalCount: number }) {
   ];
 
   return (
-    <div className="mt-12 grid grid-cols-1 gap-y-4 gap-x-6 border-t border-[var(--border-subtle)] pt-6 sm:grid-cols-3">
+    <div className="mt-8 grid grid-cols-1 gap-y-3 gap-x-6 border-t border-[var(--border-subtle)] pt-5 sm:mt-12 sm:grid-cols-3 sm:gap-y-4 sm:pt-6">
       {items.map((item, i) => (
         <div key={item.key} className="flex items-center gap-3">
           <span
-            className="trust-icon-box flex h-11 w-11 flex-shrink-0 items-center justify-center rounded-md"
+            className="trust-icon-box flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-md sm:h-11 sm:w-11"
             style={{ animationDelay: `${i * 1.25}s` }}
           >
             <TrustIcon name={item.key} />
           </span>
-          <span className="text-sm font-semibold text-[var(--text-primary)]">
+          <span className="text-xs font-semibold text-[var(--text-primary)] sm:text-sm">
             {item.label}
           </span>
         </div>
@@ -567,11 +567,11 @@ function DealsStrip({
   if (loading) {
     return (
       <div className="-mx-4 overflow-x-hidden px-4">
-        <div className="flex gap-4">
+        <div className="flex gap-3 sm:gap-4">
           {Array.from({ length: 5 }, (_, i) => (
             <div
               key={i}
-              className="panel clip-corner aspect-[3/4] w-[260px] flex-shrink-0 animate-pulse bg-[var(--bg-panel-hi)]"
+              className="panel clip-corner aspect-[3/4] w-[200px] flex-shrink-0 animate-pulse bg-[var(--bg-panel-hi)] sm:w-[260px]"
             />
           ))}
         </div>
@@ -584,12 +584,12 @@ function DealsStrip({
       className="-mx-4 overflow-x-auto px-4 pb-3"
       style={{ scrollSnapType: 'x proximity', scrollbarWidth: 'thin' }}
     >
-      <div className="flex gap-4">
+      <div className="flex gap-3 sm:gap-4">
         {listings.map((listing) => (
           <Link
             key={listing.id}
             href={`/listings/${listing.id}`}
-            className="group panel panel-hover clip-corner relative block w-[260px] flex-shrink-0 overflow-hidden"
+            className="group panel panel-hover clip-corner relative block w-[200px] flex-shrink-0 overflow-hidden sm:w-[260px]"
             style={{ scrollSnapAlign: 'start' }}
           >
             <div className="relative aspect-[4/3] overflow-hidden bg-[var(--bg-panel-hi)]">
@@ -658,22 +658,22 @@ function SquareFeaturedRail() {
 
   return (
     <section className="relative border-t border-[var(--border-subtle)] bg-[var(--bg-base)] transition-colors">
-      <div className="mx-auto max-w-6xl px-4 py-16 lg:py-20">
-        <div className="mb-10 flex items-end justify-between gap-4">
-          <div>
-            <p className="font-serif-italic text-xl text-[var(--text-primary)]">
+      <div className="mx-auto max-w-6xl px-4 py-12 sm:py-16 lg:py-20">
+        <div className="mb-6 flex items-end justify-between gap-3 sm:mb-10 sm:gap-4">
+          <div className="min-w-0">
+            <p className="font-serif-italic text-base text-[var(--text-primary)] sm:text-xl">
               Powered by Square Catalog
             </p>
-            <h2 className="mt-1 text-3xl font-bold tracking-tight text-[var(--text-primary)] sm:text-4xl">
+            <h2 className="mt-1 text-2xl font-bold tracking-tight text-[var(--text-primary)] sm:text-4xl">
               Featured from our partners
             </h2>
-            <p className="mt-2 max-w-xl text-sm text-[var(--text-muted)]">
+            <p className="mt-2 max-w-xl text-xs text-[var(--text-muted)] sm:text-sm">
               Live pull from a partner merchant&apos;s Square Catalog — refreshed daily.
             </p>
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 sm:gap-4 md:grid-cols-4 lg:grid-cols-6">
           {loading
             ? Array.from({ length: 6 }, (_, i) => (
                 <div

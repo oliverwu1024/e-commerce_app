@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Orbitron, Manrope, Geist_Mono, Fraunces } from "next/font/google";
 import "./globals.css";
 import AuthProvider from "@/components/AuthProvider";
@@ -34,6 +34,15 @@ export const metadata: Metadata = {
   title: "ElectroMarket — Buy & sell used electronics",
   description:
     "Phones, laptops, consoles, cameras and more, from trusted sellers across Australia.",
+};
+
+// Without `initial-scale=1` mobile Safari sometimes lands on a zoomed-out
+// width and the layout looks like a tiny desktop screenshot. `viewport-fit`
+// lets backgrounds extend under the iOS notch when we ever opt into it.
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
 };
 
 // CSP nonces are generated per-request in middleware.ts, which only works if
