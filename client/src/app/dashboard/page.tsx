@@ -26,19 +26,23 @@ import {
 type StatusCounts = Record<ListingStatus, number>;
 
 type Tab =
-  | 'active'          // Selling / Active listings
-  | 'in_sales'        // Selling / In progress sales
-  | 'past_sales'      // Selling / Past sales
-  | 'saved'           // Buying / Saved
-  | 'in_purchases'    // Buying / In progress purchases
-  | 'past_purchases'; // Buying / Past purchases
+  | 'active'             // Selling / Active listings
+  | 'in_sales'           // Selling / In progress sales
+  | 'disputed_sales'     // Selling / Orders with an active dispute
+  | 'past_sales'         // Selling / Past sales
+  | 'saved'              // Buying / Saved
+  | 'in_purchases'       // Buying / In progress purchases
+  | 'disputed_purchases' // Buying / Purchases with an active dispute
+  | 'past_purchases';    // Buying / Past purchases
 
 const VALID_TABS: Tab[] = [
   'active',
   'in_sales',
+  'disputed_sales',
   'past_sales',
   'saved',
   'in_purchases',
+  'disputed_purchases',
   'past_purchases',
 ];
 
@@ -53,8 +57,18 @@ const TAB_ALIASES: Record<string, Tab> = {
 
 type Role = 'selling' | 'buying';
 
-const SELLING_TABS: Tab[] = ['active', 'in_sales', 'past_sales'];
-const BUYING_TABS: Tab[] = ['saved', 'in_purchases', 'past_purchases'];
+const SELLING_TABS: Tab[] = [
+  'active',
+  'in_sales',
+  'disputed_sales',
+  'past_sales',
+];
+const BUYING_TABS: Tab[] = [
+  'saved',
+  'in_purchases',
+  'disputed_purchases',
+  'past_purchases',
+];
 
 function tabRole(tab: Tab): Role {
   return SELLING_TABS.includes(tab) ? 'selling' : 'buying';
@@ -67,9 +81,11 @@ function defaultTabFor(role: Role): Tab {
 const TAB_LABELS: Record<Tab, string> = {
   active: 'Active Listings',
   in_sales: 'In Progress',
+  disputed_sales: 'In Dispute',
   past_sales: 'Past Sales',
   saved: 'Saved',
   in_purchases: 'In Progress',
+  disputed_purchases: 'In Dispute',
   past_purchases: 'Past Purchases',
 };
 
@@ -337,6 +353,9 @@ function Dashboard() {
         {activeTab === 'in_purchases' && (
           <OrdersTab role="buyer" bucket="in_progress" refreshKey={ordersRefreshKey} />
         )}
+        {activeTab === 'disputed_purchases' && (
+          <OrdersTab role="buyer" bucket="disputed" refreshKey={ordersRefreshKey} />
+        )}
         {activeTab === 'past_purchases' && (
           <OrdersTab role="buyer" bucket="past" refreshKey={ordersRefreshKey} />
         )}
@@ -345,6 +364,9 @@ function Dashboard() {
             <SellerEarningsCard />
             <OrdersTab role="seller" bucket="in_progress" />
           </>
+        )}
+        {activeTab === 'disputed_sales' && (
+          <OrdersTab role="seller" bucket="disputed" />
         )}
         {activeTab === 'past_sales' && (
           <>
@@ -886,7 +908,7 @@ function Stat({
 // Shared orders tab (purchases + sales) with in-progress / past bucket split
 // ---------------------------------------------------------------------------
 
-type OrderBucket = 'in_progress' | 'past';
+type OrderBucket = 'in_progress' | 'past' | 'disputed';
 
 function OrdersTab({
   role,
@@ -907,29 +929,45 @@ function OrdersTab({
   const endpoint = role === 'buyer' ? 'purchases' : 'sales';
   const emptyCopy = (() => {
     if (role === 'buyer') {
-      return bucket === 'in_progress'
-        ? {
-            title: 'No purchases in progress',
-            body: 'Items you buy will appear here while they are being confirmed, paid, shipped, and delivered.',
-            cta: { href: '/browse', label: 'Browse Listings' },
-          }
-        : {
-            title: 'No past purchases',
-            body: 'Completed and cancelled purchases will appear here.',
-            cta: { href: '/browse', label: 'Browse Listings' },
-          };
-    }
-    return bucket === 'in_progress'
-      ? {
-          title: 'No sales in progress',
-          body: 'When buyers request your listings, they’ll appear here to confirm, ship, and complete.',
-          cta: { href: '/listings/new', label: 'Post a Listing' },
-        }
-      : {
-          title: 'No past sales',
-          body: 'Completed and cancelled sales will appear here.',
-          cta: { href: '/listings/new', label: 'Post a Listing' },
+      if (bucket === 'in_progress') {
+        return {
+          title: 'No purchases in progress',
+          body: 'Items you buy will appear here while they are being confirmed, paid, shipped, and delivered.',
+          cta: { href: '/browse', label: 'Browse Listings' },
         };
+      }
+      if (bucket === 'disputed') {
+        return {
+          title: 'No active disputes',
+          body: 'Disputes you file will live here until they are fully resolved.',
+          cta: { href: '/browse', label: 'Browse Listings' },
+        };
+      }
+      return {
+        title: 'No past purchases',
+        body: 'Completed and cancelled purchases will appear here.',
+        cta: { href: '/browse', label: 'Browse Listings' },
+      };
+    }
+    if (bucket === 'in_progress') {
+      return {
+        title: 'No sales in progress',
+        body: 'When buyers request your listings, they’ll appear here to confirm, ship, and complete.',
+        cta: { href: '/listings/new', label: 'Post a Listing' },
+      };
+    }
+    if (bucket === 'disputed') {
+      return {
+        title: 'No active disputes',
+        body: 'Orders a buyer is disputing will live here until the dispute is fully resolved.',
+        cta: { href: '/listings/new', label: 'Post a Listing' },
+      };
+    }
+    return {
+      title: 'No past sales',
+      body: 'Completed and cancelled sales will appear here.',
+      cta: { href: '/listings/new', label: 'Post a Listing' },
+    };
   })();
 
   const fetchOrders = useCallback(

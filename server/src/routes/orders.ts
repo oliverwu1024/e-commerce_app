@@ -422,14 +422,37 @@ async function listOrders(
 
     const where: Prisma.OrderWhereInput =
       role === 'seller' ? { sellerId: req.userId! } : { buyerId: req.userId! };
+    // An "active dispute" is one the buyer can still act on — OPEN, or
+    // RESOLVED_BY_SELLER (because reopen is possible). Once a dispute hits
+    // RESOLVED_REFUND/RESOLVED_NO_REFUND/WITHDRAWN it's done and the order
+    // returns to its natural in_progress/past tab.
+    const ACTIVE_DISPUTE_STATUSES = [
+      'OPEN',
+      'RESOLVED_BY_SELLER',
+    ] as const;
     if (status) {
       where.status = status;
     } else if (bucket === 'in_progress') {
       where.status = {
         in: ['PENDING_CONFIRMATION', 'CONFIRMED', 'PAID', 'SHIPPED'],
       };
+      // Disputed orders are pulled into their own tab so a row never shows
+      // up in two places at once.
+      where.dispute = {
+        is: null,
+      };
     } else if (bucket === 'past') {
       where.status = { in: ['COMPLETED', 'CANCELLED', 'REFUNDED'] };
+      where.OR = [
+        { dispute: { is: null } },
+        // Closed disputes (admin or withdrawn) are "done" — show with the
+        // rest of past purchases.
+        { dispute: { status: { notIn: [...ACTIVE_DISPUTE_STATUSES] } } },
+      ];
+    } else if (bucket === 'disputed') {
+      where.dispute = {
+        status: { in: [...ACTIVE_DISPUTE_STATUSES] },
+      };
     }
 
     const [orders, total] = await Promise.all([

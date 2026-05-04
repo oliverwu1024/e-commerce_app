@@ -72,10 +72,16 @@ export const orderListQuerySchema = z.object({
   status: z
     .enum(['PENDING_CONFIRMATION', 'CONFIRMED', 'PAID', 'SHIPPED', 'COMPLETED', 'CANCELLED', 'REFUNDED'])
     .optional(),
-  // Convenience filter for the dashboard's "In Progress" vs "Past" tabs.
-  // 'in_progress' = anything that's not COMPLETED or CANCELLED.
-  // 'past'        = COMPLETED or CANCELLED.
-  bucket: z.enum(['in_progress', 'past']).optional(),
+  // Convenience filter for the dashboard's "In Progress" / "Past" / "In
+  // Dispute" tabs.
+  //   'in_progress' — order is live (not COMPLETED/CANCELLED/REFUNDED) AND
+  //                   has no active dispute.
+  //   'past'        — order is COMPLETED/CANCELLED/REFUNDED AND has no
+  //                   active dispute.
+  //   'disputed'    — has an active dispute (OPEN or RESOLVED_BY_SELLER).
+  //                   Pulled out of in_progress/past so a disputed order
+  //                   surfaces in exactly one place until it's fully resolved.
+  bucket: z.enum(['in_progress', 'past', 'disputed']).optional(),
 });
 
 export type OrderListQuery = z.infer<typeof orderListQuerySchema>;
