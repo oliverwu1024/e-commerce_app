@@ -7,6 +7,9 @@ export type NotificationType =
   | 'ORDER_COMPLETED'
   | 'ORDER_PAID'
   | 'ORDER_SHIPPED'
+  | 'ORDER_REFUNDED'
+  | 'ORDER_DISPUTED'
+  | 'DISPUTE_RESOLVED'
   | 'NEW_MESSAGE'
   | 'NEW_INQUIRY'
   | 'NEW_INQUIRY_REPLY'
@@ -87,6 +90,15 @@ export function notificationHref(n: Notification): string {
       return `/dashboard?tab=purchases&order=${n.orderId ?? ''}`;
     case 'ORDER_SHIPPED':
       return `/dashboard?tab=in_purchases&order=${n.orderId ?? ''}`;
+    case 'ORDER_REFUNDED':
+      return `/dashboard?tab=purchases&order=${n.orderId ?? ''}`;
+    case 'ORDER_DISPUTED':
+      // Seller-facing — they need to see the order they're being disputed on.
+      return `/dashboard?tab=sales&order=${n.orderId ?? ''}`;
+    case 'DISPUTE_RESOLVED':
+      // Both buyer and seller receive this; deep-link to the order so they
+      // can read the resolution note in context.
+      return `/dashboard?order=${n.orderId ?? ''}`;
     case 'NEW_MESSAGE':
       return `/account/messages?order=${n.orderId ?? ''}`;
     case 'NEW_INQUIRY':
@@ -97,5 +109,10 @@ export function notificationHref(n: Notification): string {
     case 'ID_APPROVED':
     case 'ID_REJECTED':
       return '/account/verification';
+    default:
+      // Defensive fallback: if the server adds a new notification type before
+      // the client knows about it, send users to a sensible default rather
+      // than crashing the page with an undefined href.
+      return '/dashboard';
   }
 }
