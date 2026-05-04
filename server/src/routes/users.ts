@@ -14,6 +14,8 @@ import { uuidSchema } from '../schemas/common.js';
 import {
   AVATAR_TYPES,
   ID_DOCUMENT_TYPES,
+  deleteS3ObjectByUrl,
+  deleteS3Prefix,
   verifyS3Upload,
 } from '../lib/s3Verify.js';
 import {
@@ -30,6 +32,7 @@ import {
 import { getSellerStats } from '../services/sellerStats.js';
 import {
   generateVerificationToken,
+  hashToken,
   sendVerificationEmail,
   sendIdSubmittedEmail,
 } from '../utils/email.js';
@@ -39,7 +42,8 @@ import { FEATURES } from '../config/features.js';
 import { PUBLIC_LOCATION_SELECT, projectPublicSeller } from '../services/publicLocation.js';
 import { logger } from '../utils/logger.js';
 
-const DEV_EMAIL_ENABLED = process.env.ENABLE_DEV_EMAIL === '1';
+const DEV_EMAIL_ENABLED =
+  process.env.ENABLE_DEV_EMAIL === '1' && process.env.NODE_ENV !== 'production';
 
 function buildVerificationUrl(token: string): string {
   const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
@@ -337,6 +341,18 @@ router.post('/verify-phone/confirm', authenticate, phoneConfirmLimiter, async (r
     } catch (err) {
       logger.warn('users.verify_phone.token_verification_failed', { err: String(err) });
       res.status(400).json({ error: 'Invalid or expired verification token.' });
+      return;
+    }
+
+    // Defence-in-depth: make sure the token came from the phone provider, not
+    // any other Firebase auth method that might be enabled in future. The
+    // missing-phone branch below already catches the most likely bypass, but
+    // pinning the provider keeps the contract explicit.
+    if (decoded.firebase?.sign_in_provider !== 'phone') {
+      logger.warn('users.verify_phone.wrong_provider', {
+        provider: decoded.firebase?.sign_in_provider,
+      });
+      res.status(400).json({ error: 'Token must be from a phone sign-in.' });
       return;
     }
 
@@ -757,7 +773,7 @@ router.post('/email-change', authenticate, profileLimiter, async (req: Request, 
         where: { id: req.userId },
         data: {
           pendingEmail: newEmail,
-          emailVerificationToken: token,
+          emailVerificationToken: hashToken(token),
           emailVerificationExpires: new Date(Date.now() + EMAIL_CONFIG.verificationTokenExpires),
         },
       });
@@ -841,11 +857,22 @@ router.put('/avatar', authenticate, profileLimiter, async (req: Request, res: Re
       return;
     }
 
+    // Capture the prior avatar URL so we can delete the orphaned S3 object
+    // after the DB write commits. Done in this order (DB first, S3 second)
+    // so a transient S3 error can't leave the user with a stale avatar URL
+    // pointing at a deleted object.
+    const prior = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { avatarUrl: true },
+    });
     const user = await prisma.user.update({
       where: { id: req.userId },
       data: { avatarUrl },
       select: PROFILE_SELECT,
     });
+    if (prior?.avatarUrl && prior.avatarUrl !== avatarUrl) {
+      void deleteS3ObjectByUrl(prior.avatarUrl);
+    }
     res.json({ user, ...computeCanSell(user) });
   } catch (err) {
     logger.error('users.avatar.update.failed', { err: String(err) });
@@ -855,17 +882,23 @@ router.put('/avatar', authenticate, profileLimiter, async (req: Request, res: Re
 
 // ---------------------------------------------------------------------------
 // DELETE /api/users/avatar — clear the user's profile picture
-// We don't delete the S3 object itself — cheap to leave, and it makes undo
-// flows (re-use recent uploads) trivial later. A garbage-collection job
-// for orphaned avatars is a Day-21+ concern.
+// Also deletes the underlying S3 object so a deleted avatar's bytes don't
+// stay reachable on the (publicly-readable) listings prefix indefinitely.
 // ---------------------------------------------------------------------------
 router.delete('/avatar', authenticate, profileLimiter, async (req: Request, res: Response) => {
   try {
+    const prior = await prisma.user.findUnique({
+      where: { id: req.userId },
+      select: { avatarUrl: true },
+    });
     const user = await prisma.user.update({
       where: { id: req.userId },
       data: { avatarUrl: null },
       select: PROFILE_SELECT,
     });
+    if (prior?.avatarUrl) {
+      void deleteS3ObjectByUrl(prior.avatarUrl);
+    }
     res.json({ user, ...computeCanSell(user) });
   } catch (err) {
     logger.error('users.avatar.delete.failed', { err: String(err) });
@@ -987,6 +1020,18 @@ router.delete('/me', authenticate, passwordChangeLimiter, async (req: Request, r
       prisma.cartItem.deleteMany({ where: { cart: { userId: user.id } } }),
       prisma.cart.deleteMany({ where: { userId: user.id } }),
     ]);
+
+    // Purge the user's S3 footprint. Must run AFTER the DB transaction
+    // commits so a partial S3 failure doesn't strand the bucket out of sync
+    // with a still-live user row. ID documents are the priority — passport
+    // / driver-licence scans must not persist past account deletion (Privacy
+    // Act APP 11.2). Listing images stay reachable on the public prefix
+    // until cleared too. Fire-and-forget: errors are logged, not rethrown.
+    void (async () => {
+      await deleteS3Prefix(`id-documents/${user.id}/`);
+      await deleteS3Prefix(`listings/avatars/${user.id}/`);
+      await deleteS3Prefix(`listings/${user.id}/`);
+    })();
 
     clearTokenCookie(res);
     res.json({ message: 'Account deleted.' });

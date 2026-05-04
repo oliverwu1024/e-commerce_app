@@ -1,5 +1,5 @@
 import { Router, Request, Response } from 'express';
-import { randomBytes, createHmac } from 'node:crypto';
+import { randomBytes, createHmac, timingSafeEqual } from 'node:crypto';
 import prisma from '../lib/prisma.js';
 import { authenticate } from '../middleware/auth.js';
 import { createRateLimiter } from '../middleware/rateLimiter.js';
@@ -255,7 +255,13 @@ function verifySquareState(state: string): { userId: string } | null {
     const expected = createHmac('sha256', secret)
       .update(`${userId}.${nonce}.${tsStr}`)
       .digest('hex');
-    if (expected !== sig) return null;
+    // Constant-time comparison so an attacker can't recover the HMAC byte by
+    // byte via response-time differential. Length check up front because
+    // timingSafeEqual throws on length mismatch.
+    const expectedBuf = Buffer.from(expected, 'hex');
+    const sigBuf = Buffer.from(sig, 'hex');
+    if (expectedBuf.length !== sigBuf.length) return null;
+    if (!timingSafeEqual(expectedBuf, sigBuf)) return null;
     const ts = Number(tsStr);
     if (!Number.isFinite(ts)) return null;
     // 10-minute state lifetime — long enough for the Square approval page,

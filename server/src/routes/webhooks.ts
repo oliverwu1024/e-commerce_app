@@ -8,6 +8,7 @@ import {
   getStripeIdentityWebhookSecret,
 } from '../config/stripe.js';
 import { markOrderPaid } from '../services/orderPayments.js';
+import { findAccount } from '../services/sellerPaymentAccounts.js';
 import { handleSquareCatalogWebhook } from '../services/squareCatalog/inbound.js';
 import { logger } from '../utils/logger.js';
 
@@ -99,9 +100,11 @@ router.post('/stripe', async (req: Request, res: Response) => {
         currency?: string | null;
         payment_intent?: string | null;
       };
-      // event.account is populated for Connect events (i.e., every session
-      // under the new flow). Logged for audit only — metadata.orderId is
-      // the authoritative link back to our record.
+      // event.account is the connected account that took the payment. We
+      // must verify it matches the seller stored against this order — otherwise
+      // any merchant connected to our Stripe platform could forge a same-amount
+      // session pointing at someone else's orderId and mark that order PAID
+      // (the funds settle to the attacker, not the victim seller).
       const stripeAccountId = (event as unknown as { account?: string }).account ?? null;
       const orderId = session.metadata?.orderId ?? session.client_reference_id ?? null;
       if (!orderId) {
@@ -118,6 +121,40 @@ router.post('/stripe', async (req: Request, res: Response) => {
           stripeAccountId,
         });
         res.json({ received: true, note: 'missing amount/currency' });
+        return;
+      }
+
+      // Cross-check event.account against the order's seller. Reject before
+      // dedupe so a forgery attempt doesn't burn the eventId.
+      const orderForAuth = await prisma.order.findUnique({
+        where: { id: orderId },
+        select: { sellerId: true },
+      });
+      if (!orderForAuth) {
+        logger.error('webhook.stripe.unknown_order', { orderId, stripeAccountId, eventId: event.id });
+        res.json({ received: true, note: 'unknown order' });
+        return;
+      }
+      const sellerAccount = await findAccount(orderForAuth.sellerId, 'STRIPE');
+      if (!sellerAccount || !sellerAccount.accountId) {
+        logger.error('webhook.stripe.seller_no_stripe_account', {
+          orderId,
+          sellerId: orderForAuth.sellerId,
+          stripeAccountId,
+          eventId: event.id,
+        });
+        res.json({ received: true, note: 'seller has no stripe account' });
+        return;
+      }
+      if (stripeAccountId !== sellerAccount.accountId) {
+        logger.error('webhook.stripe.account_mismatch', {
+          orderId,
+          sellerId: orderForAuth.sellerId,
+          eventAccount: stripeAccountId,
+          expectedAccount: sellerAccount.accountId,
+          eventId: event.id,
+        });
+        res.status(400).json({ error: 'event account does not match order seller' });
         return;
       }
 

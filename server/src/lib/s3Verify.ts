@@ -17,7 +17,13 @@
 // the first ~12 bytes and checking magic numbers (`FF D8 FF` for JPEG,
 // `89 50 4E 47` for PNG, etc.). Tracked as future hardening.
 
-import { GetObjectCommand, HeadObjectCommand } from '@aws-sdk/client-s3';
+import {
+  DeleteObjectCommand,
+  DeleteObjectsCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+  ListObjectsV2Command,
+} from '@aws-sdk/client-s3';
 import { s3, S3_BUCKET, S3_REGION } from '../config/s3.js';
 import { logger } from '../utils/logger.js';
 
@@ -167,6 +173,69 @@ export async function verifyS3Upload(
   }
 
   return { ok: true };
+}
+
+/**
+ * Best-effort delete of a single object by URL. Logs + swallows errors so a
+ * cleanup failure can't roll back the database write that triggered it.
+ * Returns true if the delete API call succeeded (or the URL pointed outside
+ * our bucket and was skipped).
+ */
+export async function deleteS3ObjectByUrl(url: string): Promise<boolean> {
+  if (!S3_BUCKET) return false;
+  const key = s3KeyFromUrl(url);
+  if (!key) return true;
+  try {
+    await s3.send(new DeleteObjectCommand({ Bucket: S3_BUCKET, Key: key }));
+    return true;
+  } catch (err) {
+    logger.error('s3.delete.object.failed', { key, err: String(err) });
+    return false;
+  }
+}
+
+/**
+ * Best-effort delete of every object under a prefix. Pages through up to
+ * 10k objects (1k per page × 10) before bailing — covers any plausible
+ * single-user accumulation. Logs + swallows errors so cleanup never blocks
+ * the caller.
+ */
+export async function deleteS3Prefix(prefix: string): Promise<void> {
+  if (!S3_BUCKET || !prefix) return;
+  let continuationToken: string | undefined = undefined;
+  for (let page = 0; page < 10; page++) {
+    let listResp: { Contents?: { Key?: string }[]; IsTruncated?: boolean; NextContinuationToken?: string };
+    try {
+      listResp = await s3.send(
+        new ListObjectsV2Command({
+          Bucket: S3_BUCKET,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+        }),
+      );
+    } catch (err) {
+      logger.error('s3.delete.prefix.list_failed', { prefix, err: String(err) });
+      return;
+    }
+    const objects = (listResp.Contents ?? [])
+      .map((o) => (o.Key ? { Key: o.Key } : null))
+      .filter((o): o is { Key: string } => o !== null);
+    if (objects.length === 0) return;
+    try {
+      await s3.send(
+        new DeleteObjectsCommand({
+          Bucket: S3_BUCKET,
+          Delete: { Objects: objects, Quiet: true },
+        }),
+      );
+    } catch (err) {
+      logger.error('s3.delete.prefix.delete_failed', { prefix, err: String(err) });
+      return;
+    }
+    if (!listResp.IsTruncated) return;
+    continuationToken = listResp.NextContinuationToken;
+  }
+  logger.warn('s3.delete.prefix.truncated_at_page_cap', { prefix });
 }
 
 // Pre-built allow-lists matching the upload presigned-URL handler in

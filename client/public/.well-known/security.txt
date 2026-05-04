@@ -1,0 +1,4 @@
+Contact: mailto:support@electromarket-app.com
+Expires: 2027-05-04T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://electromarket-app.com/.well-known/security.txt

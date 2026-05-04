@@ -66,6 +66,7 @@ export default function ImageUpload({ images, onChange, maxImages = 10 }: Props)
           body: JSON.stringify({
             fileType: img.file!.type,
             fileSize: img.file!.size,
+            purpose: 'listing',
           }),
         });
 

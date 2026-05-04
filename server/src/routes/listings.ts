@@ -13,7 +13,12 @@ import {
   enqueueOutbox,
   snapshotListing,
 } from '../services/squareCatalog/index.js';
-import { LISTING_IMAGE_TYPES, LISTING_VIDEO_TYPES, verifyS3Upload } from '../lib/s3Verify.js';
+import {
+  LISTING_IMAGE_TYPES,
+  LISTING_VIDEO_TYPES,
+  deleteS3ObjectByUrl,
+  verifyS3Upload,
+} from '../lib/s3Verify.js';
 import { logger } from '../utils/logger.js';
 
 const router = Router();
@@ -918,13 +923,17 @@ router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Re
           removed: false,
           outboxId: null as string | null,
           imageDeleteOutboxId: null as string | null,
+          s3Urls: [] as string[],
         };
       }
 
       const updated = await tx.listing.update({
         where: { id },
         data: { status: 'REMOVED' },
-        include: { images: { orderBy: { displayOrder: 'asc' } } },
+        include: {
+          images: { orderBy: { displayOrder: 'asc' } },
+          videos: { orderBy: { displayOrder: 'asc' } },
+        },
       });
       const oid = await createOutboxRow({
         tx,
@@ -959,7 +968,15 @@ router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Re
         });
       }
 
-      return { removed: true, outboxId: oid, imageDeleteOutboxId };
+      return {
+        removed: true,
+        outboxId: oid,
+        imageDeleteOutboxId,
+        s3Urls: [
+          ...updated.images.map((img) => img.url),
+          ...updated.videos.map((v) => v.url),
+        ],
+      };
     });
 
     if (!result.removed) {
@@ -972,6 +989,12 @@ router.delete('/:id', authenticate, async (req: Request<{ id: string }>, res: Re
     }
     if (result.imageDeleteOutboxId) {
       void enqueueOutbox(result.imageDeleteOutboxId);
+    }
+    // Best-effort orphan cleanup on the public listings prefix. Ignore
+    // failures — the DB row is already REMOVED so a stuck S3 object can be
+    // swept later by the orphan reconciler if/when one ships.
+    if (result.s3Urls.length > 0) {
+      void Promise.all(result.s3Urls.map((url) => deleteS3ObjectByUrl(url)));
     }
 
     res.json({ message: 'Listing removed successfully' });

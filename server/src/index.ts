@@ -33,6 +33,7 @@ import { verifySmtpAtStartup } from './config/email.js';
 import { verifyFirebaseAtStartup } from './config/firebase.js';
 import { csrfOriginGuard } from './middleware/csrf.js';
 import { requestLogger } from './middleware/requestLogger.js';
+import { createRateLimiter } from './middleware/rateLimiter.js';
 import { logger } from './utils/logger.js';
 import { startOrderSweep, stopOrderSweep } from './services/orderSweep.js';
 import {
@@ -70,12 +71,19 @@ app.set('trust proxy', 1);
 
 // Helmet defaults plus a stricter frame-ancestors to block clickjacking of
 // the API. `contentSecurityPolicy: false` because this process serves JSON
-// only — the Next client handles its own CSP.
+// only — the Next client handles its own CSP. HSTS preload-eligible (1y +
+// includeSubDomains + preload) so the first-visit downgrade window is gone
+// once the parent domain is listed at hstspreload.org.
 app.use(
   helmet({
     contentSecurityPolicy: false,
     crossOriginResourcePolicy: { policy: 'cross-origin' },
     frameguard: { action: 'deny' },
+    hsts: {
+      maxAge: 31536000,
+      includeSubDomains: true,
+      preload: true,
+    },
   }),
 );
 
@@ -96,7 +104,23 @@ app.use(requestLogger);
 // over the exact bytes sent). Mount BEFORE express.json() so they aren't
 // parsed into objects that lose the original bytes. Webhooks are NOT
 // browser-originated and are signature-verified — exempt from csrfOriginGuard.
-app.use('/api/webhooks', express.raw({ type: 'application/json' }), webhookRoutes);
+//
+// Rate-limit the entire namespace by IP (no userId here — webhooks are
+// unauthenticated by HTTP standards; they prove themselves via signature).
+// 120/min covers normal Stripe + Square retries with comfortable headroom
+// while bounding unauth-spam volume — relevant for the inbound-email and
+// catalog routes that do DB work even on bad-secret rejections.
+const webhookLimiter = createRateLimiter({
+  windowMs: 60 * 1000,
+  max: 120,
+  message: { error: 'Too many webhook requests' },
+});
+app.use(
+  '/api/webhooks',
+  express.raw({ type: 'application/json' }),
+  webhookLimiter,
+  webhookRoutes,
+);
 
 app.use(express.json({ limit: '200kb' }));
 app.use(cookieParser());
@@ -186,6 +210,20 @@ app.use('/api', disputeRoutes);
 // Sentry error capture — must come AFTER all routes so it sees thrown
 // errors. Idempotent no-op when SENTRY_DSN is unset.
 mountSentryMiddleware(app);
+
+// Final JSON error handler. Without this, an uncaught throw escapes to
+// Express's default handler which renders an HTML stack trace whenever
+// NODE_ENV !== 'production' (preview, staging, self-hosted forks). Always
+// return JSON + a generic message — stack traces go to logger / Sentry.
+// 4-arg signature is required for Express to recognise this as an error
+// handler vs a regular middleware.
+app.use((err: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+  logger.error('server.unhandled_error', { err: String(err) });
+  if (res.headersSent) {
+    return;
+  }
+  res.status(500).json({ error: 'Internal server error' });
+});
 
 const server = app.listen(PORT, () => {
   logger.info('server.start', { port: Number(PORT) });

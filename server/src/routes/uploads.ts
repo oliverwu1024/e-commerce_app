@@ -48,10 +48,11 @@ const PRESIGNED_URL_EXPIRY = 300; // 5 minutes
 const presignedUrlSchema = z.object({
   fileType: z.string(),
   fileSize: z.number().int().positive(),
-  purpose: z
-    .enum(['listing', 'id-document', 'avatar', 'listing-video'])
-    .optional()
-    .default('listing'),
+  // Required (was optional with default 'listing'). A client that forgets the
+  // field would otherwise silently land an avatar / id-doc / video under the
+  // listings prefix — same user's namespace so no cross-user concern, but
+  // it muddies categorisation and S3-side cleanup.
+  purpose: z.enum(['listing', 'id-document', 'avatar', 'listing-video']),
 });
 
 const uploadLimiter = createRateLimiter({
@@ -60,11 +61,39 @@ const uploadLimiter = createRateLimiter({
   message: { error: 'Too many upload requests, please try again later' },
 });
 
+// Tighter ceiling for videos because each presign authorises a 100 MB PUT —
+// 60 / 15 min × 100 MB = 6 GB / 15 min storage burn per account at the
+// general limit. 10 / hr is generous for legit listing creation while
+// pinning the worst-case storage cost an attacker can drive.
+const videoUploadLimiter = createRateLimiter({
+  windowMs: 60 * 60 * 1000,
+  max: 10,
+  message: { error: 'Too many video upload requests, please try again later' },
+});
+
+// Conditional middleware: apply the tighter video limiter only when the
+// caller is asking for a video presign. req.body is already parsed by
+// express.json, so `purpose` is visible here. Falls through to the next
+// handler unchanged for non-video purposes — they're still subject to
+// uploadLimiter.
+function videoLimiterIfApplicable(
+  req: Request,
+  res: Response,
+  next: () => void,
+): void {
+  if (req.body?.purpose === 'listing-video') {
+    videoUploadLimiter(req, res, next as never);
+    return;
+  }
+  next();
+}
+
 // POST /api/uploads/presigned-url — Generate a presigned S3 PUT URL
 router.post(
   '/presigned-url',
   authenticate,
   uploadLimiter,
+  videoLimiterIfApplicable,
   async (req: Request, res: Response) => {
     try {
       if (!S3_BUCKET) {

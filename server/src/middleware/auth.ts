@@ -28,7 +28,9 @@ export async function authenticate(req: Request, res: Response, next: NextFuncti
 
   let decoded: JwtPayload;
   try {
-    decoded = jwt.verify(token, AUTH_CONFIG.jwtSecret) as JwtPayload;
+    decoded = jwt.verify(token, AUTH_CONFIG.jwtSecret, {
+      algorithms: [AUTH_CONFIG.jwtAlgorithm],
+    }) as JwtPayload;
   } catch {
     res.status(401).json({ error: 'Invalid or expired token' });
     return;
@@ -79,7 +81,9 @@ export async function optionalAuth(req: Request, _res: Response, next: NextFunct
   }
   let decoded: JwtPayload;
   try {
-    decoded = jwt.verify(token, AUTH_CONFIG.jwtSecret) as JwtPayload;
+    decoded = jwt.verify(token, AUTH_CONFIG.jwtSecret, {
+      algorithms: [AUTH_CONFIG.jwtAlgorithm],
+    }) as JwtPayload;
   } catch {
     next();
     return;

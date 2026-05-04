@@ -51,6 +51,47 @@ export function initSentry(): void {
       // from the Express handler, but other paths can leak through.
       const status = (event.tags as { status_code?: string | number } | undefined)?.status_code;
       if (typeof status === 'number' && status < 500) return null;
+      // Defence-in-depth scrubbing. sendDefaultPii is false but Sentry still
+      // captures req.body / req.headers when an error originates inside an
+      // Express handler (the events come through expressIntegration with
+      // request data attached). Strip the headers / body keys that carry
+      // credentials so a 500 inside /login can't ship the password.
+      const req = event.request;
+      if (req?.headers && typeof req.headers === 'object') {
+        const headers = req.headers as Record<string, unknown>;
+        delete headers.cookie;
+        delete headers.Cookie;
+        delete headers.authorization;
+        delete headers.Authorization;
+        delete headers['x-email-secret'];
+      }
+      const SENSITIVE_KEYS = new Set([
+        'password',
+        'currentPassword',
+        'newPassword',
+        'token',
+        'idToken',
+        'accessToken',
+        'refreshToken',
+        'otp',
+        'code',
+        'secret',
+      ]);
+      const scrub = (data: unknown): unknown => {
+        if (!data || typeof data !== 'object') return data;
+        const out: Record<string, unknown> = Array.isArray(data) ? {} : { ...(data as Record<string, unknown>) };
+        for (const key of Object.keys(out)) {
+          if (SENSITIVE_KEYS.has(key)) {
+            out[key] = '[redacted]';
+          } else if (out[key] && typeof out[key] === 'object') {
+            out[key] = scrub(out[key]);
+          }
+        }
+        return out;
+      };
+      if (req && 'data' in req) {
+        req.data = scrub(req.data) as typeof req.data;
+      }
       return event;
     },
   });

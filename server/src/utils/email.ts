@@ -5,6 +5,15 @@ export function generateVerificationToken(): string {
   return crypto.randomBytes(32).toString('hex');
 }
 
+// Tokens (email verification, password reset) are emailed in plaintext but
+// stored as SHA-256 hashes in the DB. A read-only DB leak then yields hashes
+// the attacker can't reverse to live tokens. SHA-256 (not bcrypt) because the
+// token itself is 256 bits of randomness — the work-factor matters when the
+// preimage is low-entropy, not here.
+export function hashToken(token: string): string {
+  return crypto.createHash('sha256').update(token).digest('hex');
+}
+
 export async function sendVerificationEmail(email: string, token: string): Promise<void> {
   const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
   const verifyUrl = `${clientUrl}/verify-email?token=${token}`;

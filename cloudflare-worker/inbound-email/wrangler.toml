@@ -14,7 +14,7 @@ compatibility_date = "2025-01-01"
 
 [vars]
 WEBHOOK_URL = "https://api.electromarket-app.com/api/webhooks/email"
-# FORWARD_TO is optional. Set it to your personal Gmail during the cutover
+# FORWARD_TO is optional. Set it to a personal mailbox during the cutover
 # so you keep a backup of inbound mail. Remove (or unset) once you trust
 # the webhook path.
-# FORWARD_TO = "oliverwu1024@users.noreply.github.com"
+# FORWARD_TO = "your-personal@example.com"

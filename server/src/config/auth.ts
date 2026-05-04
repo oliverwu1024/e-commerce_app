@@ -2,9 +2,9 @@
 // self-hosted deployments don't reliably set NODE_ENV=production, so the
 // previous production-only gate let a shared default secret ship wherever
 // NODE_ENV was unset — a free forgery vector.
-if (!process.env.JWT_SECRET && process.env.NODE_ENV !== 'test') {
+if (!process.env.JWT_SECRET) {
   throw new Error(
-    'JWT_SECRET environment variable is required. Set NODE_ENV=test only when running tests.',
+    'JWT_SECRET environment variable is required. Tests must set it explicitly.',
   );
 }
 
@@ -17,7 +17,8 @@ if (!process.env.JWT_SECRET && process.env.NODE_ENV !== 'test') {
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 export const AUTH_CONFIG = {
-  jwtSecret: process.env.JWT_SECRET || 'test-only-jwt-secret-do-not-use',
+  jwtSecret: process.env.JWT_SECRET as string,
+  jwtAlgorithm: 'HS256' as const,
   jwtExpiresIn: '7d',
   // 12 is the 2026 baseline for bcrypt — ~300ms per hash on modern hardware,
   // four orders of magnitude more offline-crack cost than 10. Existing hashes

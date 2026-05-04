@@ -16,6 +16,7 @@ import { createRateLimiter } from '../middleware/rateLimiter.js';
 import { clearTokenCookie } from '../utils/cookies.js';
 import {
   generateVerificationToken,
+  hashToken,
   sendVerificationEmail,
   sendPasswordResetEmail,
 } from '../utils/email.js';
@@ -32,9 +33,11 @@ const authLimiter = createRateLimiter({
 
 // Dev-only: expose the verification URL in API responses + stdout so a dev
 // can exercise the email-verification flow without real SMTP. Explicit
-// opt-in — negating NODE_ENV=production would leak tokens wherever NODE_ENV
-// is unset (staging, preview, self-hosted). Mirrors ENABLE_DEV_OTP.
-const DEV_EMAIL_ENABLED = process.env.ENABLE_DEV_EMAIL === '1';
+// opt-in via env var, with a hard refusal in production so a misconfigured
+// prod deploy can't accidentally leak tokens to API responses + stdout.
+// Mirrors ENABLE_DEV_OTP.
+const DEV_EMAIL_ENABLED =
+  process.env.ENABLE_DEV_EMAIL === '1' && process.env.NODE_ENV !== 'production';
 
 function buildVerificationUrl(token: string): string {
   const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
@@ -123,7 +126,7 @@ router.post('/register', authLimiter, async (req: Request, res: Response) => {
         businessName: sellerType === 'BUSINESS' ? businessName : null,
         abn: sellerType === 'BUSINESS' ? abn : null,
         abnVerified: sellerType === 'BUSINESS',
-        emailVerificationToken: verificationToken,
+        emailVerificationToken: hashToken(verificationToken),
         emailVerificationExpires: new Date(Date.now() + EMAIL_CONFIG.verificationTokenExpires),
       },
     });
@@ -268,8 +271,9 @@ router.post('/logout', (_req: Request, res: Response) => {
 // tokenVersion so every JWT issued before this moment fails the middleware's
 // version check and 401s. Differs from /logout which just clears the cookie
 // on this one browser — a JWT copied off the wire could still be replayed
-// until its 7-day expiry without this.
-router.post('/logout-all', authenticate, async (req: Request, res: Response) => {
+// until its 7-day expiry without this. Rate-limited so a cookie-holder
+// can't burn sessions in a tight loop.
+router.post('/logout-all', authenticate, authLimiter, async (req: Request, res: Response) => {
   try {
     await prisma.user.update({
       where: { id: req.userId },
@@ -289,7 +293,7 @@ router.get('/verify-email/:token', authLimiter, async (req: Request<{ token: str
     const { token } = req.params;
 
     const user = await prisma.user.findUnique({
-      where: { emailVerificationToken: token },
+      where: { emailVerificationToken: hashToken(token) },
     });
 
     if (!user || !user.emailVerificationExpires || user.emailVerificationExpires < new Date()) {
@@ -313,9 +317,14 @@ router.get('/verify-email/:token', authLimiter, async (req: Request<{ token: str
             emailVerified: true,
             emailVerificationToken: null,
             emailVerificationExpires: null,
+            // Email change is a takeover-recovery boundary — invalidate any
+            // sessions still riding the old email's auth context (including
+            // an attacker's, if the change request itself was the takeover).
+            tokenVersion: { increment: 1 },
           },
         });
-        res.json({ message: 'Email updated successfully' });
+        clearTokenCookie(res);
+        res.json({ message: 'Email updated successfully. Please sign in again.' });
       } else {
         await prisma.user.update({
           where: { id: user.id },
@@ -370,7 +379,7 @@ router.post('/resend-verification', authenticate, authLimiter, async (req: Reque
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        emailVerificationToken: verificationToken,
+        emailVerificationToken: hashToken(verificationToken),
         emailVerificationExpires: new Date(Date.now() + EMAIL_CONFIG.verificationTokenExpires),
       },
     });
@@ -443,7 +452,7 @@ router.post('/forgot-password', authLimiter, async (req: Request, res: Response)
     await prisma.user.update({
       where: { id: user.id },
       data: {
-        passwordResetToken: token,
+        passwordResetToken: hashToken(token),
         passwordResetExpires: new Date(Date.now() + oneHour),
       },
     });
@@ -489,7 +498,7 @@ router.post('/reset-password', authLimiter, async (req: Request, res: Response) 
     // both load the user and both reset the password.
     const result = await prisma.user.updateMany({
       where: {
-        passwordResetToken: token,
+        passwordResetToken: hashToken(token),
         passwordResetExpires: { gt: new Date() },
         deletedAt: null,
       },

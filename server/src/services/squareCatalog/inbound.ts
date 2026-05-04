@@ -49,13 +49,15 @@ export async function handleSquareCatalogWebhook(
   const sigKey = getCatalogWebhookSignatureKey();
   const url = getCatalogWebhookUrl();
   if (!sigKey || !url) {
-    // Feature disabled — but acknowledge so Square doesn't retry. Log so
-    // operators know events are coming in but going nowhere.
-    logger.warn('square.catalog.webhook.disabled', {
+    // Fail closed: ack-200ing without signature verification accepts
+    // *anything* that POSTs to this path. Square retries 503 with backoff
+    // — operator intent is preserved, and an attacker can't slip an
+    // unsigned payload through during a misconfigured deploy.
+    logger.error('square.catalog.webhook.unconfigured', {
       hasSignatureKey: Boolean(sigKey),
       hasUrl: Boolean(url),
     });
-    res.json({ received: true, ignored: 'catalog webhook not configured' });
+    res.status(503).json({ error: 'catalog webhook not configured' });
     return;
   }
 

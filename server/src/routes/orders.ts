@@ -1797,6 +1797,12 @@ router.post(
           return;
         }
         try {
+          // Idempotency key derived from the request state (not random) so a
+          // network retry of the same refund is recognised by Stripe and
+          // returns the original refund rather than creating a second one.
+          // totalRefundedCents pins the key to "the Nth refund on this order"
+          // — once the DB row is written, the key naturally rolls forward.
+          const idempotencyKey = `refund-${order.id}-${order.totalRefundedCents}-${refundAmountCents}`;
           // Pass `amount` for partial refunds. Stripe interprets omitted amount
           // as "refund the entire remainder" — same semantics we want, so we
           // could omit on full-remaining refunds, but passing it always keeps
@@ -1806,7 +1812,7 @@ router.post(
               payment_intent: order.paymentProviderId,
               amount: refundAmountCents,
             },
-            { stripeAccount: sellerAccount.accountId },
+            { stripeAccount: sellerAccount.accountId, idempotencyKey },
           );
           refundProviderId = refund.id;
         } catch (err) {
@@ -1837,8 +1843,12 @@ router.post(
                 ? SquareEnvironment.Production
                 : SquareEnvironment.Sandbox,
           });
+          // Deterministic idempotency key — same reasoning as the Stripe path
+          // above. randomUUID() here would defeat Square's idempotency
+          // contract and double-refund the buyer on a network retry.
+          const idempotencyKey = `refund-${order.id}-${order.totalRefundedCents}-${refundAmountCents}`;
           const resp = await sellerSquare.refunds.refundPayment({
-            idempotencyKey: randomUUID(),
+            idempotencyKey,
             paymentId: order.paymentProviderId,
             amountMoney: { amount: BigInt(refundAmountCents), currency: 'AUD' },
           });
