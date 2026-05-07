@@ -7,7 +7,7 @@ import {
   getStripeWebhookSecret,
   getStripeIdentityWebhookSecret,
 } from '../config/stripe.js';
-import { markOrderPaid } from '../services/orderPayments.js';
+import { markOrderPaid, markOrdersPaidBatch } from '../services/orderPayments.js';
 import { findAccount } from '../services/sellerPaymentAccounts.js';
 import { handleSquareCatalogWebhook } from '../services/squareCatalog/inbound.js';
 import { logger } from '../utils/logger.js';
@@ -106,26 +106,119 @@ router.post('/stripe', async (req: Request, res: Response) => {
       // session pointing at someone else's orderId and mark that order PAID
       // (the funds settle to the attacker, not the victim seller).
       const stripeAccountId = (event as unknown as { account?: string }).account ?? null;
-      const orderId = session.metadata?.orderId ?? session.client_reference_id ?? null;
-      if (!orderId) {
+      // /pay/batch sends comma-separated `orderIds` in metadata; legacy /pay
+      // sends a single `orderId` (or client_reference_id). We support both.
+      const orderIdsRaw = session.metadata?.orderIds ?? null;
+      const orderIds = orderIdsRaw
+        ? orderIdsRaw.split(',').map((s) => s.trim()).filter(Boolean)
+        : null;
+      const singleOrderId = session.metadata?.orderId ?? session.client_reference_id ?? null;
+      if (!orderIds && !singleOrderId) {
         // Unrelated session (e.g. a manual test). Ack and move on.
         res.json({ received: true, note: 'no orderId metadata' });
         return;
       }
       if (session.amount_total == null || !session.currency) {
-        // Shouldn't happen for a successful checkout, but don't mark paid if
-        // we can't validate the amount.
         logger.error('webhook.stripe.session_missing_amount_currency', {
           sessionId: session.id,
-          orderId,
+          orderId: singleOrderId,
+          orderIds,
           stripeAccountId,
         });
         res.json({ received: true, note: 'missing amount/currency' });
         return;
       }
 
-      // Cross-check event.account against the order's seller. Reject before
-      // dedupe so a forgery attempt doesn't burn the eventId.
+      if (orderIds && orderIds.length > 1) {
+        // BATCH path. All orders must point to the same seller (we
+        // construct it that way at /pay/batch); verify here so a tampered
+        // metadata blob can't fan out across sellers and confuse the
+        // event.account auth check.
+        const ordersForAuth = await prisma.order.findMany({
+          where: { id: { in: orderIds } },
+          select: { id: true, sellerId: true },
+        });
+        if (ordersForAuth.length !== orderIds.length) {
+          logger.error('webhook.stripe.batch.unknown_order', {
+            orderIds,
+            stripeAccountId,
+            eventId: event.id,
+          });
+          res.json({ received: true, note: 'unknown order in batch' });
+          return;
+        }
+        const sellerIds = new Set(ordersForAuth.map((o) => o.sellerId));
+        if (sellerIds.size !== 1) {
+          logger.error('webhook.stripe.batch.mixed_sellers', {
+            orderIds,
+            sellerIds: Array.from(sellerIds),
+            eventId: event.id,
+          });
+          res.status(400).json({ error: 'batch metadata spans multiple sellers' });
+          return;
+        }
+        const batchSellerId = ordersForAuth[0].sellerId;
+        const sellerAccount = await findAccount(batchSellerId, 'STRIPE');
+        if (!sellerAccount || !sellerAccount.accountId) {
+          logger.error('webhook.stripe.batch.seller_no_stripe_account', {
+            orderIds,
+            sellerId: batchSellerId,
+            stripeAccountId,
+            eventId: event.id,
+          });
+          res.json({ received: true, note: 'seller has no stripe account' });
+          return;
+        }
+        if (stripeAccountId !== sellerAccount.accountId) {
+          logger.error('webhook.stripe.batch.account_mismatch', {
+            orderIds,
+            sellerId: batchSellerId,
+            eventAccount: stripeAccountId,
+            expectedAccount: sellerAccount.accountId,
+            eventId: event.id,
+          });
+          res.status(400).json({ error: 'event account does not match order seller' });
+          return;
+        }
+
+        // Dedupe row uses the first orderId for audit context — the same
+        // event id can't legally cover two different batches anyway.
+        const outcome = await processWithDedupe(
+          'STRIPE',
+          event.id,
+          orderIds[0],
+          () =>
+            markOrdersPaidBatch(orderIds, 'STRIPE', {
+              amountCents: String(session.amount_total),
+              currency: session.currency!,
+              providerId: session.payment_intent ?? null,
+            }),
+        );
+        if (outcome.duplicate) {
+          res.json({ received: true, duplicate: true });
+          return;
+        }
+        const result = outcome.result;
+        if (result.status === 'amount_mismatch') {
+          logger.error('webhook.stripe.batch.amount_mismatch', {
+            orderIds,
+            sessionId: session.id,
+            eventId: event.id,
+            expected: result.expected,
+            reported: result.reported,
+            markingPaid: false,
+          });
+        }
+        res.json({ received: true, result: result.status, batchSize: orderIds.length });
+        return;
+      }
+
+      // SINGLE path (legacy /pay).
+      const orderId = singleOrderId ?? (orderIds ? orderIds[0] : null);
+      if (!orderId) {
+        res.json({ received: true, note: 'no orderId metadata' });
+        return;
+      }
       const orderForAuth = await prisma.order.findUnique({
         where: { id: orderId },
         select: { sellerId: true },

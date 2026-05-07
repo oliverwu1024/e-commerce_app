@@ -10,16 +10,18 @@ import {
   completeOrderSchema,
   messageSchema,
   orderListQuerySchema,
+  payBatchSchema,
   paySchema,
   refundSchema,
   shipSchema,
+  squareConfirmBatchSchema,
 } from '../schemas/orders.js';
 import {
   getStripeClient,
   isStripeConfigured,
 } from '../config/stripe.js';
 import { SquareClient, SquareEnvironment } from 'square';
-import { markOrderPaid } from '../services/orderPayments.js';
+import { markOrderPaid, markOrdersPaidBatch } from '../services/orderPayments.js';
 import { refundOrder } from '../services/orderRefunds.js';
 import {
   canAcceptPayments,
@@ -1270,6 +1272,383 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
+// POST /api/orders/pay/batch — buyer initiates one provider session that
+// covers N CARD orders from the same seller-group. Cuts the per-listing
+// redirect spam: a buyer with 3 listings from the same seller pays once
+// instead of three times. The webhook (Stripe) / confirm endpoint (Square)
+// fans the capture out via markOrdersPaidBatch.
+//
+// Validation: orderIds must reference orders that are
+//   - all owned by the calling buyer
+//   - all from the same seller (one connected account per session)
+//   - all CONFIRMED
+//   - all paymentFlow=CARD
+//   - all paymentSessionState=NONE (no concurrent live session)
+// A failure on any single condition rejects the whole batch — partial-send
+// would be worse UX than a clear "refresh and try again."
+// ---------------------------------------------------------------------------
+router.post(
+  '/pay/batch',
+  authenticate,
+  orderMutationLimiter,
+  async (req: Request, res: Response) => {
+    try {
+      const parsed = payBatchSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.issues[0].message });
+        return;
+      }
+      const { orderIds, paymentMethod } = parsed.data;
+      const dedupedIds = Array.from(new Set(orderIds));
+
+      const orders = await prisma.order.findMany({
+        where: { id: { in: dedupedIds } },
+        select: {
+          id: true,
+          amount: true,
+          shippingPrice: true,
+          status: true,
+          buyerId: true,
+          sellerId: true,
+          paymentFlow: true,
+          paymentSessionState: true,
+          fulfillmentMethod: true,
+          listing: { select: { title: true } },
+        },
+      });
+      if (orders.length !== dedupedIds.length) {
+        res.status(404).json({ error: 'One or more orders not found' });
+        return;
+      }
+      if (!orders.every((o) => o.buyerId === req.userId)) {
+        res.status(403).json({ error: 'Only the buyer can pay for these orders' });
+        return;
+      }
+      const sellerIds = new Set(orders.map((o) => o.sellerId));
+      if (sellerIds.size !== 1) {
+        res.status(400).json({
+          error: 'Batch payment requires all orders to be from the same seller',
+        });
+        return;
+      }
+      if (!orders.every((o) => o.status === 'CONFIRMED')) {
+        res.status(409).json({
+          error: 'All orders must be confirmed before batch payment',
+        });
+        return;
+      }
+      if (!orders.every((o) => o.paymentFlow === 'CARD')) {
+        res.status(400).json({
+          error: 'Batch payment is only available for card-flow orders',
+        });
+        return;
+      }
+      if (!orders.every((o) => o.paymentSessionState === 'NONE')) {
+        res.status(409).json({
+          error: 'A payment is already in progress for one of these orders',
+        });
+        return;
+      }
+
+      // Per-order item + shipping in cents — used for line items, total, and
+      // the post-tx amount cross-check inside markOrdersPaidBatch.
+      const lineItems = orders.map((o) => {
+        const amountCents = Math.round(Number(o.amount) * 100);
+        const shippingCents = Math.round(Number(o.shippingPrice) * 100);
+        const itemCents = amountCents - shippingCents;
+        return {
+          orderId: o.id,
+          title: o.listing.title,
+          itemCents,
+          shippingCents,
+          totalCents: amountCents,
+        };
+      });
+      const totalAmountCents = lineItems.reduce((s, l) => s + l.totalCents, 0);
+      if (totalAmountCents <= 0) {
+        res.status(400).json({
+          error: 'Batch total is zero. Ask the seller to mark these orders complete via cash/bank transfer.',
+        });
+        return;
+      }
+
+      const sellerId = orders[0].sellerId;
+      const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
+      const idsParam = dedupedIds.join(',');
+      // Redirect back into the success page — same surface the buyer just
+      // came from. It auto-fires the Square confirm on mount when the
+      // provider hint is set.
+      const successUrl = `${clientUrl}/checkout/success?ids=${encodeURIComponent(idsParam)}&payment=success`;
+      const cancelUrl = `${clientUrl}/checkout/success?ids=${encodeURIComponent(idsParam)}&payment=cancelled`;
+
+      // Atomically flip all N orders to paymentSessionState=PENDING. count
+      // must equal N — anything less means another /pay raced in and we
+      // refuse rather than enter a half-open state.
+      const NOT_CONNECTED_MESSAGE =
+        'Seller has not enabled this payment method. Ask them to cash or bank transfer, or wait for them to connect a payment provider.';
+
+      async function markBatchPending(): Promise<{ status: number; error: string } | null> {
+        const { count } = await prisma.order.updateMany({
+          where: {
+            id: { in: dedupedIds },
+            buyerId: req.userId!,
+            sellerId,
+            status: 'CONFIRMED',
+            paymentSessionState: 'NONE',
+          },
+          data: { paymentSessionState: 'PENDING' },
+        });
+        if (count === dedupedIds.length) return null;
+        // Roll back any partial flip — without this, a few orders are stuck
+        // PENDING with no live session.
+        await prisma.order
+          .updateMany({
+            where: {
+              id: { in: dedupedIds },
+              buyerId: req.userId!,
+              sellerId,
+              status: 'CONFIRMED',
+              paymentSessionState: 'PENDING',
+            },
+            data: { paymentSessionState: 'NONE' },
+          })
+          .catch((err) => {
+            logger.error('orders.pay.batch.rollback_failed', { err: String(err) });
+          });
+        return {
+          status: 409,
+          error:
+            'A payment is already in progress for one of these orders, or status changed. Refresh and try again.',
+        };
+      }
+      async function revertBatchPending(): Promise<void> {
+        try {
+          await prisma.order.updateMany({
+            where: {
+              id: { in: dedupedIds },
+              buyerId: req.userId!,
+              sellerId,
+              paymentSessionState: 'PENDING',
+              status: 'CONFIRMED',
+            },
+            data: { paymentSessionState: 'NONE' },
+          });
+        } catch (err) {
+          logger.error('orders.pay.batch.revert_pending.failed', { err: String(err) });
+        }
+      }
+
+      if (paymentMethod === 'STRIPE') {
+        if (!isStripeConfigured()) {
+          res.status(503).json({ error: 'Stripe is not configured on this server' });
+          return;
+        }
+        const sellerAccount = await findAccount(sellerId, 'STRIPE');
+        if (!canAcceptPayments(sellerAccount)) {
+          res.status(503).json({ error: NOT_CONNECTED_MESSAGE });
+          return;
+        }
+        {
+          const failure = await markBatchPending();
+          if (failure) {
+            res.status(failure.status).json({ error: failure.error });
+            return;
+          }
+        }
+        try {
+          const feeCents = platformFeeForCents(totalAmountCents);
+          // One Stripe line item per order's listing + a separate shipping
+          // line whenever shipping > 0. Stripe rejects $0 amounts so we fold
+          // free items into a combined "free + shipping" line, mirroring the
+          // single-order /pay logic.
+          const stripeLineItems: Array<{
+            price_data: {
+              currency: string;
+              product_data: { name: string };
+              unit_amount: number;
+            };
+            quantity: number;
+          }> = [];
+          for (const li of lineItems) {
+            if (li.itemCents > 0 && li.shippingCents > 0) {
+              stripeLineItems.push({
+                price_data: {
+                  currency: 'aud',
+                  product_data: { name: li.title },
+                  unit_amount: li.itemCents,
+                },
+                quantity: 1,
+              });
+              stripeLineItems.push({
+                price_data: {
+                  currency: 'aud',
+                  product_data: { name: `Shipping — ${li.title}` },
+                  unit_amount: li.shippingCents,
+                },
+                quantity: 1,
+              });
+            } else if (li.itemCents > 0) {
+              stripeLineItems.push({
+                price_data: {
+                  currency: 'aud',
+                  product_data: { name: li.title },
+                  unit_amount: li.itemCents,
+                },
+                quantity: 1,
+              });
+            } else {
+              stripeLineItems.push({
+                price_data: {
+                  currency: 'aud',
+                  product_data: { name: `${li.title} (free + shipping)` },
+                  unit_amount: li.shippingCents,
+                },
+                quantity: 1,
+              });
+            }
+          }
+          const session = await getStripeClient().checkout.sessions.create(
+            {
+              mode: 'payment',
+              line_items: stripeLineItems,
+              // Use metadata for orderIds (>1 ID won't fit in a single
+              // client_reference_id with comma-separated reliably; metadata
+              // is the documented fan-out channel).
+              metadata: { orderIds: dedupedIds.join(','), sellerId },
+              payment_intent_data: {
+                ...(feeCents > 0 ? { application_fee_amount: feeCents } : {}),
+                metadata: { orderIds: dedupedIds.join(','), sellerId },
+              },
+              success_url: successUrl,
+              cancel_url: cancelUrl,
+            },
+            { stripeAccount: sellerAccount!.accountId },
+          );
+          res.json({ provider: 'STRIPE', url: session.url, sessionId: session.id });
+        } catch (err) {
+          await revertBatchPending();
+          throw err;
+        }
+        return;
+      }
+
+      if (paymentMethod === 'SQUARE') {
+        const sellerAccount = await findAccount(sellerId, 'SQUARE');
+        if (
+          !canAcceptPayments(sellerAccount) ||
+          !sellerAccount?.accessToken ||
+          !sellerAccount?.locationId
+        ) {
+          res.status(503).json({ error: NOT_CONNECTED_MESSAGE });
+          return;
+        }
+        {
+          const failure = await markBatchPending();
+          if (failure) {
+            res.status(failure.status).json({ error: failure.error });
+            return;
+          }
+        }
+        try {
+          const sellerSquare = new SquareClient({
+            token: sellerAccount.accessToken,
+            environment:
+              process.env.SQUARE_ENV === 'production'
+                ? SquareEnvironment.Production
+                : SquareEnvironment.Sandbox,
+          });
+          const squareRedirect = `${successUrl}&provider=square`;
+          const squareLineItems: Array<{
+            name: string;
+            quantity: string;
+            basePriceMoney: { amount: bigint; currency: 'AUD' };
+          }> = [];
+          for (const li of lineItems) {
+            if (li.itemCents > 0 && li.shippingCents > 0) {
+              squareLineItems.push({
+                name: li.title,
+                quantity: '1',
+                basePriceMoney: { amount: BigInt(li.itemCents), currency: 'AUD' },
+              });
+              squareLineItems.push({
+                name: `Shipping — ${li.title}`,
+                quantity: '1',
+                basePriceMoney: {
+                  amount: BigInt(li.shippingCents),
+                  currency: 'AUD',
+                },
+              });
+            } else if (li.itemCents > 0) {
+              squareLineItems.push({
+                name: li.title,
+                quantity: '1',
+                basePriceMoney: { amount: BigInt(li.itemCents), currency: 'AUD' },
+              });
+            } else {
+              squareLineItems.push({
+                name: `${li.title} (free + shipping)`,
+                quantity: '1',
+                basePriceMoney: {
+                  amount: BigInt(li.shippingCents),
+                  currency: 'AUD',
+                },
+              });
+            }
+          }
+          const resp = await sellerSquare.checkout.paymentLinks.create({
+            idempotencyKey: randomUUID(),
+            order: {
+              locationId: sellerAccount.locationId,
+              // referenceId is comma-joined so the legacy search-by-reference
+              // fallback in confirm can still match; the primary path uses
+              // the stashed Square order ID anyway.
+              referenceId: dedupedIds.join(','),
+              lineItems: squareLineItems,
+            },
+            checkoutOptions: { redirectUrl: squareRedirect },
+          });
+          const paymentLink = resp.paymentLink;
+          if (!paymentLink?.url) {
+            await revertBatchPending();
+            res.status(502).json({ error: 'Square did not return a payment URL' });
+            return;
+          }
+          // Stash the SAME Square order ID on every order in the batch — the
+          // confirm endpoint pulls one of them and validates against the
+          // shared batch.
+          if (paymentLink.orderId) {
+            await prisma.order.updateMany({
+              where: { id: { in: dedupedIds } },
+              data: { paymentProviderId: paymentLink.orderId },
+            });
+          }
+          logger.info('orders.pay.batch.square.payment_link_created', {
+            orderIds: dedupedIds,
+            squareOrderId: paymentLink.orderId ?? null,
+            paymentLinkId: paymentLink.id ?? null,
+          });
+          res.json({
+            provider: 'SQUARE',
+            url: paymentLink.url,
+            paymentLinkId: paymentLink.id,
+          });
+        } catch (err) {
+          await revertBatchPending();
+          throw err;
+        }
+        return;
+      }
+
+      // Exhaustiveness check — unreachable given Zod enum.
+      res.status(400).json({ error: 'Unsupported payment method' });
+    } catch (err) {
+      logger.error('orders.pay.batch.failed', { err: String(err) });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
 // POST /api/orders/:id/pay — buyer initiates online payment.
 // Any seller (PERSONAL or BUSINESS) may accept Stripe or Square provided
 // they've connected a `SellerPaymentAccount` for it — the gate is per-
@@ -1861,6 +2240,170 @@ router.post(
       });
     } catch (err) {
       logger.error('orders.square_confirm.failed', { err: String(err) });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/orders/pay/square/confirm/batch — sibling of /pay/square/confirm
+// for batched checkouts. Pulls the shared Square order via the
+// paymentProviderId stashed on the batch (every order in the batch shares it),
+// validates a tender, then fans out via markOrdersPaidBatch. Idempotent: re-
+// running on already-paid orders returns `already_completed` without
+// double-charging.
+// ---------------------------------------------------------------------------
+router.post(
+  '/pay/square/confirm/batch',
+  authenticate,
+  orderMutationLimiter,
+  async (req: Request, res: Response) => {
+    try {
+      const parsed = squareConfirmBatchSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: parsed.error.issues[0].message });
+        return;
+      }
+      const { orderIds } = parsed.data;
+      const dedupedIds = Array.from(new Set(orderIds));
+
+      const orders = await prisma.order.findMany({
+        where: { id: { in: dedupedIds } },
+        select: {
+          id: true,
+          buyerId: true,
+          sellerId: true,
+          status: true,
+          paymentProviderId: true,
+          paymentFlow: true,
+        },
+      });
+      if (orders.length !== dedupedIds.length) {
+        res.status(404).json({ error: 'One or more orders not found' });
+        return;
+      }
+      if (!orders.every((o) => o.buyerId === req.userId)) {
+        res.status(403).json({ error: 'Only the buyer can confirm this payment' });
+        return;
+      }
+      const sellerIds = new Set(orders.map((o) => o.sellerId));
+      if (sellerIds.size !== 1) {
+        res.status(400).json({ error: 'Batch confirm requires same-seller orders' });
+        return;
+      }
+      const sellerId = orders[0].sellerId;
+      // All orders in the batch share the same Square order (we stashed the
+      // same paymentProviderId on each at /pay/batch). Pick whichever is
+      // non-null; if any disagree we treat it as a stray manual edit and
+      // refuse rather than picking the wrong one.
+      const providerIds = new Set(
+        orders.map((o) => o.paymentProviderId).filter(Boolean) as string[],
+      );
+      if (providerIds.size > 1) {
+        res.status(409).json({
+          error: 'Inconsistent Square payment IDs across batch — contact support.',
+        });
+        return;
+      }
+      const sharedProviderId = providerIds.size === 1 ? providerIds.values().next().value : null;
+
+      const sellerAccount = await findAccount(sellerId, 'SQUARE');
+      if (!sellerAccount?.accessToken || !sellerAccount?.locationId) {
+        res.status(503).json({ error: 'Seller has not connected Square' });
+        return;
+      }
+      const sellerSquare = new SquareClient({
+        token: sellerAccount.accessToken,
+        environment:
+          process.env.SQUARE_ENV === 'production'
+            ? SquareEnvironment.Production
+            : SquareEnvironment.Sandbox,
+      });
+
+      type SquareOrderShape = {
+        id?: string;
+        referenceId?: string;
+        state?: string;
+        tenders?: { id?: string; type?: string; paymentId?: string }[];
+        totalMoney?: { amount?: number | bigint; currency?: string };
+      };
+      let matching: SquareOrderShape | undefined;
+      if (sharedProviderId) {
+        try {
+          const direct = await sellerSquare.orders.get({
+            orderId: sharedProviderId as string,
+          });
+          matching = direct.order as SquareOrderShape | undefined;
+        } catch (err) {
+          logger.warn('orders.pay.batch.square.confirm.retrieve_failed', {
+            orderIds: dedupedIds,
+            squareOrderId: sharedProviderId,
+            err: String(err),
+          });
+        }
+      }
+      if (!matching) {
+        // Fallback: search by reference (we stash comma-joined orderIds at
+        // /pay/batch so the search can recognise the batch).
+        const referenceMatch = dedupedIds.join(',');
+        const search = await sellerSquare.orders.search({
+          locationIds: [sellerAccount.locationId],
+        });
+        matching = search.orders?.find(
+          (o) => o.referenceId === referenceMatch,
+        ) as SquareOrderShape | undefined;
+        if (!matching) {
+          res.status(202).json({ pending: true });
+          return;
+        }
+      }
+      const tender = matching.tenders?.[0];
+      if (!tender) {
+        // No tender = Square hasn't captured yet. Tell the client to retry.
+        res.status(202).json({ pending: true });
+        return;
+      }
+      const amountMoney = matching.totalMoney;
+      if (!amountMoney?.amount || !amountMoney?.currency) {
+        res.status(502).json({ error: 'Square order missing amount/currency' });
+        return;
+      }
+      const paymentId = tender?.paymentId ?? tender?.id ?? null;
+      const result = await markOrdersPaidBatch(dedupedIds, 'SQUARE', {
+        amountCents: String(amountMoney.amount),
+        currency: amountMoney.currency,
+        providerId: paymentId,
+      });
+      if (result.status === 'not_found') {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+      if (result.status === 'not_confirmed') {
+        res.status(409).json({ error: 'One or more orders are no longer in a confirmable state' });
+        return;
+      }
+      if (result.status === 'amount_mismatch') {
+        logger.error('orders.pay.batch.square.amount_mismatch', {
+          orderIds: dedupedIds,
+          squareOrderId: matching.id,
+          tenderId: tender?.id,
+          expected: result.expected,
+          reported: result.reported,
+          markingPaid: false,
+        });
+        res.status(409).json({ error: 'Payment amount does not match batch total' });
+        return;
+      }
+      const updated = await prisma.order.findMany({
+        where: { id: { in: dedupedIds } },
+        select: ORDER_SUMMARY_SELECT,
+      });
+      res.json({
+        orders: updated.map(projectOrderParties),
+        idempotent: result.status === 'already_completed',
+      });
+    } catch (err) {
+      logger.error('orders.pay.batch.square.confirm.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },

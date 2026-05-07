@@ -165,3 +165,29 @@ export const paySchema = z.object({
 });
 
 export type PayInput = z.infer<typeof paySchema>;
+
+// Batch sibling for paying multiple same-seller orders in one provider
+// session. The route enforces (same buyer, same seller, all CONFIRMED, all
+// CARD, all session=NONE); this schema only validates the wire shape.
+export const payBatchSchema = z.object({
+  orderIds: z
+    .array(uuidSchema)
+    .min(1, 'orderIds must include at least one order')
+    .max(20, 'Too many orders in one batch'),
+  paymentMethod: z.enum(['STRIPE', 'SQUARE'], {
+    message: 'Payment method must be STRIPE or SQUARE',
+  }),
+});
+
+export type PayBatchInput = z.infer<typeof payBatchSchema>;
+
+// Square's confirm path can also be batch — the buyer-side success page
+// fires it on mount when redirected back from a batch checkout.
+export const squareConfirmBatchSchema = z.object({
+  orderIds: z
+    .array(uuidSchema)
+    .min(1, 'orderIds must include at least one order')
+    .max(20, 'Too many orders in one batch'),
+});
+
+export type SquareConfirmBatchInput = z.infer<typeof squareConfirmBatchSchema>;

@@ -179,3 +179,177 @@ export async function markOrderPaid(
 
   return result;
 }
+
+/**
+ * Batch sibling of markOrderPaid: fans out a single provider session that
+ * covered N orders (all from the same buyer + seller + paymentFlow) to mark
+ * each PAID atomically. Used by Stripe webhook + Square confirm endpoints when
+ * the buyer paid a multi-listing seller-group in one redirect.
+ *
+ * Cross-checks `reported.amountCents` against the SUM of order amounts (the
+ * provider's session.amount_total / Square order totalMoney). Per-order
+ * amount validation isn't meaningful here — Stripe charges the buyer one
+ * total, not N separate amounts.
+ *
+ * Idempotent: a re-run for orders already PAID returns 'already_completed'
+ * if every order is already past CONFIRMED. Mixed states return
+ * 'not_confirmed' (some orders advanced under us — caller should investigate).
+ */
+export async function markOrdersPaidBatch(
+  orderIds: string[],
+  paymentMethod: PaymentMethod,
+  reported: { amountCents: string; currency: string; providerId?: string | null },
+): Promise<PaidResult> {
+  if (orderIds.length === 0) return { status: 'not_found' };
+
+  const result = await prisma.$transaction(async (tx) => {
+    const orders = await tx.order.findMany({
+      where: { id: { in: orderIds } },
+      select: {
+        id: true,
+        status: true,
+        listingId: true,
+        amount: true,
+        paymentFlow: true,
+      },
+    });
+
+    if (orders.length !== orderIds.length) {
+      return { status: 'not_found' } as const;
+    }
+
+    // Sum of expected per-order amounts must equal what the provider charged
+    // — defends against a misconfigured Checkout Session, a tampered metadata
+    // payload, or a forgery whose amounts don't reconcile.
+    const expectedTotalCents = orders
+      .reduce(
+        (sum, o) => sum.plus(new Prisma.Decimal(o.amount).mul(100)),
+        new Prisma.Decimal(0),
+      )
+      .toFixed(0);
+    const reportedCurrency = reported.currency.toUpperCase();
+    if (
+      reportedCurrency !== EXPECTED_CURRENCY ||
+      reported.amountCents !== expectedTotalCents
+    ) {
+      return {
+        status: 'amount_mismatch' as const,
+        expected: { amountCents: expectedTotalCents, currency: EXPECTED_CURRENCY },
+        reported: {
+          amountCents: reported.amountCents,
+          currency: reportedCurrency,
+        },
+      };
+    }
+
+    // Idempotency: if every order is already past CONFIRMED, treat as a re-
+    // delivery of the same webhook (the most common cause). If a SUBSET is
+    // post-payment and the rest are still CONFIRMED, return not_confirmed —
+    // the order's natural state machine is broken and a human should look.
+    const postPaymentStatuses: typeof orders[number]['status'][] = [
+      'PAID',
+      'SHIPPED',
+      'COMPLETED',
+    ];
+    const allPostPayment = orders.every((o) => postPaymentStatuses.includes(o.status));
+    if (allPostPayment) return { status: 'already_completed' } as const;
+    if (!orders.every((o) => o.status === 'CONFIRMED')) {
+      return { status: 'not_confirmed' } as const;
+    }
+
+    // Everyone in the batch flips together — N rows guarded on status=CONFIRMED
+    // so a concurrent /cancel or /pay can't strand half the orders PAID.
+    const declineDeadline =
+      orders[0].paymentFlow === 'CARD'
+        ? new Date(Date.now() + CARD_SELLER_DECLINE_WINDOW_MS)
+        : null;
+    const { count } = await tx.order.updateMany({
+      where: { id: { in: orderIds }, status: 'CONFIRMED' },
+      data: {
+        status: 'PAID',
+        paymentMethod,
+        ...(reported.providerId ? { paymentProviderId: reported.providerId } : {}),
+        paymentSessionState: 'COMPLETED',
+        ...(declineDeadline ? { sellerDeclineDeadline: declineDeadline } : {}),
+      },
+    });
+    if (count !== orderIds.length) return { status: 'not_confirmed' } as const;
+
+    // Fan listings ON_HOLD → SOLD. updateMany conditional on ON_HOLD so a
+    // listing that's already moved (rare race) stays where it is.
+    const listingIds = orders.map((o) => o.listingId);
+    await tx.listing.updateMany({
+      where: { id: { in: listingIds }, status: 'ON_HOLD' },
+      data: { status: 'SOLD' },
+    });
+
+    // Outbox per listing for Square Catalog inventory=0. Outbox-only inside
+    // the tx so syncs are durable across a Redis outage.
+    const outboxIds: string[] = [];
+    for (const order of orders) {
+      const fullListing = await tx.listing.findUnique({
+        where: { id: order.listingId },
+        include: { images: { orderBy: { displayOrder: 'asc' } } },
+      });
+      if (!fullListing) continue;
+      const outboxId = await createOutboxRow({
+        tx,
+        listingId: fullListing.id,
+        sellerId: fullListing.sellerId,
+        kind: 'INVENTORY_ADJUST',
+        payload: {
+          kind: 'INVENTORY_ADJUST',
+          listing: snapshotListing(fullListing),
+          inventoryDelta: 0,
+        },
+      });
+      if (outboxId) outboxIds.push(outboxId);
+    }
+
+    return { status: 'completed' as const, outboxIds };
+  });
+
+  if (result.status === 'completed' && result.outboxIds.length > 0) {
+    for (const outboxId of result.outboxIds) void enqueueOutbox(outboxId);
+  }
+
+  if (result.status === 'completed') {
+    // Notifications fire outside the tx so a notification failure can't
+    // roll back the payment. One notification per order per side.
+    void (async () => {
+      const full = await prisma.order.findMany({
+        where: { id: { in: orderIds } },
+        select: {
+          id: true,
+          buyerId: true,
+          sellerId: true,
+          listing: { select: { id: true, title: true } },
+          buyer: { select: { username: true } },
+          seller: { select: { username: true } },
+        },
+      });
+      for (const order of full) {
+        void createNotification({
+          recipientId: order.sellerId,
+          type: 'ORDER_PAID',
+          title: 'Payment received',
+          body: `${order.buyer.username} paid for "${order.listing.title}" via ${paymentMethod.toLowerCase().replace('_', ' ')}.`,
+          actorId: order.buyerId,
+          orderId: order.id,
+          listingId: order.listing.id,
+        });
+        void createNotification({
+          recipientId: order.buyerId,
+          type: 'ORDER_COMPLETED',
+          title: 'Payment confirmed',
+          body: `Your payment for "${order.listing.title}" was received.`,
+          actorId: order.sellerId,
+          orderId: order.id,
+          listingId: order.listing.id,
+        });
+      }
+    })();
+  }
+
+  return result;
+}
