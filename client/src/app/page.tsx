@@ -453,17 +453,21 @@ type CategoryTheme = {
   pattern: 'dots' | 'grid' | 'lines' | 'circuit';
 };
 
+// Monochromatic-per-category gradients: single hue family per tile,
+// quieter saturation so they sit alongside the site's sky-blue palette
+// instead of fighting it. From → to is light-ish 600 → dark 900 of the
+// same family (with closely related hues for warm tiles).
 const CATEGORY_THEMES: Record<string, CategoryTheme> = {
-  Phones:                 { from: '#0ea5e9', to: '#4f46e5', accent: '#67e8f9', pattern: 'dots' },
-  Laptops:                { from: '#0d9488', to: '#1e3a8a', accent: '#5eead4', pattern: 'grid' },
-  Desktops:               { from: '#4f46e5', to: '#7c3aed', accent: '#c4b5fd', pattern: 'grid' },
-  Tablets:                { from: '#0284c7', to: '#1e40af', accent: '#7dd3fc', pattern: 'dots' },
-  Consoles:               { from: '#7c3aed', to: '#db2777', accent: '#f0abfc', pattern: 'circuit' },
-  Cameras:                { from: '#f59e0b', to: '#e11d48', accent: '#fda4af', pattern: 'lines' },
-  Audio:                  { from: '#c026d3', to: '#0891b2', accent: '#67e8f9', pattern: 'lines' },
-  'Computer Accessories': { from: '#334155', to: '#1d4ed8', accent: '#93c5fd', pattern: 'grid' },
-  'Mobile Accessories':   { from: '#db2777', to: '#e11d48', accent: '#fbcfe8', pattern: 'dots' },
-  'PC Parts':             { from: '#ea580c', to: '#b91c1c', accent: '#fca5a5', pattern: 'circuit' },
+  Phones:                 { from: '#0284c7', to: '#0c4a6e', accent: '#7dd3fc', pattern: 'dots' },
+  Laptops:                { from: '#0d9488', to: '#064e3b', accent: '#5eead4', pattern: 'grid' },
+  Desktops:               { from: '#4f46e5', to: '#312e81', accent: '#a5b4fc', pattern: 'grid' },
+  Tablets:                { from: '#2563eb', to: '#1e3a8a', accent: '#93c5fd', pattern: 'dots' },
+  Consoles:               { from: '#7c3aed', to: '#4c1d95', accent: '#c4b5fd', pattern: 'circuit' },
+  Cameras:                { from: '#ea580c', to: '#9f1239', accent: '#fdba74', pattern: 'lines' },
+  Audio:                  { from: '#9333ea', to: '#581c87', accent: '#d8b4fe', pattern: 'lines' },
+  'Computer Accessories': { from: '#475569', to: '#0f172a', accent: '#94a3b8', pattern: 'grid' },
+  'Mobile Accessories':   { from: '#e11d48', to: '#881337', accent: '#fda4af', pattern: 'dots' },
+  'PC Parts':             { from: '#dc2626', to: '#7f1d1d', accent: '#fca5a5', pattern: 'circuit' },
 };
 
 function patternBg(pattern: CategoryTheme['pattern']): string {

@@ -164,18 +164,13 @@ export default function Navbar() {
                 + Sell Item
               </Link>
 
-              <span className="ml-2 flex items-center gap-2.5">
+              <span className="ml-2 flex items-center gap-2" title={user.name}>
                 <Avatar src={user.avatarUrl} username={user.username} size="sm" />
-                <span className="flex items-center gap-2">
-                  <span className="max-w-[10rem] truncate text-sm font-semibold text-[var(--text-primary)]">
-                    {user.name}
+                {user.sellerType === 'BUSINESS' && (
+                  <span className="rounded border border-[var(--neon-cyan)]/30 bg-[var(--tint-cyan)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--neon-cyan)]">
+                    Business
                   </span>
-                  {user.sellerType === 'BUSINESS' && (
-                    <span className="rounded border border-[var(--neon-cyan)]/30 bg-[var(--tint-cyan)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--neon-cyan)]">
-                      Business
-                    </span>
-                  )}
-                </span>
+                )}
               </span>
 
               <button onClick={logout} className="btn-cyber-ghost">
