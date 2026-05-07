@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, FormEvent, useMemo } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -42,16 +42,6 @@ export default function Home() {
   const trending = allListings.slice(0, 4);
   const featured = allListings.slice(4, 12);
   const recent = allListings.length > 12 ? allListings.slice(12, 20) : allListings.slice(0, 8);
-
-  const categoryThumbs = useMemo(() => {
-    const map: Record<string, string | undefined> = {};
-    for (const l of allListings) {
-      if (!map[l.category] && l.images[0]?.url) {
-        map[l.category] = l.images[0].url;
-      }
-    }
-    return map;
-  }, [allListings]);
 
   function handleSearch(e: FormEvent) {
     e.preventDefault();
@@ -141,7 +131,7 @@ export default function Home() {
               Browse by category
             </h2>
           </div>
-          <CategoryBento thumbs={categoryThumbs} />
+          <CategoryBento />
         </div>
       </section>
 
@@ -452,41 +442,75 @@ function TrustIcon({ name }: { name: string }) {
 }
 
 /* ================================================================
-   CATEGORY BENTO
+   CATEGORY BENTO — gradient + oversized-icon tiles (no photos)
+   Each category has its own colour identity. Pattern overlay adds
+   texture so tiles read as editorial rather than flat blocks.
    ================================================================ */
-function CategoryBento({
-  thumbs,
-}: {
-  thumbs: Record<string, string | undefined>;
-}) {
+type CategoryTheme = {
+  from: string;
+  to: string;
+  accent: string;            // soft glow colour
+  pattern: 'dots' | 'grid' | 'lines' | 'circuit';
+};
+
+const CATEGORY_THEMES: Record<string, CategoryTheme> = {
+  Phones:                 { from: '#0ea5e9', to: '#4f46e5', accent: '#67e8f9', pattern: 'dots' },
+  Laptops:                { from: '#0d9488', to: '#1e3a8a', accent: '#5eead4', pattern: 'grid' },
+  Desktops:               { from: '#4f46e5', to: '#7c3aed', accent: '#c4b5fd', pattern: 'grid' },
+  Tablets:                { from: '#0284c7', to: '#1e40af', accent: '#7dd3fc', pattern: 'dots' },
+  Consoles:               { from: '#7c3aed', to: '#db2777', accent: '#f0abfc', pattern: 'circuit' },
+  Cameras:                { from: '#f59e0b', to: '#e11d48', accent: '#fda4af', pattern: 'lines' },
+  Audio:                  { from: '#c026d3', to: '#0891b2', accent: '#67e8f9', pattern: 'lines' },
+  'Computer Accessories': { from: '#334155', to: '#1d4ed8', accent: '#93c5fd', pattern: 'grid' },
+  'Mobile Accessories':   { from: '#db2777', to: '#e11d48', accent: '#fbcfe8', pattern: 'dots' },
+  'PC Parts':             { from: '#ea580c', to: '#b91c1c', accent: '#fca5a5', pattern: 'circuit' },
+};
+
+function patternBg(pattern: CategoryTheme['pattern']): string {
+  const svg = (() => {
+    switch (pattern) {
+      case 'dots':
+        return `<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28'><circle cx='2' cy='2' r='1' fill='white' fill-opacity='0.22'/></svg>`;
+      case 'grid':
+        return `<svg xmlns='http://www.w3.org/2000/svg' width='32' height='32'><path d='M0 0H32V32' fill='none' stroke='white' stroke-opacity='0.16' stroke-width='1'/></svg>`;
+      case 'lines':
+        return `<svg xmlns='http://www.w3.org/2000/svg' width='14' height='14'><path d='M-2 6 L6 -2 M6 14 L14 6' stroke='white' stroke-opacity='0.18' stroke-width='1'/></svg>`;
+      case 'circuit':
+        return `<svg xmlns='http://www.w3.org/2000/svg' width='40' height='40'><path d='M0 20 H15 V5 H30 V20 H40 M20 40 V25 H5' fill='none' stroke='white' stroke-opacity='0.20' stroke-width='1'/><circle cx='15' cy='20' r='1.5' fill='white' fill-opacity='0.4'/><circle cx='30' cy='5' r='1.5' fill='white' fill-opacity='0.4'/></svg>`;
+    }
+  })();
+  return `url("data:image/svg+xml;utf8,${encodeURIComponent(svg)}")`;
+}
+
+function CategoryBento() {
   return (
     <>
       {/* Desktop bento — 5 cols × 3 rows with a 2×3 vertical hero */}
       <div className="hidden h-[540px] grid-cols-5 grid-rows-3 gap-3 lg:grid">
-        <CategoryTile cat="Phones" size="large" thumb={thumbs['Phones']} className="col-span-2 row-span-3" />
-        <CategoryTile cat="Laptops" size="med" thumb={thumbs['Laptops']} />
-        <CategoryTile cat="Consoles" size="med" thumb={thumbs['Consoles']} />
-        <CategoryTile cat="Cameras" size="med" thumb={thumbs['Cameras']} />
-        <CategoryTile cat="Audio" size="med" thumb={thumbs['Audio']} />
-        <CategoryTile cat="Tablets" size="small" thumb={thumbs['Tablets']} />
-        <CategoryTile cat="Desktops" size="small" thumb={thumbs['Desktops']} />
-        <CategoryTile cat="Computer Accessories" size="small" thumb={thumbs['Computer Accessories']} />
-        <CategoryTile cat="Mobile Accessories" size="small" thumb={thumbs['Mobile Accessories']} />
-        <CategoryTile cat="PC Parts" size="small" thumb={thumbs['PC Parts']} />
+        <CategoryTile cat="Phones" size="large" className="col-span-2 row-span-3" />
+        <CategoryTile cat="Laptops" size="med" />
+        <CategoryTile cat="Consoles" size="med" />
+        <CategoryTile cat="Cameras" size="med" />
+        <CategoryTile cat="Audio" size="med" />
+        <CategoryTile cat="Tablets" size="small" />
+        <CategoryTile cat="Desktops" size="small" />
+        <CategoryTile cat="Computer Accessories" size="small" />
+        <CategoryTile cat="Mobile Accessories" size="small" />
+        <CategoryTile cat="PC Parts" size="small" />
       </div>
 
       {/* Mobile/tablet — simpler uniform grid */}
       <div className="grid grid-cols-3 gap-3 sm:grid-cols-4 lg:hidden">
-        <CategoryTile cat="Phones" size="med" thumb={thumbs['Phones']} />
-        <CategoryTile cat="Laptops" size="med" thumb={thumbs['Laptops']} />
-        <CategoryTile cat="Desktops" size="small" thumb={thumbs['Desktops']} />
-        <CategoryTile cat="Tablets" size="small" thumb={thumbs['Tablets']} />
-        <CategoryTile cat="Consoles" size="med" thumb={thumbs['Consoles']} />
-        <CategoryTile cat="Cameras" size="med" thumb={thumbs['Cameras']} />
-        <CategoryTile cat="Audio" size="small" thumb={thumbs['Audio']} />
-        <CategoryTile cat="Computer Accessories" size="small" thumb={thumbs['Computer Accessories']} />
-        <CategoryTile cat="Mobile Accessories" size="small" thumb={thumbs['Mobile Accessories']} />
-        <CategoryTile cat="PC Parts" size="small" thumb={thumbs['PC Parts']} />
+        <CategoryTile cat="Phones" size="med" />
+        <CategoryTile cat="Laptops" size="med" />
+        <CategoryTile cat="Desktops" size="small" />
+        <CategoryTile cat="Tablets" size="small" />
+        <CategoryTile cat="Consoles" size="med" />
+        <CategoryTile cat="Cameras" size="med" />
+        <CategoryTile cat="Audio" size="small" />
+        <CategoryTile cat="Computer Accessories" size="small" />
+        <CategoryTile cat="Mobile Accessories" size="small" />
+        <CategoryTile cat="PC Parts" size="small" />
       </div>
     </>
   );
@@ -495,61 +519,100 @@ function CategoryBento({
 function CategoryTile({
   cat,
   size,
-  thumb,
   className = '',
 }: {
   cat: string;
   size: 'large' | 'med' | 'small';
-  thumb?: string;
   className?: string;
 }) {
-  const withImage = thumb && size !== 'small';
+  const theme = CATEGORY_THEMES[cat] ?? CATEGORY_THEMES.Phones;
+  const isLarge = size === 'large';
+  const isSmall = size === 'small';
 
   return (
     <Link
       href={`/browse?category=${encodeURIComponent(cat)}`}
-      className={`group panel panel-hover clip-corner-sm relative block h-full min-h-[140px] overflow-hidden ${className}`}
+      aria-label={`Browse ${cat}`}
+      className={`group clip-corner-sm relative block h-full min-h-[140px] overflow-hidden border border-white/10 shadow-[0_4px_20px_-8px_rgba(0,0,0,0.25)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-white/30 hover:shadow-[0_12px_36px_-12px_rgba(0,0,0,0.35)] ${className}`}
+      style={{
+        backgroundImage: `linear-gradient(135deg, ${theme.from} 0%, ${theme.to} 100%)`,
+      }}
     >
-      {withImage ? (
-        <>
-          <img
-            src={thumb}
-            alt=""
-            className="absolute inset-0 h-full w-full object-cover transition-transform duration-500 group-hover:scale-[1.05]"
-          />
-          <div
-            className="absolute inset-0 bg-gradient-to-t from-[rgba(15,23,42,0.88)] via-[rgba(15,23,42,0.3)] to-[rgba(15,23,42,0.1)]"
-            aria-hidden="true"
-          />
-          <div className="relative flex h-full flex-col justify-between p-4">
+      {/* Pattern overlay */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 opacity-90 transition-opacity duration-500 group-hover:opacity-100"
+        style={{ backgroundImage: patternBg(theme.pattern) }}
+      />
+
+      {/* Soft radial spotlight — adds depth, brightens on hover */}
+      <div
+        aria-hidden="true"
+        className="pointer-events-none absolute -right-1/4 -top-1/3 h-[140%] w-[80%] rounded-full opacity-40 blur-3xl transition-opacity duration-500 group-hover:opacity-70"
+        style={{ backgroundColor: theme.accent }}
+      />
+
+      {/* Bottom dark vignette for label legibility on big tiles */}
+      {!isSmall && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/45 via-black/15 to-transparent"
+        />
+      )}
+
+      {/* Watermark icon (large + medium): big, off-canvas-ish, behind the label */}
+      {!isSmall && (
+        <CategoryIcon
+          category={cat}
+          className={`pointer-events-none absolute text-white/95 drop-shadow-[0_4px_18px_rgba(0,0,0,0.35)] transition-transform duration-500 ease-out group-hover:scale-105 group-hover:rotate-[3deg] ${
+            isLarge
+              ? '-right-3 -top-2 h-44 w-44 sm:h-56 sm:w-56'
+              : '-right-1 top-3 h-20 w-20 sm:h-24 sm:w-24'
+          }`}
+        />
+      )}
+
+      {/* Foreground content */}
+      <div
+        className={`relative flex h-full flex-col p-4 sm:p-5 ${
+          isSmall ? 'items-center justify-center gap-2.5 text-center' : 'justify-end'
+        }`}
+      >
+        {isSmall ? (
+          <>
             <CategoryIcon
               category={cat}
-              className={`${size === 'large' ? 'h-12 w-12' : 'h-8 w-8'} text-white/85 transition-colors group-hover:text-white`}
+              className="h-9 w-9 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.4)] transition-transform duration-300 group-hover:scale-110"
             />
-            <div>
-              <p
-                className={`${size === 'large' ? 'text-2xl' : 'text-base'} font-bold tracking-tight text-white`}
+            <p className="text-sm font-bold leading-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]">
+              {cat}
+            </p>
+          </>
+        ) : (
+          <div>
+            <p
+              className={`font-bold tracking-tight text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.45)] ${
+                isLarge ? 'text-3xl sm:text-4xl' : 'text-base sm:text-lg'
+              }`}
+            >
+              {cat}
+            </p>
+            <p
+              className={`mt-1.5 inline-flex items-center gap-1 font-extrabold uppercase tracking-[0.18em] text-white/85 transition-colors group-hover:text-white ${
+                isLarge ? 'text-xs sm:text-[13px]' : 'text-[10px] sm:text-[11px]'
+              }`}
+            >
+              Browse
+              <span
+                aria-hidden="true"
+                className="transition-transform duration-300 group-hover:translate-x-1"
               >
-                {cat}
-              </p>
-              <p className="mt-0.5 flex items-center gap-1 text-xs font-semibold text-white/70 transition-colors group-hover:text-[var(--accent-soft)]">
-                Browse
-                <span aria-hidden="true">→</span>
-              </p>
-            </div>
+                →
+              </span>
+            </p>
           </div>
-        </>
-      ) : (
-        <div className="flex h-full flex-col items-center justify-center gap-2.5 p-4">
-          <CategoryIcon
-            category={cat}
-            className="h-9 w-9 text-[var(--text-muted)] transition-colors group-hover:text-[var(--neon-cyan)]"
-          />
-          <p className="text-center text-sm font-semibold leading-tight text-[var(--text-muted)] transition-colors group-hover:text-[var(--text-primary)]">
-            {cat}
-          </p>
-        </div>
-      )}
+        )}
+      </div>
     </Link>
   );
 }
