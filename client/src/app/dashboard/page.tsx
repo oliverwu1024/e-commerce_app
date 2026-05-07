@@ -10,6 +10,8 @@ import { useAuthStore } from '@/stores/auth';
 import ListingCard from '@/components/ListingCard';
 import OrderRow from '@/components/OrderRow';
 import OnboardingChecklist from '@/components/OnboardingChecklist';
+import Avatar from '@/components/Avatar';
+import MessageThread from '@/components/MessageThread';
 import {
   type ListingSummary,
   type ListingStatus,
@@ -21,6 +23,7 @@ import {
 import {
   type Order,
   type OrderListResponse,
+  ORDER_STATUS_STYLES,
 } from '@/types/orders';
 
 type StatusCounts = Record<ListingStatus, number>;
@@ -31,6 +34,7 @@ type Tab =
   | 'disputed_sales'     // Selling / Orders with an active dispute
   | 'past_sales'         // Selling / Past sales
   | 'saved'              // Buying / Saved
+  | 'awaiting_payment'   // Buying / Unpaid CARD orders, grouped by seller
   | 'in_purchases'       // Buying / In progress purchases
   | 'disputed_purchases' // Buying / Purchases with an active dispute
   | 'past_purchases';    // Buying / Past purchases
@@ -41,6 +45,7 @@ const VALID_TABS: Tab[] = [
   'disputed_sales',
   'past_sales',
   'saved',
+  'awaiting_payment',
   'in_purchases',
   'disputed_purchases',
   'past_purchases',
@@ -65,6 +70,7 @@ const SELLING_TABS: Tab[] = [
 ];
 const BUYING_TABS: Tab[] = [
   'saved',
+  'awaiting_payment',
   'in_purchases',
   'disputed_purchases',
   'past_purchases',
@@ -84,6 +90,7 @@ const TAB_LABELS: Record<Tab, string> = {
   disputed_sales: 'In Dispute',
   past_sales: 'Past Sales',
   saved: 'Saved',
+  awaiting_payment: 'Awaiting Payment',
   in_purchases: 'In Progress',
   disputed_purchases: 'In Dispute',
   past_purchases: 'Past Purchases',
@@ -116,6 +123,8 @@ function tabCountFor(tab: Tab, counts: TabCounts | null): number | null {
       return counts.selling.disputed;
     case 'saved':
       return counts.buying.saved;
+    case 'awaiting_payment':
+      return counts.unpaidCard.count;
     case 'in_purchases':
       return counts.buying.in_progress;
     case 'disputed_purchases':
@@ -402,13 +411,12 @@ function Dashboard() {
             const selected = activeTab === tab;
             const showCount = !COUNTLESS_TABS.has(tab);
             const count = showCount ? tabCountFor(tab, tabCounts) : null;
-            // Coloured "N to pay" pill on the buyer's In Progress tab —
-            // immediate visual cue when payment is due. Only renders when
-            // unpaidCard.count > 0 so it stays out of the way otherwise.
-            const showUnpaidPill =
-              tab === 'in_purchases' &&
-              tabCounts !== null &&
-              tabCounts.unpaidCard.count > 0;
+            // The Awaiting Payment tab gets an amber-styled count when > 0
+            // — the same data as a regular count badge but coloured so the
+            // payment-due cue is impossible to miss.
+            const isAwaitingTab = tab === 'awaiting_payment';
+            const awaitingHasItems =
+              isAwaitingTab && count !== null && count > 0;
             return (
               <button
                 key={tab}
@@ -427,17 +435,18 @@ function Dashboard() {
               >
                 {TAB_LABELS[tab]}
                 {showCount && count !== null && (
-                  <span className="ml-1.5 text-[11px] text-[var(--text-dim)]">
-                    ({count})
-                  </span>
-                )}
-                {showUnpaidPill && (
-                  <span
-                    className="ml-1.5 inline-flex items-center rounded-full border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--neon-amber)]"
-                    aria-label={`${tabCounts!.unpaidCard.count} orders awaiting payment`}
-                  >
-                    {tabCounts!.unpaidCard.count} to pay
-                  </span>
+                  awaitingHasItems ? (
+                    <span
+                      className="ml-1.5 inline-flex items-center rounded-full border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--neon-amber)]"
+                      aria-label={`${count} items awaiting payment`}
+                    >
+                      ●{' '}{count} to pay
+                    </span>
+                  ) : (
+                    <span className="ml-1.5 text-[11px] text-[var(--text-dim)]">
+                      ({count})
+                    </span>
+                  )
                 )}
               </button>
             );
@@ -454,6 +463,9 @@ function Dashboard() {
       >
         {activeTab === 'active' && <MyListingsTab statusFilter="ACTIVE,HIDDEN" />}
         {activeTab === 'saved' && <SavedListingsTab />}
+        {activeTab === 'awaiting_payment' && (
+          <AwaitingPaymentTab refreshKey={ordersRefreshKey} />
+        )}
         {activeTab === 'in_purchases' && (
           <OrdersTab role="buyer" bucket="in_progress" refreshKey={ordersRefreshKey} />
         )}
@@ -509,7 +521,7 @@ function DashboardActionBanners({
       {showBuyer && (
         <button
           type="button"
-          onClick={() => onNavigate('in_purchases')}
+          onClick={() => onNavigate('awaiting_payment')}
           className="w-full rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] p-3 text-left text-sm text-[var(--neon-amber)] hover:brightness-110 transition-colors"
         >
           <span className="font-semibold">
@@ -1262,17 +1274,6 @@ function OrdersTab({
         </div>
       )}
 
-      {/* Awaiting payment — buyer + in_progress only. Lives above the flat
-          chronological list so the most actionable rows are surfaced first.
-          Fetched separately from the paginated list so unpaid orders not on
-          page 1 still show up here. */}
-      {role === 'buyer' && bucket === 'in_progress' && !loading && (
-        <AwaitingPaymentSection
-          refreshKey={refreshKey}
-          onChange={refresh}
-        />
-      )}
-
       {!loading && orders.length > 0 && (
         <div className="space-y-3">
           {orders.map((order) => (
@@ -1314,22 +1315,24 @@ function OrdersTab({
 
 
 // ---------------------------------------------------------------------------
-// Awaiting-payment section — surfaces the buyer's unpaid CARD orders at the
-// top of In Progress, grouped by seller. One batch Pay button per seller calls
-// /pay/batch with contextOrderIds set to ALL unpaid orderIds, so paying one
-// seller's batch doesn't strand the rest of the buyer's groups.
+// Awaiting Payment tab — dedicated bucket for the buyer's unpaid CARD orders.
+// Lives next to "In Progress"; same orders are filtered out of that flat list
+// so they only appear here. One rich box per seller: header with avatar +
+// username + group total + batch Pay buttons, body with per-item rows
+// (thumbnail + title + price + status pill + per-item Cancel + inline
+// view-messages expand). Pay button at the box level calls /pay/batch with
+// contextOrderIds set to every unpaid orderId so paying one seller doesn't
+// strand the rest.
 // ---------------------------------------------------------------------------
-function AwaitingPaymentSection({
-  refreshKey,
-  onChange,
-}: {
-  refreshKey: number;
-  onChange: () => void;
-}) {
+function AwaitingPaymentTab({ refreshKey }: { refreshKey: number }) {
+  const currentUser = useAuthStore((s) => s.user);
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
   const [paying, setPaying] = useState<string | null>(null);
   const [error, setError] = useState('');
+  // Re-fetch counter so per-card actions (Cancel) can refresh without a
+  // full page reload. Bumped any time an item action lands.
+  const [localRefresh, setLocalRefresh] = useState(0);
 
   const fetchUnpaid = useCallback(async () => {
     setLoading(true);
@@ -1345,8 +1348,6 @@ function AwaitingPaymentSection({
       );
       setOrders(data.orders);
     } catch {
-      // Silent — section only enhances the existing list. Failure leaves
-      // the chronological list as the recovery path.
       setOrders([]);
     } finally {
       setLoading(false);
@@ -1355,24 +1356,59 @@ function AwaitingPaymentSection({
 
   useEffect(() => {
     fetchUnpaid();
-  }, [fetchUnpaid, refreshKey]);
+  }, [fetchUnpaid, refreshKey, localRefresh]);
 
-  if (loading || orders.length === 0) return null;
+  if (!currentUser) return null;
 
-  // Group by seller. Same-seller orders share a single Pay button.
-  const groups = new Map<
-    string,
-    { sellerId: string; sellerUsername: string; orders: Order[] }
-  >();
+  if (loading) {
+    return (
+      <div className="space-y-4">
+        {Array.from({ length: 2 }).map((_, i) => (
+          <div
+            key={i}
+            className="panel clip-corner h-40 animate-pulse"
+          />
+        ))}
+      </div>
+    );
+  }
+
+  if (orders.length === 0) {
+    return (
+      <div className="panel clip-corner px-6 py-12 text-center">
+        <svg
+          className="mx-auto h-12 w-12 text-[var(--text-dim)]"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={1}
+        >
+          <path
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            d="M3 10h18M5 6h14a2 2 0 012 2v10a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2z"
+          />
+        </svg>
+        <h3 className="mt-3 text-sm font-medium text-[var(--text-primary)]">
+          Nothing awaiting payment
+        </h3>
+        <p className="mt-1 text-sm text-[var(--text-muted)]">
+          Card-pay items you check out will appear here so you can settle them
+          all at once.
+        </p>
+        <Link href="/browse" className="btn-cyber-primary mt-4">
+          Browse Listings
+        </Link>
+      </div>
+    );
+  }
+
+  // Group by seller. Same-seller orders share a single batch Pay button.
+  const groups = new Map<string, { sellerId: string; orders: Order[] }>();
   for (const order of orders) {
     const g = groups.get(order.seller.id);
     if (g) g.orders.push(order);
-    else
-      groups.set(order.seller.id, {
-        sellerId: order.seller.id,
-        sellerUsername: order.seller.username,
-        orders: [order],
-      });
+    else groups.set(order.seller.id, { sellerId: order.seller.id, orders: [order] });
   }
   const groupList = Array.from(groups.values());
   const allOrderIds = orders.map((o) => o.id);
@@ -1392,8 +1428,6 @@ function AwaitingPaymentSection({
           body: JSON.stringify({
             orderIds,
             paymentMethod,
-            // Pass every unpaid CARD orderId so a partial-batch redirect
-            // back to the success page preserves the rest.
             contextOrderIds: allOrderIds,
           }),
         },
@@ -1406,91 +1440,237 @@ function AwaitingPaymentSection({
   }
 
   return (
-    <section
-      className="mb-6 rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)]/30 p-4"
-      aria-label="Orders awaiting payment"
-    >
-      <div className="mb-3">
-        <h2 className="text-sm font-semibold text-[var(--text-primary)]">
-          Awaiting your payment
-        </h2>
-        <p className="text-xs text-[var(--text-muted)]">
-          {orders.length} {orders.length === 1 ? 'item' : 'items'} from{' '}
-          {groupList.length}{' '}
-          {groupList.length === 1 ? 'seller' : 'sellers'} — pay each seller in
+    <div className="space-y-4">
+      <div className="rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)]/40 p-3 text-xs text-[var(--neon-amber)]">
+        <span className="font-semibold">
+          {orders.length} {orders.length === 1 ? 'item' : 'items'}
+        </span>{' '}
+        <span className="text-[var(--text-muted)]">
+          from {groupList.length}{' '}
+          {groupList.length === 1 ? 'seller' : 'sellers'} · pay each seller in
           one redirect.
-        </p>
+        </span>
       </div>
-      <div className="space-y-3">
-        {groupList.map((g) => {
-          const stripeAvailable = g.orders[0]?.seller.paymentAccounts.some(
-            (a) => a.provider === 'STRIPE',
-          );
-          const squareAvailable = g.orders[0]?.seller.paymentAccounts.some(
-            (a) => a.provider === 'SQUARE',
-          );
-          const groupTotal = g.orders.reduce(
-            (s, o) => s + parseFloat(o.amount),
-            0,
-          );
-          return (
-            <div
-              key={g.sellerId}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-panel)] p-3"
+      {groupList.map((g) => (
+        <AwaitingPaymentSellerCard
+          key={g.sellerId}
+          orders={g.orders}
+          currentUserId={currentUser.id}
+          paying={paying === g.sellerId}
+          payDisabled={paying !== null && paying !== g.sellerId}
+          onPay={(pm) => handlePay(g, pm)}
+          onItemChanged={() => setLocalRefresh((k) => k + 1)}
+        />
+      ))}
+      {error && (
+        <p className="text-xs text-[var(--neon-danger)]">{error}</p>
+      )}
+    </div>
+  );
+}
+
+// One rich box per seller: header (seller avatar + username + total + batch
+// Pay buttons), body of item rows with thumbnail, title, price, status pill,
+// per-item Cancel, and an inline View-messages expand.
+function AwaitingPaymentSellerCard({
+  orders,
+  currentUserId,
+  paying,
+  payDisabled,
+  onPay,
+  onItemChanged,
+}: {
+  orders: Order[];
+  currentUserId: string;
+  paying: boolean;
+  payDisabled: boolean;
+  onPay: (paymentMethod: 'STRIPE' | 'SQUARE') => void;
+  onItemChanged: () => void;
+}) {
+  const seller = orders[0].seller;
+  const stripeAvailable = seller.paymentAccounts.some((a) => a.provider === 'STRIPE');
+  const squareAvailable = seller.paymentAccounts.some((a) => a.provider === 'SQUARE');
+  const groupTotal = orders.reduce((s, o) => s + parseFloat(o.amount), 0);
+
+  return (
+    <section className="panel clip-corner overflow-hidden">
+      {/* Header — seller identity + group total + batch Pay buttons. */}
+      <header className="flex flex-wrap items-center gap-3 border-b border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] px-4 py-3">
+        <Avatar src={seller.avatarUrl} username={seller.username} size="sm" />
+        <div className="min-w-0 flex-1">
+          <Link
+            href={`/sellers/${seller.id}`}
+            className="text-sm font-semibold text-[var(--text-primary)] hover:text-[var(--neon-cyan)]"
+          >
+            {seller.username}
+          </Link>
+          <p className="text-[11px] text-[var(--text-muted)]">
+            {orders.length} {orders.length === 1 ? 'item' : 'items'} ·{' '}
+            <span className="font-medium text-[var(--text-primary)]">
+              {formatPrice(groupTotal)}
+            </span>
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {stripeAvailable && (
+            <button
+              onClick={() => onPay('STRIPE')}
+              disabled={payDisabled || paying}
+              className="btn-cyber-primary text-xs"
             >
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium text-[var(--text-primary)]">
-                  {g.sellerUsername}
-                </p>
-                <p className="text-xs text-[var(--text-muted)]">
-                  {g.orders.length}{' '}
-                  {g.orders.length === 1 ? 'item' : 'items'} ·{' '}
-                  {formatPrice(groupTotal)}
-                </p>
-                <p className="mt-1 text-[11px] text-[var(--text-dim)] truncate">
-                  {g.orders.map((o) => o.listing.title).join(' · ')}
-                </p>
-              </div>
-              <div className="flex flex-shrink-0 flex-wrap gap-2">
-                {stripeAvailable && (
-                  <button
-                    onClick={() => handlePay(g, 'STRIPE')}
-                    disabled={paying !== null}
-                    className="btn-cyber-primary text-xs"
-                  >
-                    {paying === g.sellerId
-                      ? 'Redirecting…'
-                      : 'Pay with Stripe'}
-                  </button>
-                )}
-                {squareAvailable && (
-                  <button
-                    onClick={() => handlePay(g, 'SQUARE')}
-                    disabled={paying !== null}
-                    className="btn-cyber-outline text-xs"
-                  >
-                    {paying === g.sellerId
-                      ? 'Redirecting…'
-                      : 'Pay with Square'}
-                  </button>
-                )}
-                {!stripeAvailable && !squareAvailable && (
-                  <span className="text-[11px] text-[var(--text-muted)]">
-                    Seller hasn&apos;t connected a card provider — coordinate via
-                    messages.
-                  </span>
-                )}
-              </div>
+              {paying ? 'Redirecting…' : 'Pay with Stripe'}
+            </button>
+          )}
+          {squareAvailable && (
+            <button
+              onClick={() => onPay('SQUARE')}
+              disabled={payDisabled || paying}
+              className="btn-cyber-outline text-xs"
+            >
+              {paying ? 'Redirecting…' : 'Pay with Square'}
+            </button>
+          )}
+          {!stripeAvailable && !squareAvailable && (
+            <span className="text-[11px] text-[var(--text-muted)]">
+              Seller hasn&apos;t connected a card provider — coordinate via
+              messages.
+            </span>
+          )}
+        </div>
+      </header>
+
+      {/* Body — one row per item with thumbnail, title, price, status, and
+          inline message thread. */}
+      <ul className="divide-y divide-[var(--border-subtle)]">
+        {orders.map((order) => (
+          <AwaitingPaymentItemRow
+            key={order.id}
+            order={order}
+            currentUserId={currentUserId}
+            onChanged={onItemChanged}
+          />
+        ))}
+      </ul>
+    </section>
+  );
+}
+
+function AwaitingPaymentItemRow({
+  order,
+  currentUserId,
+  onChanged,
+}: {
+  order: Order;
+  currentUserId: string;
+  onChanged: () => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const [cancelling, setCancelling] = useState(false);
+  const [error, setError] = useState('');
+  const imageUrl = order.listing.images[0]?.url;
+  const status = ORDER_STATUS_STYLES[order.status];
+
+  async function handleCancel() {
+    if (!confirm('Cancel this item? The listing will be released and you will not be charged.')) return;
+    setCancelling(true);
+    setError('');
+    try {
+      await api(`/api/orders/${order.id}/cancel`, { method: 'PUT' });
+      onChanged();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to cancel');
+    } finally {
+      setCancelling(false);
+    }
+  }
+
+  return (
+    <li className="px-4 py-3">
+      <div className="flex items-center gap-3">
+        <Link
+          href={`/listings/${order.listing.id}`}
+          className="h-14 w-14 flex-shrink-0 overflow-hidden rounded-lg bg-[var(--bg-panel-hi)]"
+        >
+          {imageUrl ? (
+            <img
+              src={imageUrl}
+              alt={order.listing.title}
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full items-center justify-center text-[var(--text-dim)]">
+              <svg
+                className="h-7 w-7"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1}
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
             </div>
-          );
-        })}
+          )}
+        </Link>
+        <div className="min-w-0 flex-1">
+          <Link
+            href={`/listings/${order.listing.id}`}
+            className="block text-sm font-medium text-[var(--text-primary)] truncate hover:text-[var(--neon-cyan)] transition-colors"
+          >
+            {order.listing.title}
+          </Link>
+          <div className="mt-0.5 flex flex-wrap items-center gap-2 text-xs">
+            <span
+              className={`rounded-md px-2 py-0.5 font-medium ${status.bg}`}
+            >
+              {status.label}
+            </span>
+            <span className="text-[var(--text-muted)]">
+              {order.fulfillmentMethod === 'POST' ? 'Post' : 'Pickup'}
+            </span>
+          </div>
+        </div>
+        <div className="flex flex-shrink-0 items-center gap-2 text-right">
+          <p className="text-sm font-bold text-[var(--text-primary)]">
+            {formatPrice(order.amount)}
+          </p>
+          <button
+            onClick={handleCancel}
+            disabled={cancelling}
+            className="btn-cyber-outline text-[11px]"
+          >
+            {cancelling ? 'Cancelling…' : 'Cancel'}
+          </button>
+        </div>
       </div>
       {error && (
-        <p className="mt-2 text-xs text-[var(--neon-danger)]">{error}</p>
+        <p className="mt-1 text-xs text-[var(--neon-danger)]">{error}</p>
       )}
-      {/* Suppress unused-warning for onChange — reserved for future
-          decline/cancel from this section. */}
-      <span className="hidden" aria-hidden onClick={onChange} />
-    </section>
+      <button
+        onClick={() => setExpanded((v) => !v)}
+        className="mt-2 flex items-center gap-1 text-[11px] font-medium text-[var(--text-muted)] hover:text-[var(--text-primary)]"
+      >
+        <span>
+          {expanded ? 'Hide messages' : 'View messages & details'}
+        </span>
+        <svg
+          className={`h-3 w-3 transition-transform ${expanded ? 'rotate-180' : ''}`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
+        </svg>
+      </button>
+      {expanded && (
+        <div className="mt-3 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-3">
+          <MessageThread
+            endpoint={`/api/orders/${order.id}/messages`}
+            currentUserId={currentUserId}
+            otherPartyName={order.seller.username}
+          />
+        </div>
+      )}
+    </li>
   );
 }

@@ -70,7 +70,7 @@ export default function UnpaidPaymentsBanner() {
     <div className="border-b border-[var(--neon-amber)]/40 bg-[var(--tint-amber)]">
       <div className="mx-auto flex max-w-7xl items-center gap-3 px-4 py-2 text-sm">
         <Link
-          href="/dashboard?tab=in_purchases"
+          href="/dashboard?tab=awaiting_payment"
           className="flex-1 text-[var(--neon-amber)] hover:brightness-110"
         >
           <span className="font-semibold">
