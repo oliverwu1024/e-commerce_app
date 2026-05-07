@@ -169,6 +169,13 @@ export type PayInput = z.infer<typeof paySchema>;
 // Batch sibling for paying multiple same-seller orders in one provider
 // session. The route enforces (same buyer, same seller, all CONFIRMED, all
 // CARD, all session=NONE); this schema only validates the wire shape.
+//
+// `contextOrderIds` (optional) is the full set of orderIds the buyer expects
+// to keep tracking on the success page after redirect — typically every
+// order from the originating checkout, not just the ones being paid in this
+// batch. The server uses it as the `?ids=` param on the redirect URL so a
+// multi-seller checkout doesn't lose its other groups after one batch is
+// paid. Falls back to `orderIds` when omitted.
 export const payBatchSchema = z.object({
   orderIds: z
     .array(uuidSchema)
@@ -177,6 +184,10 @@ export const payBatchSchema = z.object({
   paymentMethod: z.enum(['STRIPE', 'SQUARE'], {
     message: 'Payment method must be STRIPE or SQUARE',
   }),
+  contextOrderIds: z
+    .array(uuidSchema)
+    .max(50, 'Too many orderIds in checkout context')
+    .optional(),
 });
 
 export type PayBatchInput = z.infer<typeof payBatchSchema>;

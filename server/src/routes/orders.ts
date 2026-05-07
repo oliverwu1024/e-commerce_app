@@ -1298,8 +1298,16 @@ router.post(
         res.status(400).json({ error: parsed.error.issues[0].message });
         return;
       }
-      const { orderIds, paymentMethod } = parsed.data;
+      const { orderIds, paymentMethod, contextOrderIds } = parsed.data;
       const dedupedIds = Array.from(new Set(orderIds));
+      // Build the redirect's `?ids=` from the full checkout context when
+      // the client supplied it — preserves multi-seller success-page state
+      // after a partial-batch payment. Fallback: just the IDs being paid.
+      // Always make sure the orders being paid are included even if the
+      // client forgot them.
+      const contextIds = Array.from(
+        new Set([...(contextOrderIds ?? dedupedIds), ...dedupedIds]),
+      );
 
       const orders = await prisma.order.findMany({
         where: { id: { in: dedupedIds } },
@@ -1374,10 +1382,12 @@ router.post(
 
       const sellerId = orders[0].sellerId;
       const clientUrl = process.env.CLIENT_URL || 'http://localhost:3000';
-      const idsParam = dedupedIds.join(',');
+      const idsParam = contextIds.join(',');
       // Redirect back into the success page — same surface the buyer just
       // came from. It auto-fires the Square confirm on mount when the
-      // provider hint is set.
+      // provider hint is set. `idsParam` is the FULL checkout context (not
+      // just the batch), so a partial-batch payment doesn't drop the rest
+      // of the buyer's groups from the page.
       const successUrl = `${clientUrl}/checkout/success?ids=${encodeURIComponent(idsParam)}&payment=success`;
       const cancelUrl = `${clientUrl}/checkout/success?ids=${encodeURIComponent(idsParam)}&payment=cancelled`;
 

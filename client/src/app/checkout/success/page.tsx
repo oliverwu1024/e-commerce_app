@@ -34,9 +34,14 @@ type SellerGroup = {
   sellerId: string;
   sellerUsername: string;
   orders: Order[];
+  // Full set of orderIds in this success-page context, threaded through to
+  // /pay/batch so the redirect URL preserves the rest of the buyer's groups
+  // after a partial-batch payment.
+  contextOrderIds: string[];
 };
 
 function groupOrdersBySeller(orders: Order[]): SellerGroup[] {
+  const contextOrderIds = orders.map((o) => o.id);
   const map = new Map<string, SellerGroup>();
   for (const order of orders) {
     const existing = map.get(order.seller.id);
@@ -47,6 +52,7 @@ function groupOrdersBySeller(orders: Order[]): SellerGroup[] {
         sellerId: order.seller.id,
         sellerUsername: order.seller.username,
         orders: [order],
+        contextOrderIds,
       });
     }
   }
@@ -285,7 +291,14 @@ function SellerGroupSection({ group }: { group: SellerGroup }) {
         '/api/orders/pay/batch',
         {
           method: 'POST',
-          body: JSON.stringify({ orderIds, paymentMethod }),
+          body: JSON.stringify({
+            orderIds,
+            paymentMethod,
+            // Pass through the full set so the redirect URL preserves any
+            // other seller-groups still awaiting payment after this batch
+            // completes.
+            contextOrderIds: group.contextOrderIds,
+          }),
         },
       );
       window.location.assign(res.url);
