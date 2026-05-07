@@ -114,14 +114,24 @@ function CheckoutSuccess() {
   // the order. We retry up to a few times with short delays before giving
   // up, mirroring the existing single-order pattern in the dashboard.
   const [squarePending, setSquarePending] = useState(false);
+  const [squareError, setSquareError] = useState<string | null>(null);
   useEffect(() => {
     if (squareConfirmFired.current) return;
     if (provider !== 'square' || payment !== 'success') return;
     if (loading || orders.length === 0) return;
-    // Only confirm orders that are still CONFIRMED — any post-payment ones
-    // already settled (likely from a previous tab refresh).
+    // Only confirm orders that actually have a live Square session — these
+    // have paymentSessionState=PENDING from /pay/batch. The full URL
+    // `ids=…` may include orders from OTHER seller-groups the buyer hasn't
+    // paid yet (those have paymentSessionState=NONE); sending those to
+    // /pay/square/confirm/batch would fail the same-seller invariant and
+    // 400 the whole batch.
     const cardConfirmable = orders
-      .filter((o) => o.paymentFlow === 'CARD' && o.status === 'CONFIRMED')
+      .filter(
+        (o) =>
+          o.paymentFlow === 'CARD' &&
+          o.status === 'CONFIRMED' &&
+          o.paymentSessionState === 'PENDING',
+      )
       .map((o) => o.id);
     if (cardConfirmable.length === 0) return;
     squareConfirmFired.current = true;
@@ -155,29 +165,43 @@ function CheckoutSuccess() {
       // Up to 3 attempts with backoff so a slow Square Sandbox surfacing
       // doesn't strand the buyer with paid-on-Square / not-paid-here.
       const delays = [0, 1500, 3000];
+      let pendingAtEnd = false;
       for (const delay of delays) {
         if (delay > 0) await new Promise((r) => setTimeout(r, delay));
         try {
           const result = await doConfirm();
           if (!result.ok && !result.pending) {
+            // 4xx/5xx that isn't 202 — a real error, surface it instead of
+            // pretending the payment is still pending.
             console.warn('Square batch confirm failed:', result.error);
-            break;
+            setSquareError(
+              result.error ||
+                'Square confirmation failed. Refresh in a minute or contact support.',
+            );
+            await fetchOrders();
+            return;
           }
           if (!result.pending) {
-            // Server flipped the orders — refresh to reflect.
             await fetchOrders();
             setSquarePending(false);
             return;
           }
+          pendingAtEnd = true;
         } catch (err) {
           console.warn('Square batch confirm errored:', err);
-          break;
+          setSquareError(
+            err instanceof Error ? err.message : 'Square confirmation failed',
+          );
+          await fetchOrders();
+          return;
         }
       }
       // All retries returned pending — surface honestly so the buyer doesn't
       // think their order is paid when our DB doesn't agree yet.
-      setSquarePending(true);
-      await fetchOrders();
+      if (pendingAtEnd) {
+        setSquarePending(true);
+        await fetchOrders();
+      }
     })();
   }, [provider, payment, loading, orders, fetchOrders]);
 
@@ -217,6 +241,12 @@ function CheckoutSuccess() {
               — once Square reports the capture, the orders will flip to Paid
               automatically.
             </span>
+          </div>
+        )}
+        {squareError && (
+          <div className="mb-6 rounded-lg border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-3 text-sm text-[var(--neon-danger)]">
+            <span className="font-semibold">Square confirmation error.</span>{' '}
+            <span>{squareError}</span>
           </div>
         )}
 
