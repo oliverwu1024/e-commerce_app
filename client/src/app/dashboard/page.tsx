@@ -1491,6 +1491,44 @@ function AwaitingPaymentSellerCard({
   const stripeAvailable = seller.paymentAccounts.some((a) => a.provider === 'STRIPE');
   const squareAvailable = seller.paymentAccounts.some((a) => a.provider === 'SQUARE');
   const groupTotal = orders.reduce((s, o) => s + parseFloat(o.amount), 0);
+  // A live provider session locks all the orders in the batch with
+  // paymentSessionState=PENDING. While that's set the server refuses a
+  // fresh /pay call ("payment already in progress"), so the UI must offer
+  // a way to release the lock — covers buyers who closed the Stripe/Square
+  // tab without finishing.
+  const pendingOrderIds = orders
+    .filter((o) => o.paymentSessionState === 'PENDING')
+    .map((o) => o.id);
+  const sessionPending = pendingOrderIds.length > 0;
+  const [releasing, setReleasing] = useState(false);
+  const [releaseError, setReleaseError] = useState('');
+
+  async function handleReleaseLock() {
+    if (
+      !confirm(
+        'Release the payment lock?\n\nOnly do this if you closed the payment tab without completing. If your payment actually went through, releasing the lock here will not refund it — contact support instead.',
+      )
+    ) {
+      return;
+    }
+    setReleasing(true);
+    setReleaseError('');
+    try {
+      // Per-order endpoint; we settle them one by one. The endpoint is
+      // idempotent and 409s if the order isn't actually PENDING, so a
+      // partial-failure mid-loop just leaves the rest in their right state.
+      await Promise.all(
+        pendingOrderIds.map((id) =>
+          api(`/api/orders/${id}/pay/abandon`, { method: 'POST' }).catch(() => null),
+        ),
+      );
+      onItemChanged();
+    } catch (err) {
+      setReleaseError(err instanceof Error ? err.message : 'Failed to release lock');
+    } finally {
+      setReleasing(false);
+    }
+  }
 
   return (
     <section className="panel clip-corner overflow-hidden">
@@ -1512,32 +1550,57 @@ function AwaitingPaymentSellerCard({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          {stripeAvailable && (
+          {sessionPending ? (
             <button
-              onClick={() => onPay('STRIPE')}
-              disabled={payDisabled || paying}
-              className="btn-cyber-primary text-xs"
+              onClick={handleReleaseLock}
+              disabled={releasing}
+              className="rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] px-3 py-1.5 text-xs font-medium text-[var(--neon-amber)] hover:brightness-110 disabled:opacity-50 transition-colors"
             >
-              {paying ? 'Redirecting…' : 'Pay with Stripe'}
+              {releasing ? 'Releasing…' : 'Release lock'}
             </button>
-          )}
-          {squareAvailable && (
-            <button
-              onClick={() => onPay('SQUARE')}
-              disabled={payDisabled || paying}
-              className="btn-cyber-outline text-xs"
-            >
-              {paying ? 'Redirecting…' : 'Pay with Square'}
-            </button>
-          )}
-          {!stripeAvailable && !squareAvailable && (
-            <span className="text-[11px] text-[var(--text-muted)]">
-              Seller hasn&apos;t connected a card provider — coordinate via
-              messages.
-            </span>
+          ) : (
+            <>
+              {stripeAvailable && (
+                <button
+                  onClick={() => onPay('STRIPE')}
+                  disabled={payDisabled || paying}
+                  className="btn-cyber-primary text-xs"
+                >
+                  {paying ? 'Redirecting…' : 'Pay with Stripe'}
+                </button>
+              )}
+              {squareAvailable && (
+                <button
+                  onClick={() => onPay('SQUARE')}
+                  disabled={payDisabled || paying}
+                  className="btn-cyber-outline text-xs"
+                >
+                  {paying ? 'Redirecting…' : 'Pay with Square'}
+                </button>
+              )}
+              {!stripeAvailable && !squareAvailable && (
+                <span className="text-[11px] text-[var(--text-muted)]">
+                  Seller hasn&apos;t connected a card provider — coordinate via
+                  messages.
+                </span>
+              )}
+            </>
           )}
         </div>
       </header>
+
+      {sessionPending && (
+        <div className="border-b border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] px-4 py-2 text-xs text-[var(--neon-amber)]">
+          Payment in progress. If you closed the payment tab without
+          completing, click{' '}
+          <span className="font-medium">Release lock</span> to try again.
+        </div>
+      )}
+      {releaseError && (
+        <div className="border-b border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] px-4 py-2 text-xs text-[var(--neon-danger)]">
+          {releaseError}
+        </div>
+      )}
 
       {/* Body — one row per item with thumbnail, title, price, status, and
           inline message thread. */}
@@ -1569,6 +1632,10 @@ function AwaitingPaymentItemRow({
   const [error, setError] = useState('');
   const imageUrl = order.listing.images[0]?.url;
   const status = ORDER_STATUS_STYLES[order.status];
+  // Server's /cancel refuses while a payment session is in flight; mirror
+  // that here so the button shows disabled instead of throwing a 409 toast.
+  const cancelDisabled =
+    cancelling || order.paymentSessionState === 'PENDING';
 
   async function handleCancel() {
     if (!confirm('Cancel this item? The listing will be released and you will not be charged.')) return;
@@ -1635,8 +1702,13 @@ function AwaitingPaymentItemRow({
           </p>
           <button
             onClick={handleCancel}
-            disabled={cancelling}
-            className="btn-cyber-outline text-[11px]"
+            disabled={cancelDisabled}
+            title={
+              order.paymentSessionState === 'PENDING'
+                ? 'Release the payment lock first'
+                : undefined
+            }
+            className="btn-cyber-outline text-[11px] disabled:opacity-50"
           >
             {cancelling ? 'Cancelling…' : 'Cancel'}
           </button>
