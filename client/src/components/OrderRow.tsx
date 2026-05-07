@@ -527,9 +527,22 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
   }
 
   const otherPartyLabel = role === 'buyer' ? 'Seller' : 'Buyer';
+  // Seller-side "needs your action" highlight — applies to states where the
+  // seller has the next move (confirm or ship). Float-to-top sorting in
+  // OrdersTab puts these rows first; the visual cue here makes them obvious
+  // even when scrolling past non-actionable rows.
+  const sellerNeedsAction =
+    role === 'seller' &&
+    (order.status === 'PENDING_CONFIRMATION' || order.status === 'PAID');
 
   return (
-    <div className="panel clip-corner overflow-hidden">
+    <div
+      className={`panel clip-corner overflow-hidden ${
+        sellerNeedsAction
+          ? 'border-l-4 border-l-[var(--neon-amber)]'
+          : ''
+      }`}
+    >
       {/* Header */}
       <div className="flex items-center gap-4 p-4">
         <Link
@@ -562,6 +575,18 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             <span className={`rounded-md px-2 py-0.5 font-medium ${statusStyle.bg}`}>
               {statusStyle.label}
             </span>
+            {sellerNeedsAction && (
+              <span
+                className="rounded-md border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] px-2 py-0.5 font-medium text-[var(--neon-amber)]"
+                title={
+                  order.status === 'PENDING_CONFIRMATION'
+                    ? 'Confirm or decline this order'
+                    : 'Mark this order as shipped'
+                }
+              >
+                ● Needs action
+              </span>
+            )}
             {partialRefundIssued && (
               <span
                 className="rounded-md border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] px-2 py-0.5 font-medium text-[var(--neon-amber)]"

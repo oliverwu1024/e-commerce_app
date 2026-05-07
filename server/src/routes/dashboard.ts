@@ -24,6 +24,7 @@ router.get('/tab-counts', authenticate, async (req: Request, res: Response) => {
     const [
       activeListings,
       inSales,
+      actionableSales,
       disputedSales,
       saved,
       inPurchases,
@@ -44,6 +45,19 @@ router.get('/tab-counts', authenticate, async (req: Request, res: Response) => {
         where: {
           sellerId: userId,
           status: { in: ['PENDING_CONFIRMATION', 'CONFIRMED', 'PAID', 'SHIPPED'] },
+          dispute: { is: null },
+        },
+      }),
+      // Selling — Actionable subset (seller has something to do RIGHT NOW):
+      //   PENDING_CONFIRMATION → confirm or decline
+      //   PAID                 → ship the item
+      // CONFIRMED (waiting on buyer to pay) and SHIPPED (waiting on buyer
+      // to receive) are the buyer's move and don't count here. Drives the
+      // dashboard banner copy "X orders need your action".
+      prisma.order.count({
+        where: {
+          sellerId: userId,
+          status: { in: ['PENDING_CONFIRMATION', 'PAID'] },
           dispute: { is: null },
         },
       }),
@@ -97,6 +111,9 @@ router.get('/tab-counts', authenticate, async (req: Request, res: Response) => {
       selling: {
         active: activeListings,
         in_progress: inSales,
+        // Subset of in_progress that requires the seller's action — drives
+        // the dashboard banner copy "X orders need your action".
+        actionable: actionableSales,
         disputed: disputedSales,
       },
       buying: {

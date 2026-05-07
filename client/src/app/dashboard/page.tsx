@@ -104,7 +104,16 @@ const COUNTLESS_TABS: ReadonlySet<Tab> = new Set([
 ]);
 
 type TabCounts = {
-  selling: { active: number; in_progress: number; disputed: number };
+  // `actionable` is the subset of in_progress that requires the seller's
+  // direct action (PENDING_CONFIRMATION + PAID). Drives the dashboard
+  // banner copy; the In Progress tab badge keeps the broad in_progress
+  // count so the badge still reflects what the tab actually contains.
+  selling: {
+    active: number;
+    in_progress: number;
+    actionable: number;
+    disputed: number;
+  };
   buying: { saved: number; in_progress: number; disputed: number };
   // Aggregate over the buyer's unpaid CARD orders. Drives the dashboard
   // banner + the "N to pay" pill on the In Progress tab so the cue is
@@ -511,9 +520,12 @@ function DashboardActionBanners({
 }) {
   if (!counts) return null;
   const unpaid = counts.unpaidCard;
-  const inSales = counts.selling.in_progress;
+  // Banner uses the actionable subset, not the broad in_progress count, so
+  // shipped + waiting-on-buyer orders don't make the seller feel like they
+  // have work to do when they don't.
+  const actionableSales = counts.selling.actionable;
   const showBuyer = unpaid.count > 0;
-  const showSeller = inSales > 0;
+  const showSeller = actionableSales > 0;
   if (!showBuyer && !showSeller) return null;
   const unpaidTotal = (unpaid.totalCents / 100).toFixed(2);
   return (
@@ -540,10 +552,11 @@ function DashboardActionBanners({
           className="w-full rounded-lg border border-[var(--neon-cyan)]/40 bg-[var(--tint-cyan)] p-3 text-left text-sm text-[var(--neon-cyan)] hover:brightness-110 transition-colors"
         >
           <span className="font-semibold">
-            {inSales} {inSales === 1 ? 'sale' : 'sales'} in progress
+            {actionableSales} {actionableSales === 1 ? 'order' : 'orders'} need
+            your action
           </span>{' '}
           <span className="text-[var(--text-muted)]">
-            · click to review
+            · confirm or ship · click to review
           </span>
         </button>
       )}
@@ -1196,7 +1209,28 @@ function OrdersTab({
         const data = await api<OrderListResponse>(
           `/api/orders/${endpoint}?${params.toString()}`,
         );
-        setOrders(data.orders);
+        let nextOrders = data.orders;
+        // For the seller's In Progress tab, float actionable rows
+        // (PENDING_CONFIRMATION + PAID) to the top so the buyer can scan
+        // for "what do I need to do" without scrolling. Caveat: this is
+        // a per-page sort — at 10/page, a seller with many in-flight
+        // orders could still have actionable rows on later pages. Worth
+        // server-side sorting later if it becomes a real issue.
+        if (role === 'seller' && bucket === 'in_progress') {
+          const actionableSet = new Set(['PENDING_CONFIRMATION', 'PAID']);
+          nextOrders = [...nextOrders].sort((a, b) => {
+            const aActionable = actionableSet.has(a.status) ? 0 : 1;
+            const bActionable = actionableSet.has(b.status) ? 0 : 1;
+            if (aActionable !== bActionable) return aActionable - bActionable;
+            // Within each group, oldest first so the longest-waiting
+            // actionable row is at the very top.
+            return (
+              new Date(a.createdAt).getTime() -
+              new Date(b.createdAt).getTime()
+            );
+          });
+        }
+        setOrders(nextOrders);
         setPagination(data.pagination);
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load orders');
