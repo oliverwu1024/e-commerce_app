@@ -125,7 +125,6 @@ function CheckoutSuccess() {
         // 202 = "Square hasn't captured yet" — surface a hint and let the
         // user click pay again. Most other errors are also recoverable
         // by re-clicking the pay button on a failed batch.
-        // eslint-disable-next-line no-console
         console.warn('Square batch confirm pending or failed:', err);
       }
     })();
@@ -289,7 +288,7 @@ function SellerGroupSection({ group }: { group: SellerGroup }) {
           body: JSON.stringify({ orderIds, paymentMethod }),
         },
       );
-      window.location.href = res.url;
+      window.location.assign(res.url);
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to start payment');
       setPaying(false);
