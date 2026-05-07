@@ -58,12 +58,15 @@ router.get('/tab-counts', authenticate, async (req: Request, res: Response) => {
       prisma.savedListing.count({
         where: { userId },
       }),
-      // Buying — In Progress (no active dispute)
+      // Buying — In Progress (no active dispute, excluding unpaid CARD which
+      // live in their own Awaiting Payment tab so the badge matches what the
+      // tab actually renders).
       prisma.order.count({
         where: {
           buyerId: userId,
           status: { in: ['PENDING_CONFIRMATION', 'CONFIRMED', 'PAID', 'SHIPPED'] },
           dispute: { is: null },
+          NOT: [{ status: 'CONFIRMED', paymentFlow: 'CARD' }],
         },
       }),
       // Buying — In Dispute
