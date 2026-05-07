@@ -447,27 +447,24 @@ function TrustIcon({ name }: { name: string }) {
    texture so tiles read as editorial rather than flat blocks.
    ================================================================ */
 type CategoryTheme = {
-  from: string;
-  to: string;
-  accent: string;            // soft glow colour
+  slug: string;              // selects per-category CSS vars defined in globals.css
   pattern: 'dots' | 'grid' | 'lines' | 'circuit';
 };
 
-// Monochromatic-per-category gradients: single hue family per tile,
-// quieter saturation so they sit alongside the site's sky-blue palette
-// instead of fighting it. From → to is light-ish 600 → dark 900 of the
-// same family (with closely related hues for warm tiles).
+// Theme-aware: actual colours live in globals.css under --cat-{slug}-{from,to,fg,accent}
+// so light mode can use soft pastels with tinted text, and dark mode keeps
+// the saturated single-hue gradients with white text.
 const CATEGORY_THEMES: Record<string, CategoryTheme> = {
-  Phones:                 { from: '#0284c7', to: '#0c4a6e', accent: '#7dd3fc', pattern: 'dots' },
-  Laptops:                { from: '#0d9488', to: '#064e3b', accent: '#5eead4', pattern: 'grid' },
-  Desktops:               { from: '#4f46e5', to: '#312e81', accent: '#a5b4fc', pattern: 'grid' },
-  Tablets:                { from: '#2563eb', to: '#1e3a8a', accent: '#93c5fd', pattern: 'dots' },
-  Consoles:               { from: '#7c3aed', to: '#4c1d95', accent: '#c4b5fd', pattern: 'circuit' },
-  Cameras:                { from: '#ea580c', to: '#9f1239', accent: '#fdba74', pattern: 'lines' },
-  Audio:                  { from: '#9333ea', to: '#581c87', accent: '#d8b4fe', pattern: 'lines' },
-  'Computer Accessories': { from: '#475569', to: '#0f172a', accent: '#94a3b8', pattern: 'grid' },
-  'Mobile Accessories':   { from: '#e11d48', to: '#881337', accent: '#fda4af', pattern: 'dots' },
-  'PC Parts':             { from: '#dc2626', to: '#7f1d1d', accent: '#fca5a5', pattern: 'circuit' },
+  Phones:                 { slug: 'phones',     pattern: 'dots' },
+  Laptops:                { slug: 'laptops',    pattern: 'grid' },
+  Desktops:               { slug: 'desktops',   pattern: 'grid' },
+  Tablets:                { slug: 'tablets',    pattern: 'dots' },
+  Consoles:               { slug: 'consoles',   pattern: 'circuit' },
+  Cameras:                { slug: 'cameras',    pattern: 'lines' },
+  Audio:                  { slug: 'audio',      pattern: 'lines' },
+  'Computer Accessories': { slug: 'comp-acc',   pattern: 'grid' },
+  'Mobile Accessories':   { slug: 'mob-acc',    pattern: 'dots' },
+  'PC Parts':             { slug: 'pc-parts',   pattern: 'circuit' },
 };
 
 function patternBg(pattern: CategoryTheme['pattern']): string {
@@ -532,43 +529,42 @@ function CategoryTile({
   const theme = CATEGORY_THEMES[cat] ?? CATEGORY_THEMES.Phones;
   const isLarge = size === 'large';
   const isSmall = size === 'small';
+  const slug = theme.slug;
 
   return (
     <Link
       href={`/browse?category=${encodeURIComponent(cat)}`}
       aria-label={`Browse ${cat}`}
-      className={`group clip-corner-sm relative block h-full min-h-[140px] overflow-hidden border border-white/10 shadow-[0_4px_20px_-8px_rgba(0,0,0,0.25)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:border-white/30 hover:shadow-[0_12px_36px_-12px_rgba(0,0,0,0.35)] ${className}`}
+      className={`group clip-corner-sm relative block h-full min-h-[140px] overflow-hidden border shadow-[0_4px_18px_-10px_rgba(15,23,42,0.20)] transition-all duration-300 ease-out hover:-translate-y-0.5 hover:shadow-[0_14px_34px_-14px_rgba(15,23,42,0.32)] ${className}`}
       style={{
-        backgroundImage: `linear-gradient(135deg, ${theme.from} 0%, ${theme.to} 100%)`,
+        backgroundImage: `linear-gradient(135deg, var(--cat-${slug}-from) 0%, var(--cat-${slug}-to) 100%)`,
+        color: `var(--cat-${slug}-fg)`,
+        borderColor: 'var(--cat-tile-border)',
       }}
     >
-      {/* Pattern overlay */}
+      {/* Pattern overlay — hidden in light mode (var=0), shown in dark */}
       <div
         aria-hidden="true"
-        className="absolute inset-0 opacity-90 transition-opacity duration-500 group-hover:opacity-100"
-        style={{ backgroundImage: patternBg(theme.pattern) }}
+        className="absolute inset-0 transition-opacity duration-500"
+        style={{
+          backgroundImage: patternBg(theme.pattern),
+          opacity: `var(--cat-pattern-opacity)`,
+        }}
       />
 
       {/* Soft radial spotlight — adds depth, brightens on hover */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute -right-1/4 -top-1/3 h-[140%] w-[80%] rounded-full opacity-40 blur-3xl transition-opacity duration-500 group-hover:opacity-70"
-        style={{ backgroundColor: theme.accent }}
+        className="pointer-events-none absolute -right-1/4 -top-1/3 h-[140%] w-[80%] rounded-full opacity-40 blur-3xl transition-opacity duration-500 group-hover:opacity-65"
+        style={{ backgroundColor: `var(--cat-${slug}-accent)` }}
       />
 
-      {/* Bottom dark vignette for label legibility on big tiles */}
-      {!isSmall && (
-        <div
-          aria-hidden="true"
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-gradient-to-t from-black/45 via-black/15 to-transparent"
-        />
-      )}
-
-      {/* Watermark icon (large + medium): big, off-canvas-ish, behind the label */}
+      {/* Watermark icon (large + medium): big, off-canvas-ish, behind the label.
+          Uses currentColor (= category fg var) so it tints with the theme. */}
       {!isSmall && (
         <CategoryIcon
           category={cat}
-          className={`pointer-events-none absolute text-white/95 drop-shadow-[0_4px_18px_rgba(0,0,0,0.35)] transition-transform duration-500 ease-out group-hover:scale-105 group-hover:rotate-[3deg] ${
+          className={`pointer-events-none absolute opacity-90 transition-transform duration-500 ease-out group-hover:scale-105 group-hover:rotate-[3deg] ${
             isLarge
               ? '-right-3 -top-2 h-44 w-44 sm:h-56 sm:w-56'
               : '-right-1 top-3 h-20 w-20 sm:h-24 sm:w-24'
@@ -586,23 +582,23 @@ function CategoryTile({
           <>
             <CategoryIcon
               category={cat}
-              className="h-9 w-9 text-white drop-shadow-[0_2px_8px_rgba(0,0,0,0.4)] transition-transform duration-300 group-hover:scale-110"
+              className="h-9 w-9 transition-transform duration-300 group-hover:scale-110"
             />
-            <p className="text-sm font-bold leading-tight text-white drop-shadow-[0_1px_2px_rgba(0,0,0,0.45)]">
+            <p className="text-sm font-bold leading-tight">
               {cat}
             </p>
           </>
         ) : (
           <div>
             <p
-              className={`font-bold tracking-tight text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.45)] ${
+              className={`font-bold tracking-tight ${
                 isLarge ? 'text-3xl sm:text-4xl' : 'text-base sm:text-lg'
               }`}
             >
               {cat}
             </p>
             <p
-              className={`mt-1.5 inline-flex items-center gap-1 font-extrabold uppercase tracking-[0.18em] text-white/85 transition-colors group-hover:text-white ${
+              className={`mt-1.5 inline-flex items-center gap-1 font-extrabold uppercase tracking-[0.18em] opacity-75 transition-opacity group-hover:opacity-100 ${
                 isLarge ? 'text-xs sm:text-[13px]' : 'text-[10px] sm:text-[11px]'
               }`}
             >

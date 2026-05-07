@@ -487,3 +487,43 @@ html.dark .hero-glow {
       transparent 55%
     );
 }
+
+/* ============================================================
+   CATEGORY BENTO PALETTE
+   Per-category gradient + foreground colours, theme-aware.
+   Light = soft pastels with deep tinted text.
+   Dark  = saturated single-hue gradients with white text.
+   The pattern overlay is hidden in light mode (gradient alone
+   carries the look) and shown in dark mode for added texture.
+   ============================================================ */
+:root {
+  --cat-pattern-opacity: 0;
+  --cat-tile-border: rgba(15, 23, 42, 0.06);
+
+  --cat-phones-from: #e0f2fe;  --cat-phones-to: #7dd3fc;  --cat-phones-fg: #0c4a6e;  --cat-phones-accent: #38bdf8;
+  --cat-laptops-from: #ccfbf1; --cat-laptops-to: #5eead4; --cat-laptops-fg: #064e3b; --cat-laptops-accent: #14b8a6;
+  --cat-desktops-from: #e0e7ff; --cat-desktops-to: #a5b4fc; --cat-desktops-fg: #312e81; --cat-desktops-accent: #6366f1;
+  --cat-tablets-from: #dbeafe; --cat-tablets-to: #93c5fd; --cat-tablets-fg: #1e3a8a; --cat-tablets-accent: #3b82f6;
+  --cat-consoles-from: #ede9fe; --cat-consoles-to: #c4b5fd; --cat-consoles-fg: #4c1d95; --cat-consoles-accent: #8b5cf6;
+  --cat-cameras-from: #ffedd5; --cat-cameras-to: #fdba74; --cat-cameras-fg: #7c2d12; --cat-cameras-accent: #f97316;
+  --cat-audio-from: #f3e8ff; --cat-audio-to: #d8b4fe; --cat-audio-fg: #581c87; --cat-audio-accent: #a855f7;
+  --cat-comp-acc-from: #f1f5f9; --cat-comp-acc-to: #cbd5e1; --cat-comp-acc-fg: #1e293b; --cat-comp-acc-accent: #64748b;
+  --cat-mob-acc-from: #ffe4e6; --cat-mob-acc-to: #fda4af; --cat-mob-acc-fg: #881337; --cat-mob-acc-accent: #f43f5e;
+  --cat-pc-parts-from: #fee2e2; --cat-pc-parts-to: #fca5a5; --cat-pc-parts-fg: #7f1d1d; --cat-pc-parts-accent: #ef4444;
+}
+
+html.dark {
+  --cat-pattern-opacity: 0.9;
+  --cat-tile-border: rgba(255, 255, 255, 0.10);
+
+  --cat-phones-from: #0284c7;  --cat-phones-to: #0c4a6e;  --cat-phones-fg: #ffffff;  --cat-phones-accent: #7dd3fc;
+  --cat-laptops-from: #0d9488; --cat-laptops-to: #064e3b; --cat-laptops-fg: #ffffff; --cat-laptops-accent: #5eead4;
+  --cat-desktops-from: #4f46e5; --cat-desktops-to: #312e81; --cat-desktops-fg: #ffffff; --cat-desktops-accent: #a5b4fc;
+  --cat-tablets-from: #2563eb; --cat-tablets-to: #1e3a8a; --cat-tablets-fg: #ffffff; --cat-tablets-accent: #93c5fd;
+  --cat-consoles-from: #7c3aed; --cat-consoles-to: #4c1d95; --cat-consoles-fg: #ffffff; --cat-consoles-accent: #c4b5fd;
+  --cat-cameras-from: #ea580c; --cat-cameras-to: #9f1239; --cat-cameras-fg: #ffffff; --cat-cameras-accent: #fdba74;
+  --cat-audio-from: #9333ea; --cat-audio-to: #581c87; --cat-audio-fg: #ffffff; --cat-audio-accent: #d8b4fe;
+  --cat-comp-acc-from: #475569; --cat-comp-acc-to: #0f172a; --cat-comp-acc-fg: #ffffff; --cat-comp-acc-accent: #94a3b8;
+  --cat-mob-acc-from: #e11d48; --cat-mob-acc-to: #881337; --cat-mob-acc-fg: #ffffff; --cat-mob-acc-accent: #fda4af;
+  --cat-pc-parts-from: #dc2626; --cat-pc-parts-to: #7f1d1d; --cat-pc-parts-fg: #ffffff; --cat-pc-parts-accent: #fca5a5;
+}
