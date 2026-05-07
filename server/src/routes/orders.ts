@@ -1616,10 +1616,12 @@ router.post(
             idempotencyKey: randomUUID(),
             order: {
               locationId: sellerAccount.locationId,
-              // referenceId is comma-joined so the legacy search-by-reference
-              // fallback in confirm can still match; the primary path uses
-              // the stashed Square order ID anyway.
-              referenceId: dedupedIds.join(','),
+              // Square caps reference_id at 40 chars, so we can't comma-join
+              // a batch of UUIDs. Use the first orderId (36 chars) as the
+              // anchor; the primary confirm path uses the stashed
+              // paymentProviderId anyway, and the search fallback below
+              // still finds the batch by matching this anchor.
+              referenceId: dedupedIds[0],
               lineItems: squareLineItems,
             },
             checkoutOptions: { redirectUrl: squareRedirect },
@@ -2360,14 +2362,17 @@ router.post(
         }
       }
       if (!matching) {
-        // Fallback: search by reference (we stash comma-joined orderIds at
-        // /pay/batch so the search can recognise the batch).
-        const referenceMatch = dedupedIds.join(',');
+        // Fallback: search by reference. We anchored the batch on
+        // dedupedIds[0] at /pay/batch since Square caps reference_id at 40
+        // chars; matching any of our batch orderIds finds the same Square
+        // order. Belt-and-braces against the primary path failing in
+        // Sandbox where stashed orderIds occasionally drop.
         const search = await sellerSquare.orders.search({
           locationIds: [sellerAccount.locationId],
         });
+        const orderIdSet = new Set(dedupedIds);
         matching = search.orders?.find(
-          (o) => o.referenceId === referenceMatch,
+          (o) => o.referenceId != null && orderIdSet.has(o.referenceId),
         ) as SquareOrderShape | undefined;
         if (!matching) {
           res.status(202).json({ pending: true });
