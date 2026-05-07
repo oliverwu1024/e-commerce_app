@@ -476,12 +476,18 @@ async function listOrders(
       res.status(400).json({ error: parsed.error.issues[0].message });
       return;
     }
-    const { page, limit, status, bucket, paymentFlow } = parsed.data;
+    const { page, limit, status, bucket, paymentFlow, excludeUnpaidCard } = parsed.data;
     const skip = (page - 1) * limit;
 
     const where: Prisma.OrderWhereInput =
       role === 'seller' ? { sellerId: req.userId! } : { buyerId: req.userId! };
     if (paymentFlow) where.paymentFlow = paymentFlow;
+    // De-duplicate unpaid CARD orders: when the buyer's flat in-progress
+    // list passes excludeUnpaidCard=true, drop CONFIRMED+CARD rows since
+    // they live in the dedicated "Awaiting your payment" section.
+    if (excludeUnpaidCard) {
+      where.NOT = [{ status: 'CONFIRMED', paymentFlow: 'CARD' }];
+    }
     // An "active dispute" is one the buyer can still act on — OPEN, or
     // RESOLVED_BY_SELLER (because reopen is possible). Once a dispute hits
     // RESOLVED_REFUND/RESOLVED_NO_REFUND/WITHDRAWN it's done and the order

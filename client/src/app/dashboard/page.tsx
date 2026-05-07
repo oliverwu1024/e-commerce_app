@@ -513,7 +513,7 @@ function DashboardActionBanners({
           className="w-full rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] p-3 text-left text-sm text-[var(--neon-amber)] hover:brightness-110 transition-colors"
         >
           <span className="font-semibold">
-            {unpaid.count} {unpaid.count === 1 ? 'order' : 'orders'} awaiting your
+            {unpaid.count} {unpaid.count === 1 ? 'item' : 'items'} awaiting your
             payment
           </span>{' '}
           <span className="text-[var(--text-muted)]">
@@ -1176,6 +1176,11 @@ function OrdersTab({
           limit: '10',
           bucket,
         });
+        // Buyer + in_progress: hide unpaid CARD rows so they only appear in
+        // the dedicated "Awaiting your payment" section above the list.
+        if (role === 'buyer' && bucket === 'in_progress') {
+          params.set('excludeUnpaidCard', 'true');
+        }
         const data = await api<OrderListResponse>(
           `/api/orders/${endpoint}?${params.toString()}`,
         );
@@ -1187,7 +1192,7 @@ function OrdersTab({
         setLoading(false);
       }
     },
-    [endpoint, bucket],
+    [endpoint, bucket, role],
   );
 
   // Reset to page 1 when the bucket switches (e.g. user clicks Past Sales
@@ -1410,7 +1415,7 @@ function AwaitingPaymentSection({
           Awaiting your payment
         </h2>
         <p className="text-xs text-[var(--text-muted)]">
-          {orders.length} {orders.length === 1 ? 'order' : 'orders'} across{' '}
+          {orders.length} {orders.length === 1 ? 'item' : 'items'} from{' '}
           {groupList.length}{' '}
           {groupList.length === 1 ? 'seller' : 'sellers'} — pay each seller in
           one redirect.
@@ -1439,7 +1444,7 @@ function AwaitingPaymentSection({
                 </p>
                 <p className="text-xs text-[var(--text-muted)]">
                   {g.orders.length}{' '}
-                  {g.orders.length === 1 ? 'order' : 'orders'} ·{' '}
+                  {g.orders.length === 1 ? 'item' : 'items'} ·{' '}
                   {formatPrice(groupTotal)}
                 </p>
                 <p className="mt-1 text-[11px] text-[var(--text-dim)] truncate">

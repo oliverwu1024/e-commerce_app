@@ -115,6 +115,11 @@ export const orderListQuerySchema = z.object({
   // payment" section to fetch unpaid CARD orders independent of the
   // chronological in-progress page.
   paymentFlow: z.enum(['CARD', 'OFFLINE']).optional(),
+  // Hide unpaid-CARD orders (status=CONFIRMED && paymentFlow=CARD) from
+  // the result. The dashboard's chronological flat list passes true so
+  // those orders only appear in the dedicated "Awaiting your payment"
+  // section instead of being rendered twice.
+  excludeUnpaidCard: z.coerce.boolean().optional(),
   // Convenience filter for the dashboard's "In Progress" / "Past" / "In
   // Dispute" tabs.
   //   'in_progress' — order is live (not COMPLETED/CANCELLED/REFUNDED) AND

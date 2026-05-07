@@ -5,6 +5,7 @@ import AuthProvider from "@/components/AuthProvider";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
 import OnboardingTour from "@/components/OnboardingTour";
+import UnpaidPaymentsBanner from "@/components/UnpaidPaymentsBanner";
 
 const orbitron = Orbitron({
   variable: "--font-orbitron",
@@ -69,6 +70,7 @@ export default function RootLayout({
       </head>
       <body className="min-h-full flex flex-col">
         <AuthProvider>
+          <UnpaidPaymentsBanner />
           <Navbar />
           <main className="flex-1">{children}</main>
           <Footer />
