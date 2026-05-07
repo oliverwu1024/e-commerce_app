@@ -152,6 +152,10 @@ export type Order = {
   // job once expired or by a full refund. Truthy = "decline button still
   // available right now."
   sellerDeclineDeadline: string | null;
+  // Provider's payment identifier. For Square batches this is set at
+  // /pay/batch creation; the Smart Release-lock UI uses its presence on
+  // a PENDING order to attempt confirm-first recovery before abandoning.
+  paymentProviderId: string | null;
   fulfillmentMethod: OrderFulfillmentMethod;
   shippingPrice: string;
   shippingAddress: ShippingAddress | null;

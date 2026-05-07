@@ -1496,17 +1496,24 @@ function AwaitingPaymentSellerCard({
   // fresh /pay call ("payment already in progress"), so the UI must offer
   // a way to release the lock — covers buyers who closed the Stripe/Square
   // tab without finishing.
-  const pendingOrderIds = orders
-    .filter((o) => o.paymentSessionState === 'PENDING')
-    .map((o) => o.id);
-  const sessionPending = pendingOrderIds.length > 0;
+  const pendingOrders = orders.filter((o) => o.paymentSessionState === 'PENDING');
+  const pendingOrderIds = pendingOrders.map((o) => o.id);
+  const sessionPending = pendingOrders.length > 0;
+  // Square stashes a paymentProviderId on every order in a batch at /pay/
+  // batch creation. Stripe doesn't stash anything until the webhook fires.
+  // So presence of paymentProviderId on a PENDING order means "we have a
+  // Square order to poll" — drives Smart Release: try the Square confirm
+  // first to recover the closed-tab-after-paying case before abandoning.
+  const hasSquareSession = pendingOrders.some(
+    (o) => o.paymentProviderId !== null,
+  );
   const [releasing, setReleasing] = useState(false);
   const [releaseError, setReleaseError] = useState('');
 
   async function handleReleaseLock() {
     if (
       !confirm(
-        'Release the payment lock?\n\nOnly do this if you closed the payment tab without completing. If your payment actually went through, releasing the lock here will not refund it — contact support instead.',
+        'Release the payment lock?\n\nUse this if you closed the payment tab without completing. If you actually paid, we’ll detect it and mark the order paid automatically.',
       )
     ) {
       return;
@@ -1514,9 +1521,35 @@ function AwaitingPaymentSellerCard({
     setReleasing(true);
     setReleaseError('');
     try {
-      // Per-order endpoint; we settle them one by one. The endpoint is
-      // idempotent and 409s if the order isn't actually PENDING, so a
-      // partial-failure mid-loop just leaves the rest in their right state.
+      // Smart recovery for Square: try the confirm endpoint first. If
+      // Square reports a captured payment, the server marks orders PAID
+      // and we're done. If it returns {pending:true} (no tender at
+      // Square), we fall through to plain abandon. Stripe doesn't need
+      // this — its webhook is independent of the buyer's tab and will
+      // arrive eventually regardless of the lock.
+      if (hasSquareSession) {
+        try {
+          const result = await api<{
+            pending?: boolean;
+            idempotent?: boolean;
+          }>('/api/orders/pay/square/confirm/batch', {
+            method: 'POST',
+            body: JSON.stringify({ orderIds: pendingOrderIds }),
+          });
+          if (!result.pending) {
+            // Server flipped the orders to PAID (or already_completed).
+            // Lock is naturally released — refresh and exit.
+            onItemChanged();
+            return;
+          }
+        } catch {
+          // Confirm failed — fall through to abandon so the user isn't
+          // permanently stuck behind the lock.
+        }
+      }
+      // Per-order endpoint; idempotent and 409s if the order isn't
+      // actually PENDING. Partial-failure mid-loop just leaves the rest
+      // in their right state.
       await Promise.all(
         pendingOrderIds.map((id) =>
           api(`/api/orders/${id}/pay/abandon`, { method: 'POST' }).catch(() => null),

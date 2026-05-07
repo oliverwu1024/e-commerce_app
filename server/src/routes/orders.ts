@@ -69,6 +69,12 @@ const ORDER_SUMMARY_SELECT = {
   // Sales tab and the "Seller has Xh to decline" hint on Purchases.
   paymentFlow: true,
   sellerDeclineDeadline: true,
+  // Provider's payment identifier. For Square /pay/batch this is the
+  // shared Square order id stashed at session creation; presence on a
+  // PENDING order tells the Smart Release-lock client logic to attempt a
+  // confirm-first recovery before abandoning. Stripe doesn't stash it
+  // until the webhook fires.
+  paymentProviderId: true,
   fulfillmentMethod: true,
   shippingPrice: true,
   shippingAddress: true,
