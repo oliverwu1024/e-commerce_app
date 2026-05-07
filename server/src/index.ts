@@ -37,6 +37,10 @@ import { createRateLimiter } from './middleware/rateLimiter.js';
 import { logger } from './utils/logger.js';
 import { startOrderSweep, stopOrderSweep } from './services/orderSweep.js';
 import {
+  startDeclineWindowSweep,
+  stopDeclineWindowSweep,
+} from './services/declineWindowSweep.js';
+import {
   startSquareCatalogSync,
   stopSquareCatalogSync,
 } from './services/squareCatalog/index.js';
@@ -232,6 +236,7 @@ const server = app.listen(PORT, () => {
 // Background sweeps — kicked off after the server is listening so a crash on
 // the first run doesn't prevent the process from being debuggable.
 startOrderSweep();
+startDeclineWindowSweep();
 // Square Catalog sync (BullMQ worker + reconciler + daily summary). No-op
 // if REDIS_URL isn't set — the marketplace itself keeps working.
 startSquareCatalogSync();
@@ -243,6 +248,7 @@ startSquareCatalogSync();
 function shutdown(signal: string): void {
   logger.info('server.shutdown.start', { signal });
   stopOrderSweep();
+  stopDeclineWindowSweep();
   const timeout = setTimeout(() => {
     logger.error('server.shutdown.timeout');
     process.exit(1);

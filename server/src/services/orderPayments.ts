@@ -17,6 +17,12 @@ export type PaidResult =
 
 export const EXPECTED_CURRENCY = 'AUD';
 
+// Seller-decline window for CARD-flow orders. Once payment captures, the
+// seller has this long to /decline (auto-refund). After the window, the
+// /decline path 409s and the order proceeds to ship-or-dispute. Mirror in
+// minutes for tighter sandbox testing if needed.
+const CARD_SELLER_DECLINE_WINDOW_MS = 24 * 60 * 60 * 1000;
+
 /**
  * Move an order CONFIRMED → COMPLETED and its listing ON_HOLD → SOLD in one
  * transaction. Idempotent: a second call on the same order returns
@@ -40,7 +46,7 @@ export async function markOrderPaid(
   const result = await prisma.$transaction(async (tx) => {
     const order = await tx.order.findUnique({
       where: { id: orderId },
-      select: { status: true, listingId: true, amount: true },
+      select: { status: true, listingId: true, amount: true, paymentFlow: true },
     });
 
     if (!order) return { status: 'not_found' } as const;
@@ -64,6 +70,15 @@ export async function markOrderPaid(
     }
     if (order.status !== 'CONFIRMED') return { status: 'not_confirmed' } as const;
 
+    // Open the seller's decline window only on CARD orders — OFFLINE flow
+    // never offers /decline (the seller chose to confirm offline; the
+    // /cancel path covers refusal there). Computed here so it gets persisted
+    // atomically with the PAID flip; the sweep job clears it on expiry.
+    const declineDeadline =
+      order.paymentFlow === 'CARD'
+        ? new Date(Date.now() + CARD_SELLER_DECLINE_WINDOW_MS)
+        : null;
+
     const { count } = await tx.order.updateMany({
       where: { id: orderId, status: 'CONFIRMED' },
       data: {
@@ -79,6 +94,7 @@ export async function markOrderPaid(
         // invariant "post-payment ⇒ paymentSessionState=COMPLETED" for the
         // admin stuck-orders query.
         paymentSessionState: 'COMPLETED',
+        ...(declineDeadline ? { sellerDeclineDeadline: declineDeadline } : {}),
       },
     });
     if (count === 0) return { status: 'not_confirmed' } as const;

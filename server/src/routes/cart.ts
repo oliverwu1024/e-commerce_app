@@ -31,7 +31,19 @@ const CART_ITEM_SELECT = {
       condition: true,
       status: true,
       seller: {
-        select: { id: true, username: true, ...PUBLIC_LOCATION_SELECT },
+        select: {
+          id: true,
+          username: true,
+          ...PUBLIC_LOCATION_SELECT,
+          // Stripe / Square providers the seller currently accepts.
+          // Filtered to ACTIVE + chargesEnabled here so the cart UI can
+          // gate the "Pay now (card)" option without the client having to
+          // re-check status. Mirrors the same projection on Order.seller.
+          paymentAccounts: {
+            where: { status: 'ACTIVE', chargesEnabled: true },
+            select: { provider: true },
+          },
+        },
       },
       images: {
         orderBy: { displayOrder: 'asc' },

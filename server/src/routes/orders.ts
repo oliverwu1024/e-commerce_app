@@ -20,6 +20,7 @@ import {
 } from '../config/stripe.js';
 import { SquareClient, SquareEnvironment } from 'square';
 import { markOrderPaid } from '../services/orderPayments.js';
+import { refundOrder } from '../services/orderRefunds.js';
 import {
   canAcceptPayments,
   findAccount,
@@ -61,6 +62,11 @@ const ORDER_SUMMARY_SELECT = {
   // Exposed so the Purchases tab can surface the "Release payment lock"
   // escape hatch when a provider tab was closed without cancelling.
   paymentSessionState: true,
+  // Buyer's checkout-time channel choice + the seller's bounded decline
+  // window for CARD orders. Drives the "Decline (auto-refund)" UI on
+  // Sales tab and the "Seller has Xh to decline" hint on Purchases.
+  paymentFlow: true,
+  sellerDeclineDeadline: true,
   fulfillmentMethod: true,
   shippingPrice: true,
   shippingAddress: true,
@@ -148,9 +154,18 @@ const MESSAGE_SELECT = {
 
 // ---------------------------------------------------------------------------
 // POST /api/orders/checkout
-// Converts the user's cart into one PENDING_CONFIRMATION order per listing.
-// Atomically flips ACTIVE → ON_HOLD inside the tx so concurrent checkouts of the
-// same listing cannot both succeed (loser sees count mismatch and rolls back).
+// Converts the user's cart into one Order per listing, grouped by seller. Each
+// group carries its own paymentFlow:
+//   - OFFLINE (legacy)  → orders land in PENDING_CONFIRMATION, seller confirms,
+//                          buyer arranges cash/bank transfer.
+//   - CARD              → orders land in CONFIRMED so the buyer can pay
+//                          immediately on the success page. The seller's
+//                          decline window opens at PAID time (markOrderPaid),
+//                          not here, so a buyer who never pays has the listing
+//                          released by the existing /cancel paths.
+// Atomically flips ACTIVE → ON_HOLD inside the tx so concurrent checkouts of
+// the same listing cannot both succeed (loser sees count mismatch and rolls
+// back).
 // ---------------------------------------------------------------------------
 router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res: Response) => {
   try {
@@ -180,9 +195,20 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
       res.status(400).json({ error: parsed.error.issues[0].message });
       return;
     }
-    const { items: chosenItems, shippingAddress } = parsed.data;
-    // Index buyer's choices by listingId — keeps lookup O(1) below.
-    const choiceByListingId = new Map(chosenItems.map((i) => [i.listingId, i.fulfillmentMethod]));
+    const { groups, shippingAddress } = parsed.data;
+    // Flatten groups for cart-match + listing-lookup; preserve per-listing
+    // sellerId/paymentFlow so the order-creation loop below has O(1) lookups.
+    const flatItems = groups.flatMap((g) =>
+      g.items.map((i) => ({
+        listingId: i.listingId,
+        fulfillmentMethod: i.fulfillmentMethod,
+        sellerId: g.sellerId,
+        paymentFlow: g.paymentFlow,
+      })),
+    );
+    const choiceByListingId = new Map(
+      flatItems.map((i) => [i.listingId, i] as const),
+    );
 
     const cart = await prisma.cart.findUnique({
       where: { userId: req.userId! },
@@ -205,22 +231,43 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
       return;
     }
 
-    // Buyer must supply a fulfillment choice for every cart item — refuse
-    // mismatches so we never silently default to PICKUP and surprise a
-    // POST-only seller.
-    if (chosenItems.length !== cart.items.length) {
+    // Buyer must cover every cart item exactly once — mismatches refuse so
+    // we never silently default to PICKUP / OFFLINE and surprise either
+    // party.
+    if (flatItems.length !== cart.items.length) {
       res.status(400).json({
-        error: 'Fulfillment choices do not match cart contents. Refresh and try again.',
+        error: 'Checkout selections do not match cart contents. Refresh and try again.',
       });
       return;
     }
     const missingChoice = cart.items.find((i) => !choiceByListingId.has(i.listingId));
     if (missingChoice) {
       res.status(400).json({
-        error: `Choose pickup or delivery for "${missingChoice.listing.title}".`,
+        error: `Make a selection for "${missingChoice.listing.title}".`,
         listingId: missingChoice.listingId,
       });
       return;
+    }
+    // Each group's listings must actually belong to the seller it claims.
+    // Catches a tampered client and lines up our orders with the right
+    // connected-account when /pay runs later.
+    const cartListingsBySellerId = new Map<string, Set<string>>();
+    for (const item of cart.items) {
+      const set = cartListingsBySellerId.get(item.listing.sellerId) ?? new Set<string>();
+      set.add(item.listingId);
+      cartListingsBySellerId.set(item.listing.sellerId, set);
+    }
+    for (const g of groups) {
+      for (const item of g.items) {
+        const ownerSet = cartListingsBySellerId.get(g.sellerId);
+        if (!ownerSet || !ownerSet.has(item.listingId)) {
+          res.status(400).json({
+            error: 'A listing was assigned to the wrong seller group.',
+            listingId: item.listingId,
+          });
+          return;
+        }
+      }
     }
 
     const unavailable = cart.items.find((i) => i.listing.status !== 'ACTIVE');
@@ -271,7 +318,8 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
           // helpful message rather than silently downgrading.
           for (const cartItem of cart.items) {
             const l = lockedById.get(cartItem.listingId)!;
-            const chosen = choiceByListingId.get(cartItem.listingId)!;
+            const choice = choiceByListingId.get(cartItem.listingId)!;
+            const chosen = choice.fulfillmentMethod;
             const allowsPost = l.fulfillmentMethod === 'POST_ONLY' || l.fulfillmentMethod === 'BOTH';
             const allowsPickup = l.fulfillmentMethod === 'PICKUP_ONLY' || l.fulfillmentMethod === 'BOTH';
             if (chosen === 'POST' && !allowsPost) {
@@ -296,7 +344,9 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
           const created = [];
           for (const item of cart.items) {
             const l = lockedById.get(item.listingId)!;
-            const chosen = choiceByListingId.get(item.listingId)!;
+            const choice = choiceByListingId.get(item.listingId)!;
+            const chosen = choice.fulfillmentMethod;
+            const flow = choice.paymentFlow;
             const shipPrice =
               chosen === 'POST'
                 ? new Prisma.Decimal(l.shippingPrice as Prisma.Decimal)
@@ -317,7 +367,11 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
                 // directly is rejected by Prisma's typing.)
                 shippingAddress:
                   chosen === 'POST' && shippingAddress ? shippingAddress : Prisma.DbNull,
-                status: 'PENDING_CONFIRMATION',
+                paymentFlow: flow,
+                // CARD skips the seller-confirms step — the order is ready
+                // for /pay immediately. OFFLINE keeps the existing
+                // request-then-confirm flow.
+                status: flow === 'CARD' ? 'CONFIRMED' : 'PENDING_CONFIRMATION',
               },
               select: ORDER_SUMMARY_SELECT,
             });
@@ -334,7 +388,10 @@ router.post('/checkout', authenticate, checkoutLimiter, async (req: Request, res
       );
 
       // Notify each seller + email them so they can confirm. Fire-and-log:
-      // notification/email failure mustn't rollback the checkout.
+      // notification/email failure mustn't rollback the checkout. Same
+      // ORDER_PLACED notification for both flows — the seller dashboard's
+      // status badge already differentiates "Awaiting confirmation" (OFFLINE)
+      // from "Awaiting payment" (CARD).
       for (const order of orders) {
         void createNotification({
           recipientId: order.seller.id,
@@ -810,6 +867,124 @@ router.put(
       res.json({ order: updated ? projectOrderParties(updated) : updated });
     } catch (err) {
       logger.error('orders.cancel.failed', { err: String(err) });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
+// POST /api/orders/:id/decline — seller declines a CARD-flow order within the
+// post-payment decline window. Issues a full refund via the existing dispatcher
+// and lands the order in REFUNDED. After the window expires (sweep clears the
+// deadline) the seller is locked into shipping; recovery is the buyer-side
+// dispute path.
+// ---------------------------------------------------------------------------
+router.post(
+  '/:id/decline',
+  authenticate,
+  orderMutationLimiter,
+  async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const { id } = req.params;
+      if (!uuidSchema.safeParse(id).success) {
+        res.status(400).json({ error: 'Invalid order ID' });
+        return;
+      }
+
+      const existing = await prisma.order.findUnique({
+        where: { id },
+        select: {
+          sellerId: true,
+          status: true,
+          paymentFlow: true,
+          paymentSessionState: true,
+          sellerDeclineDeadline: true,
+        },
+      });
+
+      if (!existing) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+      if (existing.sellerId !== req.userId) {
+        res.status(403).json({ error: 'Only the seller can decline this order' });
+        return;
+      }
+      if (existing.paymentFlow !== 'CARD') {
+        res.status(409).json({
+          error: 'Decline is only available on card-paid orders.',
+        });
+        return;
+      }
+      if (existing.status !== 'PAID') {
+        res.status(409).json({
+          error:
+            'Decline is only available right after payment. Use Cancel before payment, or Refund afterwards.',
+        });
+        return;
+      }
+      // Defence-in-depth — markOrderPaid runs first and flips this to
+      // COMPLETED, so PAID + PENDING shouldn't normally happen, but if it
+      // did the buyer's session would still be live and we'd be racing the
+      // capture path.
+      if (existing.paymentSessionState === 'PENDING') {
+        res.status(409).json({
+          error:
+            'Payment is still finalising. Try again in a moment, or contact support if it has been longer than 30 minutes.',
+        });
+        return;
+      }
+      if (
+        !existing.sellerDeclineDeadline ||
+        existing.sellerDeclineDeadline.getTime() <= Date.now()
+      ) {
+        res.status(409).json({
+          error:
+            'The decline window has closed. Issue a refund instead, or coordinate with the buyer.',
+        });
+        return;
+      }
+
+      // Decline = full refund of whatever's still refundable. Re-read the
+      // amount here so we pass the exact remaining balance to the helper
+      // (also covers the unlikely race where a partial /refund landed
+      // between the pre-check above and now).
+      const order = await prisma.order.findUnique({
+        where: { id },
+        select: { amount: true, totalRefundedCents: true },
+      });
+      if (!order) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+      const totalCents = Math.round(Number(order.amount) * 100);
+      const remainingCents = totalCents - order.totalRefundedCents;
+      if (remainingCents <= 0) {
+        res.status(409).json({ error: 'Order has already been fully refunded.' });
+        return;
+      }
+
+      const refund = await refundOrder({
+        orderId: id,
+        issuedById: req.userId!,
+        reason: 'Seller declined the order',
+        amountCents: remainingCents,
+      });
+      if (!refund.ok) {
+        res.status(refund.status).json({ error: refund.error });
+        return;
+      }
+
+      const updated = await prisma.order.findUnique({
+        where: { id },
+        select: ORDER_SUMMARY_SELECT,
+      });
+      res.json({
+        order: updated ? projectOrderParties(updated) : updated,
+        refundProviderId: refund.refundProviderId,
+      });
+    } catch (err) {
+      logger.error('orders.decline.failed', { err: String(err) });
       res.status(500).json({ error: 'Internal server error' });
     }
   },
@@ -1729,13 +1904,8 @@ router.post(
           id: true,
           amount: true,
           status: true,
-          buyerId: true,
           sellerId: true,
-          paymentMethod: true,
-          paymentProviderId: true,
           totalRefundedCents: true,
-          listing: { select: { id: true, title: true } },
-          buyer: { select: { username: true } },
         },
       });
       if (!order) {
@@ -1756,10 +1926,6 @@ router.post(
         });
         return;
       }
-      if (!order.paymentMethod) {
-        res.status(409).json({ error: 'Order has no payment method on record' });
-        return;
-      }
 
       const totalCents = Math.round(Number(order.amount) * 100);
       const remainingCents = totalCents - order.totalRefundedCents;
@@ -1767,170 +1933,20 @@ router.post(
         res.status(409).json({ error: 'Order has already been fully refunded.' });
         return;
       }
-      // Default = refund the remainder. If the seller asked for a specific
-      // amount, validate it's positive and not more than what's left to give
-      // back.
+      // Default = refund the remainder. Helper enforces the upper bound too;
+      // we pre-check here for a friendlier 400 message.
       const refundAmountCents = requestedAmountCents ?? remainingCents;
-      if (refundAmountCents > remainingCents) {
-        res.status(400).json({
-          error: `Refund amount exceeds remaining refundable balance (${remainingCents} cents).`,
-        });
-        return;
-      }
 
-      const isFullRemaining = refundAmountCents === remainingCents;
-      let refundProviderId: string | null = null;
-
-      if (order.paymentMethod === 'STRIPE') {
-        const sellerAccount = await findAccount(order.sellerId, 'STRIPE');
-        if (!sellerAccount?.accountId) {
-          res.status(503).json({
-            error: 'Cannot refund: seller no longer has a connected Stripe account.',
-          });
-          return;
-        }
-        if (!order.paymentProviderId) {
-          res.status(409).json({
-            error:
-              'No Stripe payment_intent on record for this order. Refund must be issued manually from the Stripe dashboard.',
-          });
-          return;
-        }
-        try {
-          // Idempotency key derived from the request state (not random) so a
-          // network retry of the same refund is recognised by Stripe and
-          // returns the original refund rather than creating a second one.
-          // totalRefundedCents pins the key to "the Nth refund on this order"
-          // — once the DB row is written, the key naturally rolls forward.
-          const idempotencyKey = `refund-${order.id}-${order.totalRefundedCents}-${refundAmountCents}`;
-          // Pass `amount` for partial refunds. Stripe interprets omitted amount
-          // as "refund the entire remainder" — same semantics we want, so we
-          // could omit on full-remaining refunds, but passing it always keeps
-          // the API call symmetric and makes the audit log unambiguous.
-          const refund = await getStripeClient().refunds.create(
-            {
-              payment_intent: order.paymentProviderId,
-              amount: refundAmountCents,
-            },
-            { stripeAccount: sellerAccount.accountId, idempotencyKey },
-          );
-          refundProviderId = refund.id;
-        } catch (err) {
-          logger.error('orders.refund.stripe.failed', { err: String(err) });
-          res.status(502).json({ error: 'Stripe refund failed; nothing changed.' });
-          return;
-        }
-      } else if (order.paymentMethod === 'SQUARE') {
-        const sellerAccount = await findAccount(order.sellerId, 'SQUARE');
-        if (!sellerAccount?.accessToken) {
-          res.status(503).json({
-            error: 'Cannot refund: seller no longer has a connected Square account.',
-          });
-          return;
-        }
-        if (!order.paymentProviderId) {
-          res.status(409).json({
-            error:
-              'No Square payment ID on record for this order. Refund must be issued manually from the Square dashboard.',
-          });
-          return;
-        }
-        try {
-          const sellerSquare = new SquareClient({
-            token: sellerAccount.accessToken,
-            environment:
-              process.env.SQUARE_ENV === 'production'
-                ? SquareEnvironment.Production
-                : SquareEnvironment.Sandbox,
-          });
-          // Deterministic idempotency key — same reasoning as the Stripe path
-          // above. randomUUID() here would defeat Square's idempotency
-          // contract and double-refund the buyer on a network retry.
-          const idempotencyKey = `refund-${order.id}-${order.totalRefundedCents}-${refundAmountCents}`;
-          const resp = await sellerSquare.refunds.refundPayment({
-            idempotencyKey,
-            paymentId: order.paymentProviderId,
-            amountMoney: { amount: BigInt(refundAmountCents), currency: 'AUD' },
-          });
-          refundProviderId = resp.refund?.id ?? null;
-        } catch (err) {
-          logger.error('orders.refund.square.failed', { err: String(err) });
-          res.status(502).json({ error: 'Square refund failed; nothing changed.' });
-          return;
-        }
-      }
-      // CASH / BANK_TRANSFER / PAYPAL: no provider call. Seller is expected
-      // to have moved the money offline; we just persist the audit row.
-
-      // Update the order + insert audit row in a single transaction so a
-      // crash between the provider call and our state can't lose the audit
-      // entry. Status conditional on same set we read above to defeat a
-      // race against shipping/completion.
-      const fullyRefundedAfter = order.totalRefundedCents + refundAmountCents >= totalCents;
-      const channel = order.paymentMethod;
-      const refundOutcome = await prisma.$transaction(async (tx) => {
-        const updated = await tx.order.updateMany({
-          where: {
-            id,
-            status: { in: ['PAID', 'SHIPPED', 'COMPLETED'] },
-            // Belt-and-braces against double-refund: the order's running
-            // total when we picked it up must still match. If a concurrent
-            // refund snuck in, this returns count=0.
-            totalRefundedCents: order.totalRefundedCents,
-          },
-          data: {
-            status: fullyRefundedAfter ? 'REFUNDED' : undefined,
-            totalRefundedCents: { increment: refundAmountCents },
-            refundedAt: new Date(),
-            refundReason: reason ?? null,
-            refundProviderId,
-          },
-        });
-        if (updated.count === 0) return { ok: false as const };
-        await tx.refund.create({
-          data: {
-            orderId: id,
-            issuedById: req.userId!,
-            amountCents: refundAmountCents,
-            reason: reason ?? null,
-            providerId: refundProviderId,
-            channel,
-          },
-        });
-        return { ok: true as const };
-      });
-
-      if (!refundOutcome.ok) {
-        // Provider call already succeeded; the order moved out from under us
-        // (extremely unlikely race). Don't undo the provider refund — log
-        // loudly so an admin can reconcile.
-        logger.error('orders.refund.provider_refunded_state_changed', {
-          orderId: id,
-          refundProviderId,
-          refundAmountCents,
-        });
-        res.status(500).json({
-          error:
-            'Provider refund succeeded but the order state changed concurrently. Contact support to reconcile.',
-        });
-        return;
-      }
-
-      // Notification copy diverges based on whether this was the final refund.
-      const refundDollars = (refundAmountCents / 100).toFixed(2);
-      const totalDollars = (totalCents / 100).toFixed(2);
-      const notifBody = fullyRefundedAfter
-        ? `Your payment of $${refundDollars} for "${order.listing.title}" has been refunded${reason ? `: ${reason}` : '.'}`
-        : `A partial refund of $${refundDollars} (of $${totalDollars}) has been issued for "${order.listing.title}"${reason ? `: ${reason}` : '.'}`;
-      void createNotification({
-        recipientId: order.buyerId,
-        type: 'ORDER_REFUNDED',
-        title: fullyRefundedAfter ? 'Refund issued' : 'Partial refund issued',
-        body: notifBody,
-        actorId: order.sellerId,
+      const outcome = await refundOrder({
         orderId: id,
-        listingId: order.listing.id,
+        issuedById: req.userId!,
+        reason: reason ?? null,
+        amountCents: refundAmountCents,
       });
+      if (!outcome.ok) {
+        res.status(outcome.status).json({ error: outcome.error });
+        return;
+      }
 
       const updated = await prisma.order.findUnique({
         where: { id },
@@ -1938,7 +1954,7 @@ router.post(
       });
       res.json({
         order: updated ? projectOrderParties(updated) : updated,
-        refundProviderId,
+        refundProviderId: outcome.refundProviderId,
       });
     } catch (err) {
       logger.error('orders.refund.failed', { err: String(err) });

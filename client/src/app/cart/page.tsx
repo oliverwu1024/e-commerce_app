@@ -14,8 +14,10 @@ import {
 } from '@/types/listings';
 import type {
   CartItem,
+  CartItemSeller,
   Order,
   OrderFulfillmentMethod,
+  PaymentFlow,
   ShippingAddress,
 } from '@/types/orders';
 
@@ -30,9 +32,15 @@ export default function CartPage() {
 // Pick a sensible default fulfillment based on what the listing offers.
 // PICKUP_ONLY / POST_ONLY are forced; BOTH defaults to PICKUP (no shipping
 // charge unless the buyer opts in).
-function defaultChoice(method: FulfillmentMethod): OrderFulfillmentMethod {
+function defaultFulfillment(method: FulfillmentMethod): OrderFulfillmentMethod {
   if (method === 'POST_ONLY') return 'POST';
   return 'PICKUP';
+}
+
+// CARD is the default whenever the seller has any online provider connected;
+// otherwise OFFLINE is the only sensible choice (no provider can take a card).
+function defaultPaymentFlow(seller: CartItemSeller): PaymentFlow {
+  return seller.paymentAccounts.length > 0 ? 'CARD' : 'OFFLINE';
 }
 
 const EMPTY_ADDRESS: ShippingAddress = {
@@ -45,6 +53,30 @@ const EMPTY_ADDRESS: ShippingAddress = {
   country: 'Australia',
 };
 
+type SellerGroup = {
+  sellerId: string;
+  seller: CartItemSeller;
+  items: CartItem[];
+};
+
+function groupBySeller(items: CartItem[]): SellerGroup[] {
+  const map = new Map<string, SellerGroup>();
+  for (const item of items) {
+    const sellerId = item.listing.seller.id;
+    const existing = map.get(sellerId);
+    if (existing) {
+      existing.items.push(item);
+    } else {
+      map.set(sellerId, {
+        sellerId,
+        seller: item.listing.seller,
+        items: [item],
+      });
+    }
+  }
+  return Array.from(map.values());
+}
+
 function Cart() {
   const router = useRouter();
   const user = useAuthStore((s) => s.user);
@@ -52,53 +84,91 @@ function Cart() {
   const [checkoutError, setCheckoutError] = useState('');
   const [checkingOut, setCheckingOut] = useState(false);
 
-  // Buyer's per-item fulfillment choice, keyed by listing id. Seeded from
+  // Buyer's per-item fulfillment choice, keyed by listingId. Seeded from
   // each listing's offering so PICKUP_ONLY / POST_ONLY items don't need a
   // selector at all.
-  const [choices, setChoices] = useState<Record<string, OrderFulfillmentMethod>>({});
+  const [fulfillmentChoices, setFulfillmentChoices] = useState<
+    Record<string, OrderFulfillmentMethod>
+  >({});
+  // Buyer's per-seller-group payment flow choice, keyed by sellerId. Seeded
+  // from connected-provider availability so a seller without Stripe/Square
+  // doesn't see a non-functional "Pay now (card)" option.
+  const [paymentFlows, setPaymentFlows] = useState<Record<string, PaymentFlow>>({});
   const [address, setAddress] = useState<ShippingAddress>(EMPTY_ADDRESS);
-  const [addressErrors, setAddressErrors] = useState<Partial<Record<keyof ShippingAddress, string>>>({});
+  const [addressErrors, setAddressErrors] = useState<
+    Partial<Record<keyof ShippingAddress, string>>
+  >({});
 
   useEffect(() => {
     fetchCart();
   }, [fetchCart]);
 
-  // Re-seed choices whenever the cart contents change (item added/removed/
-  // listing status updated). Preserves an existing choice for a listing
-  // already in the map; backfills new entries with the default.
+  const checkoutable = useMemo(
+    () => cart.items.filter((i) => i.listing.status === 'ACTIVE'),
+    [cart.items],
+  );
+  const groups = useMemo(() => groupBySeller(checkoutable), [checkoutable]);
+
+  // Re-seed selections whenever cart contents change. Preserves an existing
+  // choice for a listing/seller already in the maps; backfills new entries
+  // with the appropriate default.
   useEffect(() => {
-    setChoices((prev) => {
+    setFulfillmentChoices((prev) => {
       const next: Record<string, OrderFulfillmentMethod> = {};
-      for (const item of cart.items) {
-        if (item.listing.status !== 'ACTIVE') continue;
+      for (const item of checkoutable) {
         next[item.listing.id] =
-          prev[item.listing.id] ?? defaultChoice(item.listing.fulfillmentMethod);
+          prev[item.listing.id] ?? defaultFulfillment(item.listing.fulfillmentMethod);
       }
       return next;
     });
-  }, [cart.items]);
+    setPaymentFlows((prev) => {
+      const next: Record<string, PaymentFlow> = {};
+      for (const g of groups) {
+        next[g.sellerId] = prev[g.sellerId] ?? defaultPaymentFlow(g.seller);
+      }
+      return next;
+    });
+  }, [checkoutable, groups]);
 
-  const checkoutable = cart.items.filter((i) => i.listing.status === 'ACTIVE');
   const hasUnavailable = cart.items.some((i) => i.listing.status !== 'ACTIVE');
   const emailUnverified = !!user && !user.emailVerified;
 
   // Per-row chosen + computed shipping; itemTotal is what the buyer pays.
   const breakdown = useMemo(() => {
-    const rows = checkoutable.map((item) => {
-      const chosen = choices[item.listing.id] ?? defaultChoice(item.listing.fulfillmentMethod);
-      const itemPrice = parseFloat(item.listing.price);
-      const ship =
-        chosen === 'POST' && item.listing.shippingPrice != null
-          ? parseFloat(item.listing.shippingPrice)
-          : 0;
-      return { item, chosen, itemPrice, ship, total: itemPrice + ship };
+    const groupBreakdowns = groups.map((g) => {
+      const rows = g.items.map((item) => {
+        const chosen =
+          fulfillmentChoices[item.listing.id] ??
+          defaultFulfillment(item.listing.fulfillmentMethod);
+        const itemPrice = parseFloat(item.listing.price);
+        const ship =
+          chosen === 'POST' && item.listing.shippingPrice != null
+            ? parseFloat(item.listing.shippingPrice)
+            : 0;
+        return { item, chosen, itemPrice, ship, total: itemPrice + ship };
+      });
+      const itemSubtotal = rows.reduce((s, r) => s + r.itemPrice, 0);
+      const shippingSubtotal = rows.reduce((s, r) => s + r.ship, 0);
+      const groupTotal = itemSubtotal + shippingSubtotal;
+      return { ...g, rows, itemSubtotal, shippingSubtotal, groupTotal };
     });
-    const itemSubtotal = rows.reduce((s, r) => s + r.itemPrice, 0);
-    const shippingSubtotal = rows.reduce((s, r) => s + r.ship, 0);
+    const itemSubtotal = groupBreakdowns.reduce((s, g) => s + g.itemSubtotal, 0);
+    const shippingSubtotal = groupBreakdowns.reduce(
+      (s, g) => s + g.shippingSubtotal,
+      0,
+    );
     const grandTotal = itemSubtotal + shippingSubtotal;
-    const anyPost = rows.some((r) => r.chosen === 'POST');
-    return { rows, itemSubtotal, shippingSubtotal, grandTotal, anyPost };
-  }, [checkoutable, choices]);
+    const anyPost = groupBreakdowns.some((g) =>
+      g.rows.some((r) => r.chosen === 'POST'),
+    );
+    return {
+      groups: groupBreakdowns,
+      itemSubtotal,
+      shippingSubtotal,
+      grandTotal,
+      anyPost,
+    };
+  }, [groups, fulfillmentChoices]);
 
   function validateAddress(): boolean {
     const errs: Partial<Record<keyof ShippingAddress, string>> = {};
@@ -121,15 +191,20 @@ function Cart() {
 
     setCheckingOut(true);
     try {
-      const items = checkoutable.map((item) => ({
-        listingId: item.listing.id,
-        fulfillmentMethod:
-          choices[item.listing.id] ?? defaultChoice(item.listing.fulfillmentMethod),
+      const groupsPayload = groups.map((g) => ({
+        sellerId: g.sellerId,
+        paymentFlow: paymentFlows[g.sellerId] ?? defaultPaymentFlow(g.seller),
+        items: g.items.map((item) => ({
+          listingId: item.listing.id,
+          fulfillmentMethod:
+            fulfillmentChoices[item.listing.id] ??
+            defaultFulfillment(item.listing.fulfillmentMethod),
+        })),
       }));
       const payload: {
-        items: typeof items;
+        groups: typeof groupsPayload;
         shippingAddress?: ShippingAddress;
-      } = { items };
+      } = { groups: groupsPayload };
       if (breakdown.anyPost) {
         payload.shippingAddress = {
           name: address.name.trim(),
@@ -186,6 +261,12 @@ function Cart() {
         <h1 className="text-2xl font-bold text-[var(--text-primary)]">Your Cart</h1>
         <p className="mt-1 text-sm text-[var(--text-muted)]">
           {cart.itemCount} {cart.itemCount === 1 ? 'item' : 'items'}
+          {groups.length > 1 && (
+            <>
+              {' · '}
+              <span>{groups.length} sellers</span>
+            </>
+          )}
         </p>
 
         {error && (
@@ -198,15 +279,34 @@ function Cart() {
           <EmptyCart />
         ) : (
           <div className="mt-6 grid gap-6 lg:grid-cols-3">
-            {/* Items */}
-            <div className="lg:col-span-2 space-y-3">
-              {cart.items.map((item) => (
-                <CartRow
-                  key={item.id}
-                  item={item}
-                  choice={choices[item.listing.id] ?? defaultChoice(item.listing.fulfillmentMethod)}
-                  onChooseFulfillment={(value) =>
-                    setChoices((prev) => ({ ...prev, [item.listing.id]: value }))
+            <div className="lg:col-span-2 space-y-6">
+              {/* Unavailable items live outside seller groups so the seller-
+                  group rendering only deals with checkoutable rows. */}
+              {hasUnavailable && (
+                <div className="space-y-3">
+                  {cart.items
+                    .filter((i) => i.listing.status !== 'ACTIVE')
+                    .map((item) => (
+                      <UnavailableCartRow
+                        key={item.id}
+                        item={item}
+                        onRemove={remove}
+                      />
+                    ))}
+                </div>
+              )}
+
+              {breakdown.groups.map((g) => (
+                <SellerGroupCard
+                  key={g.sellerId}
+                  group={g}
+                  fulfillmentChoices={fulfillmentChoices}
+                  paymentFlow={paymentFlows[g.sellerId] ?? defaultPaymentFlow(g.seller)}
+                  onChooseFulfillment={(listingId, value) =>
+                    setFulfillmentChoices((prev) => ({ ...prev, [listingId]: value }))
+                  }
+                  onChoosePaymentFlow={(value) =>
+                    setPaymentFlows((prev) => ({ ...prev, [g.sellerId]: value }))
                   }
                   onRemove={remove}
                 />
@@ -228,17 +328,11 @@ function Cart() {
 
             {/* Summary */}
             <aside className="panel clip-corner p-6 h-fit lg:sticky lg:top-4">
-              <h2 className="text-sm font-semibold text-[var(--text-primary)]">Order Summary</h2>
+              <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+                Order Summary
+              </h2>
 
               <dl className="mt-4 space-y-2 text-sm">
-                <div className="flex justify-between">
-                  <dt className="text-[var(--text-muted)]">Items in cart</dt>
-                  <dd className="text-[var(--text-primary)]">{cart.itemCount}</dd>
-                </div>
-                <div className="flex justify-between">
-                  <dt className="text-[var(--text-muted)]">Ready to checkout</dt>
-                  <dd className="text-[var(--text-primary)]">{cart.checkoutableCount}</dd>
-                </div>
                 <div className="flex justify-between">
                   <dt className="text-[var(--text-muted)]">Items</dt>
                   <dd className="text-[var(--text-primary)]">
@@ -260,6 +354,14 @@ function Cart() {
                   </dd>
                 </div>
               </dl>
+
+              {groups.length > 1 && (
+                <div className="mt-4 rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-3 text-xs text-[var(--text-muted)]">
+                  You&apos;re buying from {groups.length} sellers. Each seller&apos;s
+                  payment is processed separately, so card payers will be redirected
+                  once per seller.
+                </div>
+              )}
 
               {hasUnavailable && (
                 <div className="mt-4 rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] p-3 text-xs text-[var(--neon-amber)]">
@@ -293,7 +395,8 @@ function Cart() {
                 {checkingOut ? 'Sending requests...' : 'Checkout'}
               </button>
               <p className="mt-3 text-xs text-[var(--text-muted)]">
-                Checkout sends a purchase request to each seller. Payment is arranged after the seller confirms.
+                Card-pay groups land in your purchases ready to pay. Cash / bank
+                groups go to the seller for confirmation first.
               </p>
 
               <Link
@@ -326,17 +429,127 @@ function EmptyCart() {
           d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-1.5 3h13M9 20a1 1 0 102 0 1 1 0 00-2 0zm8 0a1 1 0 102 0 1 1 0 00-2 0z"
         />
       </svg>
-      <h3 className="mt-3 text-sm font-medium text-[var(--text-primary)]">Your cart is empty</h3>
+      <h3 className="mt-3 text-sm font-medium text-[var(--text-primary)]">
+        Your cart is empty
+      </h3>
       <p className="mt-1 text-sm text-[var(--text-muted)]">
         Browse listings and add items you want to buy.
       </p>
-      <Link
-        href="/browse"
-        className="btn-cyber-primary mt-4"
-      >
+      <Link href="/browse" className="btn-cyber-primary mt-4">
         Browse Listings
       </Link>
     </div>
+  );
+}
+
+type GroupBreakdown = {
+  sellerId: string;
+  seller: CartItemSeller;
+  items: CartItem[];
+  rows: {
+    item: CartItem;
+    chosen: OrderFulfillmentMethod;
+    itemPrice: number;
+    ship: number;
+    total: number;
+  }[];
+  itemSubtotal: number;
+  shippingSubtotal: number;
+  groupTotal: number;
+};
+
+function SellerGroupCard({
+  group,
+  fulfillmentChoices,
+  paymentFlow,
+  onChooseFulfillment,
+  onChoosePaymentFlow,
+  onRemove,
+}: {
+  group: GroupBreakdown;
+  fulfillmentChoices: Record<string, OrderFulfillmentMethod>;
+  paymentFlow: PaymentFlow;
+  onChooseFulfillment: (listingId: string, value: OrderFulfillmentMethod) => void;
+  onChoosePaymentFlow: (value: PaymentFlow) => void;
+  onRemove: (listingId: string) => Promise<void>;
+}) {
+  const hasOnlineProviders = group.seller.paymentAccounts.length > 0;
+  const providers = group.seller.paymentAccounts.map((p) => p.provider).join(' / ');
+  return (
+    <section className="panel clip-corner overflow-hidden">
+      <header className="flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] px-4 py-2.5">
+        <div className="text-xs">
+          <span className="text-[var(--text-muted)]">Sold by </span>
+          <Link
+            href={`/sellers/${group.seller.id}`}
+            className="font-medium text-[var(--text-primary)] hover:text-[var(--neon-cyan)]"
+          >
+            {group.seller.username}
+          </Link>
+        </div>
+        <div className="text-xs font-semibold text-[var(--text-primary)]">
+          {formatPrice(group.groupTotal)}
+        </div>
+      </header>
+
+      <div className="space-y-3 p-4">
+        {group.items.map((item) => (
+          <CartRow
+            key={item.id}
+            item={item}
+            choice={
+              fulfillmentChoices[item.listing.id] ??
+              defaultFulfillment(item.listing.fulfillmentMethod)
+            }
+            onChooseFulfillment={(value) => onChooseFulfillment(item.listing.id, value)}
+            onRemove={onRemove}
+          />
+        ))}
+      </div>
+
+      <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-panel)] px-4 py-3 text-xs">
+        <p className="font-medium text-[var(--text-primary)]">Payment</p>
+        <p className="mt-0.5 text-[var(--text-muted)]">
+          {hasOnlineProviders
+            ? `${group.seller.username} accepts ${providers}. Choose how you want to pay.`
+            : `${group.seller.username} hasn’t connected an online provider yet — arrange cash or bank transfer with them after they confirm.`}
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {hasOnlineProviders && (
+            <PaymentFlowRadio
+              name={`flow-${group.sellerId}`}
+              value="CARD"
+              current={paymentFlow}
+              onChange={onChoosePaymentFlow}
+              label="Pay now (card)"
+              hint="Charged at checkout"
+            />
+          )}
+          <PaymentFlowRadio
+            name={`flow-${group.sellerId}`}
+            value="OFFLINE"
+            current={paymentFlow}
+            onChange={onChoosePaymentFlow}
+            label="Arrange with seller"
+            hint="Cash / bank transfer"
+          />
+        </div>
+        {paymentFlow === 'CARD' && hasOnlineProviders && (
+          <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+            After checkout, you&apos;ll be redirected to {providers} to complete
+            payment. The seller has 24h to decline (auto-refund) before they&apos;re
+            committed to ship.
+          </p>
+        )}
+        {paymentFlow === 'OFFLINE' && (
+          <p className="mt-2 text-[11px] text-[var(--text-muted)]">
+            The seller will confirm your request, then you&apos;ll arrange cash or
+            bank transfer with them directly through the order&apos;s message
+            thread.
+          </p>
+        )}
+      </div>
+    </section>
   );
 }
 
@@ -355,10 +568,10 @@ function CartRow({
   const { listing } = item;
   const condition = getConditionStyle(listing.condition);
   const imageUrl = listing.images[0]?.url;
-  const unavailable = listing.status !== 'ACTIVE';
   const allowsPickup = listing.fulfillmentMethod !== 'POST_ONLY';
   const allowsPost = listing.fulfillmentMethod !== 'PICKUP_ONLY';
-  const shipPrice = listing.shippingPrice != null ? parseFloat(listing.shippingPrice) : null;
+  const shipPrice =
+    listing.shippingPrice != null ? parseFloat(listing.shippingPrice) : null;
 
   async function handleRemove() {
     setRemoving(true);
@@ -370,11 +583,7 @@ function CartRow({
   }
 
   return (
-    <div
-      className={`panel clip-corner flex gap-4 p-4 transition-colors ${
-        unavailable ? 'border-[var(--neon-amber)]/40' : ''
-      }`}
-    >
+    <div className="flex gap-4">
       <Link
         href={`/listings/${listing.id}`}
         className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-[var(--bg-panel-hi)]"
@@ -404,55 +613,42 @@ function CartRow({
           <span className={`rounded-md px-2 py-0.5 font-medium ${condition.bg}`}>
             {condition.label}
           </span>
-          <span className="text-[var(--text-dim)]">Sold by {listing.seller.username}</span>
         </div>
 
-        {/* Fulfillment selector. BOTH listings get a radio; the others
-            show a static badge so the buyer sees the only option. */}
-        {!unavailable && (
-          <div className="mt-3">
-            {listing.fulfillmentMethod === 'BOTH' ? (
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-[var(--text-muted)]">Delivery:</span>
-                <FulfillmentRadio
-                  name={`fulfill-${listing.id}`}
-                  value="PICKUP"
-                  current={choice}
-                  onChange={onChooseFulfillment}
-                  label="Pickup"
-                  hint="Free"
-                />
-                <FulfillmentRadio
-                  name={`fulfill-${listing.id}`}
-                  value="POST"
-                  current={choice}
-                  onChange={onChooseFulfillment}
-                  label="Post"
-                  hint={shipPrice === 0 ? 'Free' : `+ ${formatPrice(shipPrice ?? 0)}`}
-                />
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
-                <span>Delivery:</span>
-                <span className="rounded-md border border-[var(--border-hi)] bg-[var(--bg-panel-hi)] px-2 py-0.5 text-[var(--text-primary)]">
-                  {allowsPost && !allowsPickup
-                    ? `Post (${shipPrice === 0 ? 'free' : formatPrice(shipPrice ?? 0)})`
-                    : 'Pickup only'}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
-
-        {unavailable && (
-          <p className="mt-2 rounded-md bg-[var(--tint-amber)] px-2 py-1 text-xs text-[var(--neon-amber)]">
-            {listing.status === 'SOLD'
-              ? 'This item has already been sold.'
-              : listing.status === 'ON_HOLD'
-              ? 'This item is on hold for another buyer.'
-              : 'This item is no longer available.'}
-          </p>
-        )}
+        {/* Fulfillment selector — radios for BOTH listings, static badge
+            otherwise so the buyer sees the only available delivery option. */}
+        <div className="mt-3">
+          {listing.fulfillmentMethod === 'BOTH' ? (
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-[var(--text-muted)]">Delivery:</span>
+              <FulfillmentRadio
+                name={`fulfill-${listing.id}`}
+                value="PICKUP"
+                current={choice}
+                onChange={onChooseFulfillment}
+                label="Pickup"
+                hint="Free"
+              />
+              <FulfillmentRadio
+                name={`fulfill-${listing.id}`}
+                value="POST"
+                current={choice}
+                onChange={onChooseFulfillment}
+                label="Post"
+                hint={shipPrice === 0 ? 'Free' : `+ ${formatPrice(shipPrice ?? 0)}`}
+              />
+            </div>
+          ) : (
+            <div className="flex items-center gap-2 text-xs text-[var(--text-muted)]">
+              <span>Delivery:</span>
+              <span className="rounded-md border border-[var(--border-hi)] bg-[var(--bg-panel-hi)] px-2 py-0.5 text-[var(--text-primary)]">
+                {allowsPost && !allowsPickup
+                  ? `Post (${shipPrice === 0 ? 'free' : formatPrice(shipPrice ?? 0)})`
+                  : 'Pickup only'}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="flex-shrink-0">
@@ -464,6 +660,59 @@ function CartRow({
           {removing ? 'Removing...' : 'Remove'}
         </button>
       </div>
+    </div>
+  );
+}
+
+// Items the buyer can no longer check out (SOLD / ON_HOLD / etc.). Keeps
+// the seller-group rendering focused on actionable rows; this row only
+// surfaces the Remove action.
+function UnavailableCartRow({
+  item,
+  onRemove,
+}: {
+  item: CartItem;
+  onRemove: (listingId: string) => Promise<void>;
+}) {
+  const [removing, setRemoving] = useState(false);
+  const { listing } = item;
+  const imageUrl = listing.images[0]?.url;
+
+  async function handleRemove() {
+    setRemoving(true);
+    try {
+      await onRemove(listing.id);
+    } finally {
+      setRemoving(false);
+    }
+  }
+
+  return (
+    <div className="panel clip-corner flex gap-4 border-[var(--neon-amber)]/40 p-4">
+      <div className="h-20 w-20 flex-shrink-0 overflow-hidden rounded-lg bg-[var(--bg-panel-hi)]">
+        {imageUrl ? (
+          <img src={imageUrl} alt={listing.title} className="h-full w-full object-cover opacity-60" />
+        ) : null}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-medium text-[var(--text-primary)] truncate">
+          {listing.title}
+        </p>
+        <p className="mt-1 rounded-md bg-[var(--tint-amber)] px-2 py-1 text-xs text-[var(--neon-amber)]">
+          {listing.status === 'SOLD'
+            ? 'This item has already been sold.'
+            : listing.status === 'ON_HOLD'
+              ? 'This item is on hold for another buyer.'
+              : 'This item is no longer available.'}
+        </p>
+      </div>
+      <button
+        onClick={handleRemove}
+        disabled={removing}
+        className="btn-cyber-outline text-xs h-fit"
+      >
+        {removing ? 'Removing…' : 'Remove'}
+      </button>
     </div>
   );
 }
@@ -507,6 +756,45 @@ function FulfillmentRadio({
   );
 }
 
+function PaymentFlowRadio({
+  name,
+  value,
+  current,
+  onChange,
+  label,
+  hint,
+}: {
+  name: string;
+  value: PaymentFlow;
+  current: PaymentFlow;
+  onChange: (v: PaymentFlow) => void;
+  label: string;
+  hint: string;
+}) {
+  const selected = current === value;
+  return (
+    <label
+      className={`inline-flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 transition-colors ${
+        selected
+          ? 'border-[var(--neon-cyan)] bg-[var(--tint-cyan)] text-[var(--neon-cyan)]'
+          : 'border-[var(--border-subtle)] bg-[var(--bg-panel)] text-[var(--text-muted)] hover:border-[var(--border-hi)]'
+      }`}
+    >
+      <input
+        type="radio"
+        name={name}
+        value={value}
+        checked={selected}
+        onChange={() => onChange(value)}
+        className="h-3 w-3"
+      />
+      <span className="font-medium">{label}</span>
+      <span className="text-[var(--text-dim)]">·</span>
+      <span className="text-[var(--text-dim)]">{hint}</span>
+    </label>
+  );
+}
+
 function ShippingAddressForm({
   value,
   errors,
@@ -518,9 +806,12 @@ function ShippingAddressForm({
 }) {
   return (
     <div className="panel clip-corner p-5">
-      <h2 className="text-sm font-semibold text-[var(--text-primary)]">Shipping address</h2>
+      <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+        Shipping address
+      </h2>
       <p className="mt-1 text-xs text-[var(--text-muted)]">
-        Where the seller(s) should post your item(s). Used for every item you chose to deliver.
+        Where the seller(s) should post your item(s). Used for every item you chose
+        to deliver.
       </p>
 
       <div className="mt-4 grid gap-3 sm:grid-cols-2">

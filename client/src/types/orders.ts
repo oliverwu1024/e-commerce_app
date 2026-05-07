@@ -40,6 +40,11 @@ export type PaymentMethod =
 
 export type PaymentSessionState = 'NONE' | 'PENDING' | 'COMPLETED';
 
+// Buyer's payment-channel choice at checkout. CARD lands the order in
+// CONFIRMED so the buyer can pay immediately; OFFLINE keeps the legacy
+// request-then-confirm flow used for cash / bank transfer.
+export type PaymentFlow = 'CARD' | 'OFFLINE';
+
 export const ORDER_STATUS_STYLES: Record<
   OrderStatus,
   { label: string; bg: string }
@@ -138,6 +143,15 @@ export type Order = {
   status: OrderStatus;
   paymentMethod: PaymentMethod | null;
   paymentSessionState: PaymentSessionState;
+  // Buyer's checkout-time channel choice. Drives the seller-decline UI
+  // (only CARD orders surface a decline-with-auto-refund button) and the
+  // success page's "Pay now" CTA (CARD orders skip the seller-confirms
+  // step and are pay-ready immediately).
+  paymentFlow: PaymentFlow;
+  // ISO timestamp; set on CARD orders at PAID time, nulled by the sweep
+  // job once expired or by a full refund. Truthy = "decline button still
+  // available right now."
+  sellerDeclineDeadline: string | null;
   fulfillmentMethod: OrderFulfillmentMethod;
   shippingPrice: string;
   shippingAddress: ShippingAddress | null;
@@ -213,6 +227,14 @@ export type OrderListResponse = {
   };
 };
 
+// Per-cart-item seller projection. Same OrderParty fields plus the
+// connected providers so the cart UI can gate "Pay now (card)" per
+// seller-group without an extra round-trip. Server filters to ACTIVE +
+// chargesEnabled before sending.
+export type CartItemSeller = OrderParty & {
+  paymentAccounts: { provider: 'STRIPE' | 'SQUARE' }[];
+};
+
 // Lightweight cart item shape returned from GET /api/cart — reuses the listing
 // summary fields plus status so the UI can show "no longer available" notices.
 export type CartItem = {
@@ -228,7 +250,7 @@ export type CartItem = {
     brand: string | null;
     condition: Condition;
     status: ListingStatus;
-    seller: OrderParty;
+    seller: CartItemSeller;
     images: { id: string; url: string }[];
   };
 };

@@ -60,6 +60,19 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
   const imageUrl = order.listing.images[0]?.url;
   const otherParty = role === 'buyer' ? order.seller : order.buyer;
   const statusStyle = ORDER_STATUS_STYLES[order.status];
+  // CARD-flow orders open a 24h seller-decline window at PAID time. Both
+  // surfaces gate UI on this single derived flag — the deadline column also
+  // gets cleared by the sweep job after expiry, so a stale deadline doesn't
+  // keep the button visible past its window.
+  const declineDeadlineMs = order.sellerDeclineDeadline
+    ? Date.parse(order.sellerDeclineDeadline)
+    : null;
+  const declineWindowOpen =
+    order.paymentFlow === 'CARD' &&
+    order.status === 'PAID' &&
+    declineDeadlineMs !== null &&
+    declineDeadlineMs > Date.now() &&
+    order.paymentSessionState !== 'PENDING';
   // Refund accounting. Order.amount is a string ("19.99"); convert to cents
   // for arithmetic. totalRefundedCents is an Int. remaining < 0 means
   // "fully refunded already" (REFUNDED status); == amount means full,
@@ -254,6 +267,26 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
     }
   }
 
+  async function handleDecline() {
+    if (
+      !confirm(
+        'Decline this order?\n\nThe buyer will receive a full automatic refund and the order will close. You will not be able to reverse this from inside ElectroMarket.',
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/api/orders/${order.id}/decline`, { method: 'POST' });
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to decline order');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   // -----------------------------------------------------------------
   // Role + status → available actions
   // -----------------------------------------------------------------
@@ -334,6 +367,22 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           Refund
         </button>,
       );
+      // CARD-flow orders get a one-click decline within the 24h window.
+      // Issues a full auto-refund and closes the order — distinct from the
+      // partial-refund Refund form above. The window is server-truth; the
+      // button is hidden once the sweep nulls the deadline.
+      if (declineWindowOpen) {
+        actions.push(
+          <button
+            key="decline"
+            onClick={handleDecline}
+            disabled={busy}
+            className="rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] px-3 py-1.5 text-xs font-medium text-[var(--neon-amber)] hover:brightness-110 disabled:opacity-50 transition-colors"
+          >
+            Decline (auto-refund)
+          </button>,
+        );
+      }
     } else if (order.status === 'SHIPPED' || order.status === 'COMPLETED') {
       // Refund remains available even after shipment — covers item-arrived-
       // damaged and post-completion disputes. Seller is on the hook for
@@ -611,6 +660,43 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             )}
           </div>
         )}
+
+      {/* CARD-flow decline-window notice — visible on PAID orders until the
+          deadline passes (sweep nulls it). Buyer sees what's happening; seller
+          sees their bounded out (the Decline button is in the action row). */}
+      {declineWindowOpen && declineDeadlineMs !== null && (
+        <div className="border-t border-[var(--neon-cyan)]/40 bg-[var(--tint-cyan)] px-4 py-2 text-xs text-[var(--neon-cyan)]">
+          {role === 'buyer' ? (
+            <>
+              Payment received. The seller has until{' '}
+              <span className="font-medium">
+                {new Intl.DateTimeFormat('en-AU', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                }).format(new Date(declineDeadlineMs))}
+              </span>{' '}
+              to decline this order. If they decline, you&apos;ll be refunded
+              automatically (5–10 business days to land back on your card).
+            </>
+          ) : (
+            <>
+              You can decline this order until{' '}
+              <span className="font-medium">
+                {new Intl.DateTimeFormat('en-AU', {
+                  day: 'numeric',
+                  month: 'short',
+                  hour: 'numeric',
+                  minute: '2-digit',
+                }).format(new Date(declineDeadlineMs))}
+              </span>
+              . After that, ship the item or use Refund if you can&apos;t
+              fulfil.
+            </>
+          )}
+        </div>
+      )}
 
       {/* Review form — buyer, completed, not yet reviewed */}
       {showReviewForm && role === 'buyer' && order.status === 'COMPLETED' && !order.review && (

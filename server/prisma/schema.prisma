@@ -73,6 +73,15 @@ enum PaymentMethod {
   STRIPE // Stripe — business sellers only
 }
 
+// Buyer's payment-channel choice at /checkout. CARD lands the order
+// straight in CONFIRMED so the buyer can pay immediately; the seller has a
+// bounded window after PAID to /decline (auto-refund). OFFLINE preserves
+// the legacy request-then-confirm flow used for cash / bank transfer.
+enum PaymentFlow {
+  CARD
+  OFFLINE
+}
+
 // Tracks an online payment session in flight, independent of the order's
 // lifecycle status. `/pay` flips NONE → PENDING; webhooks / capture flip
 // PENDING → COMPLETED. Cancel is refused while PENDING so the buyer can't
@@ -480,6 +489,18 @@ model Order {
   // during a live charge. Manual completions (CASH/BANK_TRANSFER) leave this
   // at NONE and jump straight from status=CONFIRMED to status=COMPLETED.
   paymentSessionState PaymentSessionState    @default(NONE)
+  // Buyer's payment-channel choice at checkout. OFFLINE is the legacy flow
+  // (PENDING_CONFIRMATION → seller confirms → buyer pays). CARD skips the
+  // seller-confirms step: order lands in CONFIRMED so the buyer can pay
+  // immediately. Defaulting to OFFLINE keeps existing rows behaving the
+  // same after the column is added.
+  paymentFlow         PaymentFlow            @default(OFFLINE)
+  // Deadline after which the seller can no longer /decline a CARD-flow
+  // order. Set when payment captures (markOrderPaid) to paidAt + 24h. Null
+  // for OFFLINE orders, for CARD orders before payment, or after the
+  // window has been swept clear. Past this deadline the seller is locked
+  // into shipping (or the buyer disputes).
+  sellerDeclineDeadline DateTime?
   // Fulfillment timestamps (nullable; set when seller/buyer click the
   // corresponding action). Used to render "Awaiting shipment" / "In transit"
   // / "Received on …" badges and for the dashboard in-progress filter.

@@ -25,23 +25,62 @@ const checkoutItemSchema = z.object({
   }),
 });
 
-// Single shipping address per checkout — applies to every POST item in
-// the cart. Address is required iff at least one item is POST. The route
-// also revalidates against listing.fulfillmentMethod since the client's
-// claim alone isn't authoritative.
-export const checkoutSchema = z.object({
-  items: z.array(checkoutItemSchema).min(1, 'Checkout must include at least one item'),
-  shippingAddress: shippingAddressSchema.nullable().optional(),
-}).superRefine((data, ctx) => {
-  const anyPost = data.items.some((i) => i.fulfillmentMethod === 'POST');
-  if (anyPost && !data.shippingAddress) {
-    ctx.addIssue({
-      code: 'custom',
-      path: ['shippingAddress'],
-      message: 'Shipping address is required when posting any item',
-    });
-  }
+// One per-seller group inside a checkout. Each group carries its own
+// paymentFlow because the buyer may want to pay one seller by card and
+// arrange offline with another (different sellers connect different
+// providers). The route validates that the group's items are all owned by
+// the named sellerId.
+const checkoutGroupSchema = z.object({
+  sellerId: uuidSchema,
+  paymentFlow: z.enum(['CARD', 'OFFLINE'], {
+    message: 'Payment flow must be CARD or OFFLINE',
+  }),
+  items: z
+    .array(checkoutItemSchema)
+    .min(1, 'A seller group must have at least one item'),
 });
+
+// Single shared shipping address — applies to every POST item across all
+// groups. Required iff at least one item across the cart is POST. The
+// route revalidates against listing.fulfillmentMethod and listing.sellerId
+// since the client's claims alone aren't authoritative.
+export const checkoutSchema = z
+  .object({
+    groups: z
+      .array(checkoutGroupSchema)
+      .min(1, 'Checkout must include at least one seller group'),
+    shippingAddress: shippingAddressSchema.nullable().optional(),
+  })
+  .superRefine((data, ctx) => {
+    const anyPost = data.groups.some((g) =>
+      g.items.some((i) => i.fulfillmentMethod === 'POST'),
+    );
+    if (anyPost && !data.shippingAddress) {
+      ctx.addIssue({
+        code: 'custom',
+        path: ['shippingAddress'],
+        message: 'Shipping address is required when posting any item',
+      });
+    }
+    // Defence-in-depth: a listingId must not appear in two groups (would
+    // produce two competing orders for the same listing). The route also
+    // catches this via the cart match check, but failing fast at validation
+    // is cheaper.
+    const seen = new Set<string>();
+    for (const g of data.groups) {
+      for (const item of g.items) {
+        if (seen.has(item.listingId)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['groups'],
+            message: 'A listing cannot appear in more than one seller group',
+          });
+          return;
+        }
+        seen.add(item.listingId);
+      }
+    }
+  });
 
 export type CheckoutInput = z.infer<typeof checkoutSchema>;
 
