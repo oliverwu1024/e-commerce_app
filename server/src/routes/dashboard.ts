@@ -28,6 +28,11 @@ router.get('/tab-counts', authenticate, async (req: Request, res: Response) => {
       saved,
       inPurchases,
       disputedPurchases,
+      // Aggregate over the buyer's unpaid CARD orders (CONFIRMED + CARD =
+      // pay-ready). Powers the dashboard's "X orders awaiting payment ($Y)"
+      // banner + tab pill — sums in cents to avoid Decimal-from-aggregate
+      // gotchas and so the client can format on its own.
+      unpaidCardAgg,
     ] = await Promise.all([
       // Selling — Active Listings (includes HIDDEN since the dashboard's
       // Active tab is "stuff I own and could un-hide", not just public ones).
@@ -68,7 +73,22 @@ router.get('/tab-counts', authenticate, async (req: Request, res: Response) => {
           dispute: { status: { in: [...ACTIVE_DISPUTE_STATUSES] } },
         },
       }),
+      // Unpaid CARD aggregate.
+      prisma.order.aggregate({
+        where: {
+          buyerId: userId,
+          status: 'CONFIRMED',
+          paymentFlow: 'CARD',
+        },
+        _count: { _all: true },
+        _sum: { amount: true },
+      }),
     ]);
+
+    const unpaidCardCount = unpaidCardAgg._count._all;
+    const unpaidCardTotalCents = unpaidCardAgg._sum.amount
+      ? Math.round(Number(unpaidCardAgg._sum.amount) * 100)
+      : 0;
 
     res.json({
       selling: {
@@ -80,6 +100,10 @@ router.get('/tab-counts', authenticate, async (req: Request, res: Response) => {
         saved,
         in_progress: inPurchases,
         disputed: disputedPurchases,
+      },
+      unpaidCard: {
+        count: unpaidCardCount,
+        totalCents: unpaidCardTotalCents,
       },
     });
   } catch (err) {

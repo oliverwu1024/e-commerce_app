@@ -99,6 +99,10 @@ const COUNTLESS_TABS: ReadonlySet<Tab> = new Set([
 type TabCounts = {
   selling: { active: number; in_progress: number; disputed: number };
   buying: { saved: number; in_progress: number; disputed: number };
+  // Aggregate over the buyer's unpaid CARD orders. Drives the dashboard
+  // banner + the "N to pay" pill on the In Progress tab so the cue is
+  // visible without clicking into the tab.
+  unpaidCard: { count: number; totalCents: number };
 };
 
 function tabCountFor(tab: Tab, counts: TabCounts | null): number | null {
@@ -345,6 +349,14 @@ function Dashboard() {
         </div>
       )}
 
+      {/* Action banners — surface "you have X waiting on you" cues without
+          forcing the user to click into a tab. Stack 0–2 banners depending
+          on whether the user is acting as buyer, seller, or both. */}
+      <DashboardActionBanners
+        counts={tabCounts}
+        onNavigate={selectTab}
+      />
+
       {/* Onboarding checklist — only relevant to sellers; auto-hides when
           all four steps are complete or the user dismisses it. */}
       {role === 'selling' && <OnboardingChecklist />}
@@ -390,6 +402,13 @@ function Dashboard() {
             const selected = activeTab === tab;
             const showCount = !COUNTLESS_TABS.has(tab);
             const count = showCount ? tabCountFor(tab, tabCounts) : null;
+            // Coloured "N to pay" pill on the buyer's In Progress tab —
+            // immediate visual cue when payment is due. Only renders when
+            // unpaidCard.count > 0 so it stays out of the way otherwise.
+            const showUnpaidPill =
+              tab === 'in_purchases' &&
+              tabCounts !== null &&
+              tabCounts.unpaidCard.count > 0;
             return (
               <button
                 key={tab}
@@ -410,6 +429,14 @@ function Dashboard() {
                 {showCount && count !== null && (
                   <span className="ml-1.5 text-[11px] text-[var(--text-dim)]">
                     ({count})
+                  </span>
+                )}
+                {showUnpaidPill && (
+                  <span
+                    className="ml-1.5 inline-flex items-center rounded-full border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] px-1.5 py-0.5 text-[10px] font-semibold text-[var(--neon-amber)]"
+                    aria-label={`${tabCounts!.unpaidCard.count} orders awaiting payment`}
+                  >
+                    {tabCounts!.unpaidCard.count} to pay
                   </span>
                 )}
               </button>
@@ -452,6 +479,62 @@ function Dashboard() {
           </>
         )}
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Action banners — surface unpaid-CARD purchases + in-progress sales.
+//
+// Stack 0–2 banners so users who play both roles (most active sellers also
+// buy) see what's waiting on them in either capacity without clicking into
+// each tab.
+// ---------------------------------------------------------------------------
+function DashboardActionBanners({
+  counts,
+  onNavigate,
+}: {
+  counts: TabCounts | null;
+  onNavigate: (tab: Tab) => void;
+}) {
+  if (!counts) return null;
+  const unpaid = counts.unpaidCard;
+  const inSales = counts.selling.in_progress;
+  const showBuyer = unpaid.count > 0;
+  const showSeller = inSales > 0;
+  if (!showBuyer && !showSeller) return null;
+  const unpaidTotal = (unpaid.totalCents / 100).toFixed(2);
+  return (
+    <div className="mt-4 space-y-2">
+      {showBuyer && (
+        <button
+          type="button"
+          onClick={() => onNavigate('in_purchases')}
+          className="w-full rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] p-3 text-left text-sm text-[var(--neon-amber)] hover:brightness-110 transition-colors"
+        >
+          <span className="font-semibold">
+            {unpaid.count} {unpaid.count === 1 ? 'order' : 'orders'} awaiting your
+            payment
+          </span>{' '}
+          <span className="text-[var(--text-muted)]">
+            · ${unpaidTotal} total · click to review
+          </span>
+        </button>
+      )}
+      {showSeller && (
+        <button
+          type="button"
+          onClick={() => onNavigate('in_sales')}
+          className="w-full rounded-lg border border-[var(--neon-cyan)]/40 bg-[var(--tint-cyan)] p-3 text-left text-sm text-[var(--neon-cyan)] hover:brightness-110 transition-colors"
+        >
+          <span className="font-semibold">
+            {inSales} {inSales === 1 ? 'sale' : 'sales'} in progress
+          </span>{' '}
+          <span className="text-[var(--text-muted)]">
+            · click to review
+          </span>
+        </button>
+      )}
     </div>
   );
 }
@@ -1174,6 +1257,17 @@ function OrdersTab({
         </div>
       )}
 
+      {/* Awaiting payment — buyer + in_progress only. Lives above the flat
+          chronological list so the most actionable rows are surfaced first.
+          Fetched separately from the paginated list so unpaid orders not on
+          page 1 still show up here. */}
+      {role === 'buyer' && bucket === 'in_progress' && !loading && (
+        <AwaitingPaymentSection
+          refreshKey={refreshKey}
+          onChange={refresh}
+        />
+      )}
+
       {!loading && orders.length > 0 && (
         <div className="space-y-3">
           {orders.map((order) => (
@@ -1213,3 +1307,185 @@ function OrdersTab({
   );
 }
 
+
+// ---------------------------------------------------------------------------
+// Awaiting-payment section — surfaces the buyer's unpaid CARD orders at the
+// top of In Progress, grouped by seller. One batch Pay button per seller calls
+// /pay/batch with contextOrderIds set to ALL unpaid orderIds, so paying one
+// seller's batch doesn't strand the rest of the buyer's groups.
+// ---------------------------------------------------------------------------
+function AwaitingPaymentSection({
+  refreshKey,
+  onChange,
+}: {
+  refreshKey: number;
+  onChange: () => void;
+}) {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [paying, setPaying] = useState<string | null>(null);
+  const [error, setError] = useState('');
+
+  const fetchUnpaid = useCallback(async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({
+        bucket: 'in_progress',
+        status: 'CONFIRMED',
+        paymentFlow: 'CARD',
+        limit: '50',
+      });
+      const data = await api<OrderListResponse>(
+        `/api/orders/purchases?${params.toString()}`,
+      );
+      setOrders(data.orders);
+    } catch {
+      // Silent — section only enhances the existing list. Failure leaves
+      // the chronological list as the recovery path.
+      setOrders([]);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchUnpaid();
+  }, [fetchUnpaid, refreshKey]);
+
+  if (loading || orders.length === 0) return null;
+
+  // Group by seller. Same-seller orders share a single Pay button.
+  const groups = new Map<
+    string,
+    { sellerId: string; sellerUsername: string; orders: Order[] }
+  >();
+  for (const order of orders) {
+    const g = groups.get(order.seller.id);
+    if (g) g.orders.push(order);
+    else
+      groups.set(order.seller.id, {
+        sellerId: order.seller.id,
+        sellerUsername: order.seller.username,
+        orders: [order],
+      });
+  }
+  const groupList = Array.from(groups.values());
+  const allOrderIds = orders.map((o) => o.id);
+
+  async function handlePay(
+    group: { sellerId: string; orders: Order[] },
+    paymentMethod: 'STRIPE' | 'SQUARE',
+  ) {
+    setPaying(group.sellerId);
+    setError('');
+    try {
+      const orderIds = group.orders.map((o) => o.id);
+      const res = await api<{ provider: string; url: string }>(
+        '/api/orders/pay/batch',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            orderIds,
+            paymentMethod,
+            // Pass every unpaid CARD orderId so a partial-batch redirect
+            // back to the success page preserves the rest.
+            contextOrderIds: allOrderIds,
+          }),
+        },
+      );
+      window.location.assign(res.url);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to start payment');
+      setPaying(null);
+    }
+  }
+
+  return (
+    <section
+      className="mb-6 rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)]/30 p-4"
+      aria-label="Orders awaiting payment"
+    >
+      <div className="mb-3">
+        <h2 className="text-sm font-semibold text-[var(--text-primary)]">
+          Awaiting your payment
+        </h2>
+        <p className="text-xs text-[var(--text-muted)]">
+          {orders.length} {orders.length === 1 ? 'order' : 'orders'} across{' '}
+          {groupList.length}{' '}
+          {groupList.length === 1 ? 'seller' : 'sellers'} — pay each seller in
+          one redirect.
+        </p>
+      </div>
+      <div className="space-y-3">
+        {groupList.map((g) => {
+          const stripeAvailable = g.orders[0]?.seller.paymentAccounts.some(
+            (a) => a.provider === 'STRIPE',
+          );
+          const squareAvailable = g.orders[0]?.seller.paymentAccounts.some(
+            (a) => a.provider === 'SQUARE',
+          );
+          const groupTotal = g.orders.reduce(
+            (s, o) => s + parseFloat(o.amount),
+            0,
+          );
+          return (
+            <div
+              key={g.sellerId}
+              className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-[var(--border-subtle)] bg-[var(--bg-panel)] p-3"
+            >
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium text-[var(--text-primary)]">
+                  {g.sellerUsername}
+                </p>
+                <p className="text-xs text-[var(--text-muted)]">
+                  {g.orders.length}{' '}
+                  {g.orders.length === 1 ? 'order' : 'orders'} ·{' '}
+                  {formatPrice(groupTotal)}
+                </p>
+                <p className="mt-1 text-[11px] text-[var(--text-dim)] truncate">
+                  {g.orders.map((o) => o.listing.title).join(' · ')}
+                </p>
+              </div>
+              <div className="flex flex-shrink-0 flex-wrap gap-2">
+                {stripeAvailable && (
+                  <button
+                    onClick={() => handlePay(g, 'STRIPE')}
+                    disabled={paying !== null}
+                    className="btn-cyber-primary text-xs"
+                  >
+                    {paying === g.sellerId
+                      ? 'Redirecting…'
+                      : 'Pay with Stripe'}
+                  </button>
+                )}
+                {squareAvailable && (
+                  <button
+                    onClick={() => handlePay(g, 'SQUARE')}
+                    disabled={paying !== null}
+                    className="btn-cyber-outline text-xs"
+                  >
+                    {paying === g.sellerId
+                      ? 'Redirecting…'
+                      : 'Pay with Square'}
+                  </button>
+                )}
+                {!stripeAvailable && !squareAvailable && (
+                  <span className="text-[11px] text-[var(--text-muted)]">
+                    Seller hasn&apos;t connected a card provider — coordinate via
+                    messages.
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      {error && (
+        <p className="mt-2 text-xs text-[var(--neon-danger)]">{error}</p>
+      )}
+      {/* Suppress unused-warning for onChange — reserved for future
+          decline/cancel from this section. */}
+      <span className="hidden" aria-hidden onClick={onChange} />
+    </section>
+  );
+}

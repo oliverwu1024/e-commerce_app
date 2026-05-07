@@ -111,6 +111,10 @@ export const orderListQuerySchema = z.object({
   status: z
     .enum(['PENDING_CONFIRMATION', 'CONFIRMED', 'PAID', 'SHIPPED', 'COMPLETED', 'CANCELLED', 'REFUNDED'])
     .optional(),
+  // Optional channel filter — used by the dashboard's "Awaiting your
+  // payment" section to fetch unpaid CARD orders independent of the
+  // chronological in-progress page.
+  paymentFlow: z.enum(['CARD', 'OFFLINE']).optional(),
   // Convenience filter for the dashboard's "In Progress" / "Past" / "In
   // Dispute" tabs.
   //   'in_progress' — order is live (not COMPLETED/CANCELLED/REFUNDED) AND
