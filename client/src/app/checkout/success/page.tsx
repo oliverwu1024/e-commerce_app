@@ -106,8 +106,14 @@ function CheckoutSuccess() {
   // Auto-confirm the Square batch when the buyer is redirected back from
   // Square's hosted checkout. We can't rely on a webhook (per-seller Square
   // OAuth has no automatic platform webhook subscription), so the client
-  // pulls. Idempotent — server will return `already_completed` if it ran
-  // a tick earlier.
+  // pulls. Idempotent — server returns `already_completed` if it ran a
+  // tick earlier.
+  //
+  // Retry: Square Sandbox sometimes returns 202 {pending:true} on the first
+  // poll because the buyer's tab redirected back faster than Square surfaced
+  // the order. We retry up to a few times with short delays before giving
+  // up, mirroring the existing single-order pattern in the dashboard.
+  const [squarePending, setSquarePending] = useState(false);
   useEffect(() => {
     if (squareConfirmFired.current) return;
     if (provider !== 'square' || payment !== 'success') return;
@@ -119,20 +125,59 @@ function CheckoutSuccess() {
       .map((o) => o.id);
     if (cardConfirmable.length === 0) return;
     squareConfirmFired.current = true;
+
+    const apiBase = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:5000';
+    const doConfirm = async (): Promise<{
+      ok: boolean;
+      status: number;
+      pending: boolean;
+      error?: string;
+    }> => {
+      const resp = await fetch(`${apiBase}/api/orders/pay/square/confirm/batch`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ orderIds: cardConfirmable }),
+      });
+      const text = await resp.text();
+      const body = text
+        ? (JSON.parse(text) as { pending?: boolean; error?: string })
+        : {};
+      return {
+        ok: resp.ok,
+        status: resp.status,
+        pending: body.pending === true || resp.status === 202,
+        error: body.error,
+      };
+    };
+
     void (async () => {
-      try {
-        await api(`/api/orders/pay/square/confirm/batch`, {
-          method: 'POST',
-          body: JSON.stringify({ orderIds: cardConfirmable }),
-        });
-        // Refresh — the server flipped these to PAID; the UI badges follow.
-        await fetchOrders();
-      } catch (err) {
-        // 202 = "Square hasn't captured yet" — surface a hint and let the
-        // user click pay again. Most other errors are also recoverable
-        // by re-clicking the pay button on a failed batch.
-        console.warn('Square batch confirm pending or failed:', err);
+      // Up to 3 attempts with backoff so a slow Square Sandbox surfacing
+      // doesn't strand the buyer with paid-on-Square / not-paid-here.
+      const delays = [0, 1500, 3000];
+      for (const delay of delays) {
+        if (delay > 0) await new Promise((r) => setTimeout(r, delay));
+        try {
+          const result = await doConfirm();
+          if (!result.ok && !result.pending) {
+            console.warn('Square batch confirm failed:', result.error);
+            break;
+          }
+          if (!result.pending) {
+            // Server flipped the orders — refresh to reflect.
+            await fetchOrders();
+            setSquarePending(false);
+            return;
+          }
+        } catch (err) {
+          console.warn('Square batch confirm errored:', err);
+          break;
+        }
       }
+      // All retries returned pending — surface honestly so the buyer doesn't
+      // think their order is paid when our DB doesn't agree yet.
+      setSquarePending(true);
+      await fetchOrders();
     })();
   }, [provider, payment, loading, orders, fetchOrders]);
 
@@ -151,6 +196,27 @@ function CheckoutSuccess() {
         {cancelledNotice && (
           <div className="mb-6 rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] p-3 text-sm text-[var(--neon-amber)]">
             Payment was cancelled. You can try again at any time.
+          </div>
+        )}
+
+        {/* Square sometimes lags surfacing the order to its API right after
+            redirect. We retried a few times; if it's still pending here,
+            surface the state honestly so the buyer doesn't think anything
+            is broken — a refresh in a minute usually clears it. */}
+        {squarePending && (
+          <div className="mb-6 rounded-lg border border-[var(--neon-amber)]/40 bg-[var(--tint-amber)] p-3 text-sm text-[var(--neon-amber)]">
+            <span className="font-semibold">Square is still confirming your payment.</span>{' '}
+            <span className="text-[var(--text-muted)]">
+              Refresh this page in a moment, or check{' '}
+              <Link
+                href="/dashboard?tab=awaiting_payment"
+                className="underline hover:brightness-110"
+              >
+                Awaiting Payment
+              </Link>{' '}
+              — once Square reports the capture, the orders will flip to Paid
+              automatically.
+            </span>
           </div>
         )}
 
