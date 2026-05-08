@@ -1303,6 +1303,112 @@ router.post(
 );
 
 // ---------------------------------------------------------------------------
+// POST /api/orders/:id/finalize — seller closes the deal themselves.
+// SHIPPED → COMPLETED. Mirrors /receive but seller-driven. POST orders are
+// gated by a 7-day grace from shippedAt: the seller can't compress the
+// buyer's 30-day post-completion dispute window before the parcel even
+// lands. PICKUP has no grace — the handover already happened in person.
+// ---------------------------------------------------------------------------
+const SELLER_CLOSE_POST_GRACE_DAYS = 7;
+const SELLER_CLOSE_POST_GRACE_MS =
+  SELLER_CLOSE_POST_GRACE_DAYS * 24 * 60 * 60 * 1000;
+
+router.post(
+  '/:id/finalize',
+  authenticate,
+  orderMutationLimiter,
+  async (req: Request<{ id: string }>, res: Response) => {
+    try {
+      const { id } = req.params;
+      if (!uuidSchema.safeParse(id).success) {
+        res.status(400).json({ error: 'Invalid order ID' });
+        return;
+      }
+
+      const existing = await prisma.order.findUnique({
+        where: { id },
+        select: {
+          id: true,
+          sellerId: true,
+          status: true,
+          fulfillmentMethod: true,
+          shippedAt: true,
+        },
+      });
+
+      if (!existing) {
+        res.status(404).json({ error: 'Order not found' });
+        return;
+      }
+      if (existing.sellerId !== req.userId) {
+        res
+          .status(403)
+          .json({ error: 'Only the seller can close this order' });
+        return;
+      }
+      if (existing.status !== 'SHIPPED') {
+        res.status(409).json({
+          error: 'Order must be shipped before it can be marked complete',
+        });
+        return;
+      }
+      if (existing.fulfillmentMethod === 'POST') {
+        if (!existing.shippedAt) {
+          res.status(409).json({
+            error: 'Cannot mark complete without a shipment timestamp',
+          });
+          return;
+        }
+        const elapsed = Date.now() - existing.shippedAt.getTime();
+        if (elapsed < SELLER_CLOSE_POST_GRACE_MS) {
+          res.status(409).json({
+            error: `Posted orders can only be closed ${SELLER_CLOSE_POST_GRACE_DAYS}+ days after shipping. Wait for the buyer to confirm receipt.`,
+          });
+          return;
+        }
+      }
+
+      const { count } = await prisma.order.updateMany({
+        where: { id, status: 'SHIPPED', sellerId: req.userId },
+        data: {
+          status: 'COMPLETED',
+          deliveredAt: new Date(),
+        },
+      });
+      if (count === 0) {
+        res.status(409).json({
+          error: 'Order status changed; please refresh and try again',
+        });
+        return;
+      }
+
+      const updated = await prisma.order.findUnique({
+        where: { id },
+        select: ORDER_SUMMARY_SELECT,
+      });
+      if (updated) {
+        const isPickup = updated.fulfillmentMethod === 'PICKUP';
+        void createNotification({
+          recipientId: updated.buyer.id,
+          type: 'ORDER_COMPLETED',
+          title: 'Order marked complete',
+          body: isPickup
+            ? `${updated.seller.username} marked your pickup of "${updated.listing.title}" as complete. You have 30 days to open a dispute if there's a problem.`
+            : `${updated.seller.username} marked your order for "${updated.listing.title}" as delivered. You have 30 days to open a dispute if there's a problem.`,
+          actorId: updated.seller.id,
+          orderId: updated.id,
+          listingId: updated.listing.id,
+        });
+      }
+      res.json({ order: updated ? projectOrderParties(updated) : updated });
+    } catch (err) {
+      logger.error('orders.finalize.failed', { err: String(err) });
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  },
+);
+
+// ---------------------------------------------------------------------------
 // POST /api/orders/pay/batch — buyer initiates one provider session that
 // covers N CARD orders from the same seller-group. Cuts the per-listing
 // redirect spam: a buyer with 3 listings from the same seller pays once

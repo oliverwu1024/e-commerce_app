@@ -22,6 +22,14 @@ type Role = 'buyer' | 'seller';
 const DISPUTE_WINDOW_DAYS = 30;
 const DISPUTE_WINDOW_MS = DISPUTE_WINDOW_DAYS * 24 * 60 * 60 * 1000;
 
+// Mirror of SELLER_CLOSE_POST_GRACE_DAYS in routes/orders.ts. POST orders
+// can only be seller-closed once this many days have passed since shipping;
+// PICKUP has no grace. Used purely for UI gating — the server is the
+// authority and will reject premature /finalize calls.
+const SELLER_CLOSE_POST_GRACE_DAYS = 7;
+const SELLER_CLOSE_POST_GRACE_MS =
+  SELLER_CLOSE_POST_GRACE_DAYS * 24 * 60 * 60 * 1000;
+
 function canDisputeCompleted(order: Order): boolean {
   // One dispute per order — once the buyer files (or had one filed historically)
   // they take all further action through the dispute thread, not by opening a
@@ -255,6 +263,28 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
     }
   }
 
+  async function handleFinalize() {
+    if (
+      !confirm(
+        isPickup
+          ? 'Mark this pickup as complete?\n\nThe deal closes and the buyer can leave a review. They can still open a dispute within 30 days if there is a problem.'
+          : 'Mark this order as delivered?\n\nThe deal closes and the buyer can leave a review. They can still open a dispute within 30 days if there is a problem.',
+      )
+    ) {
+      return;
+    }
+    setBusy(true);
+    setError('');
+    try {
+      await api(`/api/orders/${order.id}/finalize`, { method: 'POST' });
+      onChange();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to mark complete');
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function handleAbandon() {
     if (
       !confirm(
@@ -405,6 +435,36 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           Refund
         </button>,
       );
+      if (order.status === 'SHIPPED') {
+        // Seller-driven close. PICKUP can close immediately (handover already
+        // happened in person); POST is gated by SELLER_CLOSE_POST_GRACE_DAYS
+        // from shippedAt so the seller can't compress the buyer's 30-day
+        // post-completion dispute window before the parcel even lands. The
+        // server enforces this; the client mirrors it for UI clarity.
+        const finalizeUnlockMs = !isPickup && order.shippedAt
+          ? Date.parse(order.shippedAt) + SELLER_CLOSE_POST_GRACE_MS
+          : null;
+        const finalizeLocked =
+          finalizeUnlockMs !== null && finalizeUnlockMs > Date.now();
+        actions.push(
+          <button
+            key="finalize"
+            onClick={handleFinalize}
+            disabled={busy || finalizeLocked}
+            title={
+              finalizeLocked && finalizeUnlockMs !== null
+                ? `Available ${new Intl.DateTimeFormat('en-AU', {
+                    day: 'numeric',
+                    month: 'short',
+                  }).format(new Date(finalizeUnlockMs))} (${SELLER_CLOSE_POST_GRACE_DAYS} days after shipping)`
+                : 'Close the deal — buyer keeps a 30-day dispute window'
+            }
+            className="btn-cyber-primary text-xs"
+          >
+            {isPickup ? 'Mark Complete' : 'Mark Delivered'}
+          </button>,
+        );
+      }
     }
   } else {
     // buyer

@@ -92,7 +92,7 @@ router.post(
         const elapsed = Date.now() - order.deliveredAt.getTime();
         if (elapsed > DISPUTE_WINDOW_MS) {
           res.status(409).json({
-            error: `Disputes must be opened within ${DISPUTE_WINDOW_DAYS} days of marking the order received`,
+            error: `Disputes must be opened within ${DISPUTE_WINDOW_DAYS} days of the order being marked complete`,
           });
           return;
         }
