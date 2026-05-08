@@ -43,26 +43,58 @@ function MediaGallery({
     })),
   ];
   const [selectedIndex, setSelectedIndex] = useState(0);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
   const current = slots[selectedIndex];
 
+  function navPrev() {
+    setSelectedIndex((i) => (i > 0 ? i - 1 : slots.length - 1));
+  }
+  function navNext() {
+    setSelectedIndex((i) => (i < slots.length - 1 ? i + 1 : 0));
+  }
   function handleKeyDown(e: React.KeyboardEvent) {
-    if (e.key === 'ArrowLeft') {
-      setSelectedIndex((i) => (i > 0 ? i - 1 : slots.length - 1));
-    } else if (e.key === 'ArrowRight') {
-      setSelectedIndex((i) => (i < slots.length - 1 ? i + 1 : 0));
-    }
+    if (e.key === 'ArrowLeft') navPrev();
+    else if (e.key === 'ArrowRight') navNext();
   }
 
   return (
     <div>
-      {/* Main slot */}
+      {/* Main slot — images use object-contain so any aspect ratio shows
+          unchopped (letterboxed against the panel bg). Click an image to
+          open the lightbox; videos play inline and intentionally don't
+          trigger the lightbox so play/pause stays one-tap. */}
       <div className="aspect-[4/3] rounded-xl bg-[var(--bg-panel-hi)] overflow-hidden">
         {current?.kind === 'image' ? (
-          <img
-            src={current.url}
-            alt={title}
-            className="h-full w-full object-cover"
-          />
+          <button
+            type="button"
+            onClick={() => setLightboxOpen(true)}
+            aria-label={`Open ${title} image ${selectedIndex + 1} of ${slots.length} fullscreen`}
+            className="group relative block h-full w-full cursor-zoom-in"
+          >
+            <img
+              src={current.url}
+              alt={title}
+              className="h-full w-full object-contain"
+            />
+            <span
+              aria-hidden="true"
+              className="absolute right-2 top-2 flex h-9 w-9 items-center justify-center rounded-full bg-black/55 text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100"
+            >
+              <svg
+                className="h-5 w-5"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth="2"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="M21 21l-4.35-4.35M11 8v6M8 11h6M17 11a6 6 0 11-12 0 6 6 0 0112 0z"
+                />
+              </svg>
+            </span>
+          </button>
         ) : current?.kind === 'video' ? (
           // `key` forces a fresh <video> on slot change so the previous
           // clip stops + resets when the user clicks the thumb. controls
@@ -85,6 +117,17 @@ function MediaGallery({
           </div>
         )}
       </div>
+
+      {lightboxOpen && current && (
+        <Lightbox
+          slots={slots}
+          index={selectedIndex}
+          title={title}
+          onPrev={navPrev}
+          onNext={navNext}
+          onClose={() => setLightboxOpen(false)}
+        />
+      )}
 
       {/* Thumbnails — only render when there's more than one slot */}
       {slots.length > 1 && (
@@ -144,6 +187,141 @@ function MediaGallery({
               )}
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Lightbox — fullscreen view for a single media slot. Backdrop click,
+// ESC, and the close button all dismiss; ArrowLeft/ArrowRight cycle
+// through the gallery's slots in sync with the underlying selectedIndex.
+// Locks page scroll while open.
+// ---------------------------------------------------------------------------
+
+function Lightbox({
+  slots,
+  index,
+  title,
+  onPrev,
+  onNext,
+  onClose,
+}: {
+  slots: MediaSlot[];
+  index: number;
+  title: string;
+  onPrev: () => void;
+  onNext: () => void;
+  onClose: () => void;
+}) {
+  const current = slots[index];
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+      else if (e.key === 'ArrowLeft') onPrev();
+      else if (e.key === 'ArrowRight') onNext();
+    }
+    document.addEventListener('keydown', onKey);
+    const prevOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      document.body.style.overflow = prevOverflow;
+    };
+  }, [onClose, onPrev, onNext]);
+
+  if (!current) return null;
+
+  const hasMultiple = slots.length > 1;
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={`${title} fullscreen viewer`}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/90 p-4 sm:p-8"
+      onClick={onClose}
+    >
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        aria-label="Close fullscreen"
+        className="absolute right-4 top-4 z-10 flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition-colors hover:bg-white/20"
+      >
+        <svg
+          className="h-5 w-5"
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth="2"
+        >
+          <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+        </svg>
+      </button>
+
+      {hasMultiple && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onPrev();
+          }}
+          aria-label="Previous"
+          className="absolute left-2 top-1/2 z-10 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition-colors hover:bg-white/20 sm:left-4"
+        >
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M15 19l-7-7 7-7" />
+          </svg>
+        </button>
+      )}
+
+      <div
+        className="flex max-h-full max-w-full items-center justify-center"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {current.kind === 'image' ? (
+          <img
+            src={current.url}
+            alt={title}
+            className="max-h-[90vh] max-w-[95vw] object-contain"
+          />
+        ) : (
+          <video
+            key={current.id}
+            src={current.url}
+            controls
+            autoPlay
+            className="max-h-[90vh] max-w-[95vw] bg-black"
+          >
+            <source src={current.url} type={current.mimeType} />
+          </video>
+        )}
+      </div>
+
+      {hasMultiple && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            onNext();
+          }}
+          aria-label="Next"
+          className="absolute right-2 top-1/2 z-10 flex h-12 w-12 -translate-y-1/2 items-center justify-center rounded-full bg-white/10 text-white backdrop-blur transition-colors hover:bg-white/20 sm:right-4"
+        >
+          <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth="2">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M9 5l7 7-7 7" />
+          </svg>
+        </button>
+      )}
+
+      {hasMultiple && (
+        <div className="pointer-events-none absolute bottom-4 left-1/2 -translate-x-1/2 rounded-full bg-white/10 px-3 py-1 text-xs font-medium text-white backdrop-blur">
+          {index + 1} / {slots.length}
         </div>
       )}
     </div>
