@@ -136,7 +136,7 @@ export default function Home() {
       </section>
 
       {/* ============================================================
-         TRENDING STRIP — default cream band
+         MORE TO EXPLORE — default cream band
          ============================================================ */}
       {(loading || featured.length > 0) && (
         <section className="relative">
@@ -144,20 +144,11 @@ export default function Home() {
             <div className="mb-6 flex items-end justify-between gap-3 sm:mb-10 sm:gap-4">
               <div className="min-w-0">
                 <p className="font-serif-italic text-base text-[var(--text-primary)] sm:text-xl">
-                  What&rsquo;s moving today
+                  Keep scrolling
                 </p>
-                <h2 className="mt-1 flex items-center gap-2 text-2xl font-extrabold tracking-tight sm:gap-3 sm:text-4xl">
-                  <span
-                    aria-hidden="true"
-                    className="relative inline-flex h-2.5 w-2.5 shrink-0 sm:h-3 sm:w-3"
-                  >
-                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-[var(--neon-cyan)] opacity-60"></span>
-                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-[var(--neon-cyan)] shadow-[0_0_10px_color-mix(in_oklab,var(--neon-cyan)_50%,transparent)] sm:h-3 sm:w-3"></span>
-                  </span>
-                  <span>
-                    <span className="text-[var(--neon-cyan)]">Trending</span>
-                    <span className="text-[var(--text-primary)]"> right now</span>
-                  </span>
+                <h2 className="mt-1 text-2xl font-extrabold tracking-tight sm:text-4xl">
+                  <span className="text-[var(--neon-cyan)]">More</span>
+                  <span className="text-[var(--text-primary)]"> to explore</span>
                 </h2>
               </div>
               <Link
