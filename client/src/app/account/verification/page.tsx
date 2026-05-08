@@ -126,7 +126,7 @@ export default function VerificationPage() {
       >
         {canSell ? (
           <>
-            <span className="font-medium">You're verified to sell.</span>{' '}
+            <span className="font-medium">You&apos;re verified to sell.</span>{' '}
             <Link href="/listings/new" className="underline">
               Post a listing.
             </Link>

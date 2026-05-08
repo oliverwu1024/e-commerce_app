@@ -65,7 +65,10 @@ export default function RootLayout({
       className={`${orbitron.variable} ${manrope.variable} ${fraunces.variable} ${geistMono.variable} h-full antialiased`}
     >
       <head>
-        {/* External theme-init script keeps script-src CSP free of unsafe-inline. */}
+        {/* External theme-init script keeps script-src CSP free of unsafe-inline.
+            Must be a sync <script> so it sets the theme class before first paint
+            and prevents a flash of the wrong theme. */}
+        {/* eslint-disable-next-line @next/next/no-sync-scripts */}
         <script src="/theme-init.js" />
       </head>
       <body className="min-h-full flex flex-col">

@@ -61,7 +61,7 @@ function CreateListingGate() {
     return (
       <div className="mx-auto max-w-2xl px-4 py-12">
         <div className="rounded-xl border border-[var(--neon-danger)]/40 bg-[var(--tint-danger)] p-6">
-          <h1 className="text-xl font-bold text-[var(--neon-danger)]">Couldn't verify your eligibility</h1>
+          <h1 className="text-xl font-bold text-[var(--neon-danger)]">Couldn&apos;t verify your eligibility</h1>
           <p className="mt-1 text-sm text-[var(--neon-danger)]">{state.message}</p>
           <button
             type="button"

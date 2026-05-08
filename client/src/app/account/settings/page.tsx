@@ -792,7 +792,7 @@ function PasswordForm({ onChanged }: { onChanged: () => void }) {
       <div>
         <h2 className="text-lg font-semibold text-[var(--text-primary)]">Change password</h2>
         <p className="mt-1 text-sm text-[var(--text-muted)]">
-          You'll be signed out everywhere after changing your password.
+          You&apos;ll be signed out everywhere after changing your password.
         </p>
       </div>
 
