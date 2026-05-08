@@ -2,8 +2,11 @@
 node_modules/
 
 # Environment
-.env
-.env.local
+.env*
+
+# Personal planning / scratch notes (kept locally, not for the public repo)
+docs/
+*.scratch.md
 
 # Build outputs
 dist/

@@ -26,7 +26,6 @@
 - [Getting started](#getting-started)
 - [Environment variables](#environment-variables)
 - [Testing](#testing)
-- [Further reading](#further-reading)
 - [License](#license)
 
 ---
@@ -178,10 +177,6 @@ e-commerce_app/
 │       └── utils/
 ├── cloudflare-worker/
 │   └── inbound-email/               # Parses inbound mail → /api/webhooks/email
-├── docs/
-│   ├── inbound-email-setup.md
-│   ├── square-catalog-sync.md
-│   └── release_test_plan.md
 ├── docker-compose.yml               # dev (db, redis, server, client)
 ├── docker-compose.prod.yml          # prod (no bind-mounts, secrets required)
 └── README.md
@@ -259,7 +254,7 @@ Generate the Firebase service account: Firebase Console → Project Settings →
 
 ### Cloudflare Worker (inbound email)
 
-`cloudflare-worker/inbound-email/` parses inbound mail and POSTs to `/api/webhooks/email`. Setup walkthrough in [`docs/inbound-email-setup.md`](docs/inbound-email-setup.md).
+`cloudflare-worker/inbound-email/` parses inbound mail and POSTs to `/api/webhooks/email`.
 
 ---
 
@@ -270,15 +265,7 @@ cd server
 npm test          # node:test runner — Square Catalog mapper unit tests
 ```
 
-Currently focused unit coverage on the catalog mapper (the trickiest pure logic). End-to-end coverage is a manual checklist in [`docs/release_test_plan.md`](docs/release_test_plan.md) (171 items across buyer, individual seller, business seller, and cross-persona flows).
-
----
-
-## Further reading
-
-- [`docs/square-catalog-sync.md`](docs/square-catalog-sync.md) — Outbox + BullMQ + optimistic concurrency architecture, failure modes, and runbook
-- [`docs/inbound-email-setup.md`](docs/inbound-email-setup.md) — Wiring `support@` mail into the in-app contact inbox via Cloudflare Worker / Resend / Mailgun
-- [`docs/release_test_plan.md`](docs/release_test_plan.md) — Manual smoke-test plan organised by persona
+Currently focused unit coverage on the catalog mapper (the trickiest pure logic). End-to-end coverage is a manual smoke-test checklist (171 items across buyer, individual seller, business seller, and cross-persona flows).
 
 ---
 
