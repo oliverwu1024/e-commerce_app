@@ -13,6 +13,7 @@
 ![Redis](https://img.shields.io/badge/Redis-BullMQ-dc382d?logo=redis)
 ![Docker](https://img.shields.io/badge/Docker-multi--stage-2496ed?logo=docker)
 ![License](https://img.shields.io/badge/License-AGPL%20v3-blue.svg)
+[![CI](https://github.com/oliverwu1024/e-commerce_app/actions/workflows/ci.yml/badge.svg)](https://github.com/oliverwu1024/e-commerce_app/actions/workflows/ci.yml)
 
 ---
 
