@@ -7,7 +7,8 @@ import { formatPrice } from '@/types/listings';
 import {
   type Order,
   type PaymentMethod,
-  ORDER_STATUS_STYLES,
+  getOrderStatusStyle,
+  IN_PROGRESS_STATUSES,
   PAYMENT_METHOD_LABELS,
 } from '@/types/orders';
 import MessageThread from '@/components/MessageThread';
@@ -59,7 +60,8 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
 
   const imageUrl = order.listing.images[0]?.url;
   const otherParty = role === 'buyer' ? order.seller : order.buyer;
-  const statusStyle = ORDER_STATUS_STYLES[order.status];
+  const statusStyle = getOrderStatusStyle(order);
+  const isPickup = order.fulfillmentMethod === 'PICKUP';
   // CARD-flow orders open a 24h seller-decline window at PAID time. Both
   // surfaces gate UI on this single derived flag — the deadline column also
   // gets cleared by the sweep job after expiry, so a stale deadline doesn't
@@ -221,7 +223,13 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
       setTrackingInput('');
       onChange();
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to mark as shipped');
+      setError(
+        err instanceof Error
+          ? err.message
+          : isPickup
+            ? 'Failed to confirm pickup'
+            : 'Failed to mark as shipped',
+      );
     } finally {
       setBusy(false);
     }
@@ -356,7 +364,7 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
           disabled={busy}
           className="btn-cyber-primary text-xs"
         >
-          Mark Shipped
+          {isPickup ? 'Mark Shipped / Pickup Confirmed' : 'Mark Shipped'}
         </button>,
         <button
           key="refund"
@@ -581,7 +589,9 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
                 title={
                   order.status === 'PENDING_CONFIRMATION'
                     ? 'Confirm or decline this order'
-                    : 'Mark this order as shipped'
+                    : isPickup
+                      ? 'Confirm pickup with the buyer'
+                      : 'Mark this order as shipped'
                 }
               >
                 ● Needs action
@@ -772,29 +782,38 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
         </div>
       )}
 
-      {/* Ship picker — seller marking PAID order as shipped */}
+      {/* Ship picker — seller marking PAID order as shipped (or pickup
+          confirmed). For PICKUP orders we skip the tracking input entirely
+          since there's no parcel to follow; the picker collapses to a
+          confirm step. */}
       {showShipPicker && role === 'seller' && order.status === 'PAID' && (
         <div className="border-t border-[var(--border-subtle)] bg-[var(--bg-panel-hi)] p-4">
-          <p className="mb-2 text-xs font-medium text-[var(--text-primary)]">
-            Tracking number{' '}
-            <span className="font-normal text-[var(--text-dim)]">(optional)</span>
-          </p>
+          {!isPickup && (
+            <p className="mb-2 text-xs font-medium text-[var(--text-primary)]">
+              Tracking number{' '}
+              <span className="font-normal text-[var(--text-dim)]">(optional)</span>
+            </p>
+          )}
           <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="text"
-              value={trackingInput}
-              onChange={(e) => setTrackingInput(e.target.value)}
-              maxLength={100}
-              placeholder="e.g. ABCD1234567"
-              disabled={busy}
-              className="input-cyber min-w-0 flex-1 px-3 py-1.5 text-xs sm:flex-initial sm:w-64"
-            />
+            {!isPickup && (
+              <input
+                type="text"
+                value={trackingInput}
+                onChange={(e) => setTrackingInput(e.target.value)}
+                maxLength={100}
+                placeholder="e.g. ABCD1234567"
+                disabled={busy}
+                className="input-cyber min-w-0 flex-1 px-3 py-1.5 text-xs sm:flex-initial sm:w-64"
+              />
+            )}
             <button
               onClick={handleShip}
               disabled={busy}
               className="btn-cyber-primary text-xs"
             >
-              {busy ? 'Shipping…' : 'Confirm Shipped'}
+              {busy
+                ? isPickup ? 'Confirming…' : 'Shipping…'
+                : isPickup ? 'Confirm Pickup' : 'Confirm Shipped'}
             </button>
             <button
               onClick={() => {
@@ -808,8 +827,9 @@ export default function OrderRow({ order, role, currentUserId, onChange }: Props
             </button>
           </div>
           <p className="mt-2 text-xs text-[var(--text-muted)]">
-            Tracking number is shown to the buyer so they can follow the parcel. Leave blank
-            if you handed the item over in person.
+            {isPickup
+              ? 'Confirm once the pickup is arranged with the buyer. They’ll mark the order received after collecting the item.'
+              : 'Tracking number is shown to the buyer so they can follow the parcel. Leave blank if you handed the item over in person.'}
           </p>
         </div>
       )}
@@ -1069,6 +1089,12 @@ function FulfillmentSummary({ order }: { order: Order }) {
             </div>
             <div>{order.shippingAddress.country}</div>
           </address>
+        </div>
+      )}
+      {!isPost && IN_PROGRESS_STATUSES.includes(order.status) && (
+        <div className="mt-3 border-t border-[var(--border-subtle)] pt-2 text-[var(--text-muted)]">
+          Use the message thread below to coordinate the pickup time and
+          address with the other party.
         </div>
       )}
     </div>

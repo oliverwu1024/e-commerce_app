@@ -84,6 +84,7 @@ router.get('/threads', authenticate, inboxLimiter, async (req: Request, res: Res
         select: {
           id: true,
           status: true,
+          fulfillmentMethod: true,
           amount: true,
           buyer: { select: { id: true, username: true, avatarUrl: true } },
           seller: { select: { id: true, username: true, avatarUrl: true } },
@@ -148,6 +149,7 @@ router.get('/threads', authenticate, inboxLimiter, async (req: Request, res: Res
           listing: order.listing,
           counterparty,
           orderStatus: order.status,
+          fulfillmentMethod: order.fulfillmentMethod,
           amount: order.amount.toString(),
           lastMessage: {
             id: last.id,

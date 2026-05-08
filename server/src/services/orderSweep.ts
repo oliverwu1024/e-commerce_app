@@ -27,6 +27,7 @@ export async function sweepShippedOrders(): Promise<number> {
       id: true,
       buyerId: true,
       sellerId: true,
+      fulfillmentMethod: true,
       listing: { select: { id: true, title: true } },
     },
   });
@@ -41,11 +42,14 @@ export async function sweepShippedOrders(): Promise<number> {
     });
     if (count === 1) {
       flipped++;
+      const isPickup = order.fulfillmentMethod === 'PICKUP';
       void createNotification({
         recipientId: order.buyerId,
         type: 'ORDER_COMPLETED',
         title: 'Order auto-completed',
-        body: `Your order for "${order.listing.title}" has been automatically marked as complete after 14 days in transit. Leave a review if you're happy with the purchase.`,
+        body: isPickup
+          ? `Your order for "${order.listing.title}" has been automatically marked as complete 14 days after the pickup was confirmed. Leave a review if you're happy with the purchase.`
+          : `Your order for "${order.listing.title}" has been automatically marked as complete after 14 days in transit. Leave a review if you're happy with the purchase.`,
         actorId: null,
         orderId: order.id,
         listingId: order.listing.id,

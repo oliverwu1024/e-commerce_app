@@ -8,7 +8,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useInboxStore } from '@/stores/inbox';
 import MessageThread from '@/components/MessageThread';
 import { formatPrice } from '@/types/listings';
-import { ORDER_STATUS_STYLES } from '@/types/orders';
+import { getOrderStatusStyle } from '@/types/orders';
 import type {
   InboxThread,
   InboxThreadsResponse,
@@ -182,7 +182,10 @@ function OrdersInbox() {
     <ul className="space-y-2">
       {threads.map((t) => {
         const open = activeOrderId === t.orderId;
-        const statusStyle = ORDER_STATUS_STYLES[t.orderStatus];
+        const statusStyle = getOrderStatusStyle({
+          status: t.orderStatus,
+          fulfillmentMethod: t.fulfillmentMethod,
+        });
         const imageUrl = t.listing.images[0]?.url;
         return (
           <li

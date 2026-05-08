@@ -79,6 +79,22 @@ export const ORDER_STATUS_STYLES: Record<
   },
 };
 
+// Fulfillment-aware lookup. Same colours as ORDER_STATUS_STYLES, but the
+// SHIPPED label reads as "Pickup arranging" on PICKUP orders since
+// nothing's actually in transit — seller's confirmed and buyer is on
+// their way to collect. Use this whenever the call site has the order's
+// fulfillment method to hand; falls back to ORDER_STATUS_STYLES otherwise.
+export function getOrderStatusStyle(input: {
+  status: OrderStatus;
+  fulfillmentMethod: OrderFulfillmentMethod;
+}): { label: string; bg: string } {
+  const base = ORDER_STATUS_STYLES[input.status];
+  if (input.status === 'SHIPPED' && input.fulfillmentMethod === 'PICKUP') {
+    return { ...base, label: 'Pickup arranging' };
+  }
+  return base;
+}
+
 export const PAYMENT_METHOD_LABELS: Record<PaymentMethod, string> = {
   CASH: 'Cash',
   BANK_TRANSFER: 'Bank transfer',

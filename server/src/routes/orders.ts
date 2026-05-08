@@ -1153,7 +1153,13 @@ router.post(
 
       const existing = await prisma.order.findUnique({
         where: { id },
-        select: { id: true, sellerId: true, status: true, listingId: true },
+        select: {
+          id: true,
+          sellerId: true,
+          status: true,
+          listingId: true,
+          fulfillmentMethod: true,
+        },
       });
 
       if (!existing) {
@@ -1171,12 +1177,16 @@ router.post(
         return;
       }
 
+      // PICKUP orders never carry a tracking number — defensive null even if
+      // the client wedges one in, so the DB stays clean.
+      const persistedTracking =
+        existing.fulfillmentMethod === 'PICKUP' ? null : trackingNumber ?? null;
       const { count } = await prisma.order.updateMany({
         where: { id, status: 'PAID', sellerId: req.userId },
         data: {
           status: 'SHIPPED',
           shippedAt: new Date(),
-          trackingNumber: trackingNumber ?? null,
+          trackingNumber: persistedTracking,
         },
       });
       if (count === 0) {
@@ -1191,13 +1201,21 @@ router.post(
         select: ORDER_SUMMARY_SELECT,
       });
       if (updated) {
+        // PICKUP and POST share the same status transition (PAID → SHIPPED),
+        // but the buyer-facing copy needs to differ — nothing's "in transit"
+        // when the buyer is collecting in person. Tracking number is post-only.
+        const isPickup = updated.fulfillmentMethod === 'PICKUP';
+        const title = isPickup ? 'Pickup confirmed' : 'Item shipped';
+        const body = isPickup
+          ? `${updated.seller.username} confirmed pickup for "${updated.listing.title}". Coordinate the time and address in the order's message thread.`
+          : trackingNumber
+            ? `${updated.seller.username} shipped "${updated.listing.title}" — tracking: ${trackingNumber}`
+            : `${updated.seller.username} marked "${updated.listing.title}" as shipped.`;
         void createNotification({
           recipientId: updated.buyer.id,
           type: 'ORDER_SHIPPED',
-          title: 'Item shipped',
-          body: trackingNumber
-            ? `${updated.seller.username} shipped "${updated.listing.title}" — tracking: ${trackingNumber}`
-            : `${updated.seller.username} marked "${updated.listing.title}" as shipped.`,
+          title,
+          body,
           actorId: updated.seller.id,
           orderId: updated.id,
           listingId: updated.listing.id,

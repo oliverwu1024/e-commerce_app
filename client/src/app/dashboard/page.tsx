@@ -23,7 +23,7 @@ import {
 import {
   type Order,
   type OrderListResponse,
-  ORDER_STATUS_STYLES,
+  getOrderStatusStyle,
 } from '@/types/orders';
 
 type StatusCounts = Record<ListingStatus, number>;
@@ -1698,7 +1698,7 @@ function AwaitingPaymentItemRow({
   const [cancelling, setCancelling] = useState(false);
   const [error, setError] = useState('');
   const imageUrl = order.listing.images[0]?.url;
-  const status = ORDER_STATUS_STYLES[order.status];
+  const status = getOrderStatusStyle(order);
   // Server's /cancel refuses while a payment session is in flight; mirror
   // that here so the button shows disabled instead of throwing a 409 toast.
   const cancelDisabled =

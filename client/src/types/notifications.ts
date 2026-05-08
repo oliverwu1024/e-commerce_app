@@ -1,4 +1,4 @@
-import type { OrderStatus } from './orders';
+import type { OrderFulfillmentMethod, OrderStatus } from './orders';
 
 export type NotificationType =
   | 'ORDER_PLACED'
@@ -54,6 +54,7 @@ export type InboxThread = {
   };
   counterparty: { id: string; username: string; avatarUrl: string | null };
   orderStatus: OrderStatus;
+  fulfillmentMethod: OrderFulfillmentMethod;
   amount: string;
   lastMessage: {
     id: string;
