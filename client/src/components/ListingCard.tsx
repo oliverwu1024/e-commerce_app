@@ -13,9 +13,10 @@ import AddToCartButton from '@/components/AddToCartButton';
 
 type Props = {
   listing: ListingSummary;
+  imageFit?: 'cover' | 'contain';
 };
 
-export default function ListingCard({ listing }: Props) {
+export default function ListingCard({ listing, imageFit = 'cover' }: Props) {
   const imageUrl = listing.images[0]?.url;
   const condition = getConditionStyle(listing.condition);
   const [imageFailed, setImageFailed] = useState(false);
@@ -33,7 +34,7 @@ export default function ListingCard({ listing }: Props) {
             alt={listing.title}
             loading="lazy"
             onError={() => setImageFailed(true)}
-            className="h-full w-full object-cover opacity-95 transition-all duration-300 group-hover:scale-[1.03] group-hover:opacity-100"
+            className={`h-full w-full ${imageFit === 'contain' ? 'object-contain' : 'object-cover'} opacity-95 transition-all duration-300 group-hover:scale-[1.03] group-hover:opacity-100`}
           />
         ) : (
           <div className="flex h-full items-center justify-center text-[var(--text-dim)]">

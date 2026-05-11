@@ -189,7 +189,7 @@ export default function Home() {
             {loading
               ? Array.from({ length: 8 }, (_, i) => <ListingCardSkeleton key={i} />)
               : recent.map((listing) => (
-                  <ListingCard key={listing.id} listing={listing} />
+                  <ListingCard key={listing.id} listing={listing} imageFit="contain" />
                 ))}
           </div>
 
@@ -237,7 +237,7 @@ function TrendingMiniGrid({
       setActiveIndex((i) => (i + 1) % items.length);
     }, 4500);
     return () => clearInterval(timer);
-  }, [isPaused, items.length]);
+  }, [isPaused, items.length, activeIndex]);
 
   const safeIndex = items.length > 0 ? activeIndex % items.length : 0;
 
@@ -276,7 +276,7 @@ function TrendingMiniGrid({
                   <img
                     src={item.images[0].url}
                     alt={item.title}
-                    className="h-full w-full object-cover"
+                    className="h-full w-full object-contain"
                   />
                 ) : (
                   <div className="flex h-full items-center justify-center bg-[var(--bg-panel-hi)]">
@@ -317,7 +317,7 @@ function TrendingMiniGrid({
 
             {/* Progress pills */}
             {items.length > 1 && (
-              <div className="absolute bottom-3 left-0 right-0 z-10 flex justify-center gap-1.5">
+              <div className="absolute bottom-1 left-0 right-0 z-20 flex justify-center gap-1">
                 {items.map((_, i) => (
                   <button
                     key={i}
@@ -328,12 +328,16 @@ function TrendingMiniGrid({
                       setActiveIndex(i);
                     }}
                     aria-label={`Show trending item ${i + 1}`}
-                    className={`h-1 rounded-full transition-all duration-300 ${
-                      i === safeIndex
-                        ? 'w-8 bg-[var(--neon-cyan)] shadow-[0_0_8px_color-mix(in_oklab,var(--neon-cyan)_70%,transparent)]'
-                        : 'w-2.5 bg-white/55 hover:bg-white/85'
-                    }`}
-                  />
+                    className="group/pill flex h-7 items-center justify-center px-1.5"
+                  >
+                    <span
+                      className={`block h-1 rounded-full transition-all duration-300 ${
+                        i === safeIndex
+                          ? 'w-8 bg-[var(--neon-cyan)] shadow-[0_0_8px_color-mix(in_oklab,var(--neon-cyan)_70%,transparent)]'
+                          : 'w-2.5 bg-white/55 group-hover/pill:bg-white/85'
+                      }`}
+                    />
+                  </button>
                 ))}
               </div>
             )}
@@ -651,7 +655,7 @@ function DealsStrip({
                 <img
                   src={listing.images[0].url}
                   alt={listing.title}
-                  className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-[1.04]"
+                  className="h-full w-full object-contain transition-transform duration-300 group-hover:scale-[1.04]"
                 />
               ) : (
                 <div className="flex h-full items-center justify-center text-[var(--text-dim)]">
@@ -764,7 +768,7 @@ function SquareFeaturedCard({ item }: { item: SquareFeaturedItemView }) {
           <img
             src={item.imageUrl}
             alt={item.name}
-            className="h-full w-full object-cover"
+            className="h-full w-full object-contain"
             loading="lazy"
           />
         ) : (
