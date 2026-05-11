@@ -309,7 +309,7 @@ function TrendingMiniGrid({
                 {/* Dark bottom gradient for legibility */}
                 <div
                   aria-hidden="true"
-                  className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[rgba(0,0,0,0.55)] via-[rgba(0,0,0,0.08)] to-transparent"
+                  className="pointer-events-none absolute inset-x-0 bottom-0 h-2/5 bg-gradient-to-t from-[rgba(0,0,0,0.82)] to-transparent"
                 />
 
                 {/* Rank badge */}
@@ -322,7 +322,7 @@ function TrendingMiniGrid({
                   <h3 className="line-clamp-2 text-base font-bold leading-tight drop-shadow-[0_1px_2px_rgba(0,0,0,0.6)]">
                     {item.title}
                   </h3>
-                  <p className="mt-1 text-2xl font-extrabold text-[var(--accent-soft)] drop-shadow-[0_1px_3px_rgba(0,0,0,0.6)]">
+                  <p className="mt-1 text-2xl font-extrabold text-[var(--accent-soft)] drop-shadow-[0_2px_5px_rgba(0,0,0,0.95)]">
                     {formatPrice(item.price)}
                   </p>
                   {item.seller.location && (
