@@ -177,7 +177,7 @@ export const listingQuerySchema = paginationSchema.extend({
   maxPrice: z.coerce.number().min(0, 'Max price must be non-negative').optional(),
   search: z.string().max(200).optional(),
   sellerId: uuidSchema.optional(),
-  sort: z.enum(['newest', 'price_asc', 'price_desc']).optional().default('newest'),
+  sort: z.enum(['newest', 'oldest', 'price_asc', 'price_desc', 'title_asc', 'title_desc']).optional().default('newest'),
 }).refine(
   (data) => data.minPrice == null || data.maxPrice == null || data.minPrice <= data.maxPrice,
   { message: 'Min price must be less than or equal to max price', path: ['minPrice'] },

@@ -42,7 +42,7 @@ function BrowseContent() {
 
   const activeCategory = searchParams.get('category') || '';
   const activeCondition = searchParams.get('condition') || '';
-  const activeSort = searchParams.get('sort') || 'newest';
+  const activeSort = searchParams.get('sort') || 'title_asc';
   const activeSearch = searchParams.get('search') || '';
   const activeMinPrice = searchParams.get('minPrice') || '';
   const activeMaxPrice = searchParams.get('maxPrice') || '';
@@ -247,7 +247,10 @@ function BrowseContent() {
               aria-label="Sort listings"
               className="input-cyber px-3 py-2.5 text-sm"
             >
+              <option value="title_asc">A to Z</option>
+              <option value="title_desc">Z to A</option>
               <option value="newest">Newest first</option>
+              <option value="oldest">Oldest first</option>
               <option value="price_asc">Price: low to high</option>
               <option value="price_desc">Price: high to low</option>
             </select>

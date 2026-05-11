@@ -88,6 +88,15 @@ router.get('/', browseLimiter, async (req: Request, res: Response) => {
       case 'price_desc':
         orderBy = { price: 'desc' };
         break;
+      case 'oldest':
+        orderBy = { createdAt: 'asc' };
+        break;
+      case 'title_asc':
+        orderBy = { title: 'asc' };
+        break;
+      case 'title_desc':
+        orderBy = { title: 'desc' };
+        break;
       default:
         orderBy = { createdAt: 'desc' };
     }
