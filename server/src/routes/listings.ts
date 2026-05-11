@@ -254,6 +254,154 @@ router.get('/', browseLimiter, async (req: Request, res: Response) => {
   }
 });
 
+// GET /api/listings/home — Homepage bundle with three differently-ranked
+// sections, served in a single round trip:
+//   - trending: 4 items, scored by engagement in the last 7 days
+//     (saves × 1 + cart-adds × 2 + orders × 3). Falls back to newest when
+//     not enough engaged listings exist (typical on a quiet day).
+//   - featured: up to 24 items, category-diversified (newest few per
+//     category, round-robin interleaved). The client shuffles & slices.
+//   - recent: 8 newest ACTIVE listings.
+// Cached briefly so reloads in the same minute don't re-hit the DB.
+const HOME_CATEGORIES = [
+  'Phones', 'Laptops', 'Desktops', 'Tablets', 'Consoles',
+  'Cameras', 'Audio', 'Computer Accessories', 'Mobile Accessories', 'PC Parts',
+] as const;
+
+const HOME_LISTING_SELECT = {
+  id: true,
+  title: true,
+  price: true,
+  fulfillmentMethod: true,
+  shippingPrice: true,
+  category: true,
+  brand: true,
+  condition: true,
+  status: true,
+  createdAt: true,
+  seller: {
+    select: {
+      id: true,
+      username: true,
+      avatarUrl: true,
+      ...PUBLIC_LOCATION_SELECT,
+    },
+  },
+  images: {
+    orderBy: { displayOrder: 'asc' },
+    take: 1,
+    select: { id: true, url: true },
+  },
+} satisfies Prisma.ListingSelect;
+
+router.get('/home', browseLimiter, async (_req: Request, res: Response) => {
+  try {
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+
+    const [trendingCandidates, categoryPools, newestPool] = await Promise.all([
+      // Trending candidates: active listings with any engagement in 7d, plus
+      // engagement counts for scoring. Cap at 30 to bound work.
+      prisma.listing.findMany({
+        where: {
+          status: 'ACTIVE',
+          OR: [
+            { savedByUsers: { some: { createdAt: { gte: sevenDaysAgo } } } },
+            { cartItems: { some: { createdAt: { gte: sevenDaysAgo } } } },
+            { orders: { some: { createdAt: { gte: sevenDaysAgo } } } },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 30,
+        select: {
+          ...HOME_LISTING_SELECT,
+          _count: {
+            select: {
+              savedByUsers: { where: { createdAt: { gte: sevenDaysAgo } } },
+              cartItems: { where: { createdAt: { gte: sevenDaysAgo } } },
+              orders: { where: { createdAt: { gte: sevenDaysAgo } } },
+            },
+          },
+        },
+      }),
+      // One query per category, taking the 3 newest active in each. Cheap with
+      // the (status, category) index. We interleave below for diversity.
+      Promise.all(
+        HOME_CATEGORIES.map((cat) =>
+          prisma.listing.findMany({
+            where: { status: 'ACTIVE', category: cat },
+            orderBy: { createdAt: 'desc' },
+            take: 3,
+            select: HOME_LISTING_SELECT,
+          }),
+        ),
+      ),
+      // Newest 12: serves `recent` (first 8) and tops up `trending` when the
+      // engagement pool is sparse.
+      prisma.listing.findMany({
+        where: { status: 'ACTIVE' },
+        orderBy: { createdAt: 'desc' },
+        take: 12,
+        select: HOME_LISTING_SELECT,
+      }),
+    ]);
+
+    // Score and rank trending.
+    const scored = trendingCandidates
+      .map((l) => {
+        const c = l._count;
+        const score = c.savedByUsers + c.cartItems * 2 + c.orders * 3;
+        // Strip _count from the row before returning.
+        const { _count: _omit, ...row } = l;
+        return { row, score };
+      })
+      .sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return b.row.createdAt.getTime() - a.row.createdAt.getTime();
+      });
+
+    const trending = scored.slice(0, 4).map((s) => s.row);
+    if (trending.length < 4) {
+      const have = new Set(trending.map((l) => l.id));
+      for (const l of newestPool) {
+        if (trending.length >= 4) break;
+        if (!have.has(l.id)) {
+          trending.push(l);
+          have.add(l.id);
+        }
+      }
+    }
+
+    // Featured pool: round-robin interleave so we don't return e.g. 3 Phones
+    // then 3 Laptops. The client shuffles further before display.
+    const featured: typeof newestPool = [];
+    for (let i = 0; i < 3; i++) {
+      for (const pool of categoryPools) {
+        if (pool[i]) featured.push(pool[i]);
+        if (featured.length >= 24) break;
+      }
+      if (featured.length >= 24) break;
+    }
+
+    const recent = newestPool.slice(0, 8);
+
+    const project = (l: typeof newestPool[number]) => ({
+      ...l,
+      seller: projectPublicSeller(l.seller),
+    });
+
+    // Cacheable for ~60s — downstream CDNs and the browser may dedupe reloads.
+    res.setHeader('Cache-Control', 'public, max-age=60, s-maxage=60');
+    res.json({
+      trending: trending.map(project),
+      featured: featured.map(project),
+      recent: recent.map(project),
+    });
+  } catch (err) {
+    logger.error('listings.home.failed', { err: String(err) });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
 // GET /api/listings/my — Current user's listings (all statuses by default).
 // `?status=ACTIVE|HIDDEN|ON_HOLD|SOLD|REMOVED` filters to one status.
 // Comma-separated forms are accepted too — the dashboard's "Active Listings"

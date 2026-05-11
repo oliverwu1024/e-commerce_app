@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, FormEvent } from 'react';
+import { useState, useEffect, useMemo, FormEvent } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { api } from '@/lib/api';
@@ -9,23 +9,39 @@ import ListingCardSkeleton from '@/components/ListingCardSkeleton';
 import CategoryIcon from '@/components/CategoryIcon';
 import {
   type ListingSummary,
-  type ListingsResponse,
   formatPrice,
 } from '@/types/listings';
+
+type HomeBundle = {
+  trending: ListingSummary[];
+  featured: ListingSummary[];
+  recent: ListingSummary[];
+};
+
+// Fisher-Yates shuffle — used to randomise the "More to explore" pool each
+// load so the same visitor sees a different mix on reload.
+function shuffle<T>(arr: T[]): T[] {
+  const out = arr.slice();
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j], out[i]];
+  }
+  return out;
+}
 
 export default function Home() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
-  const [allListings, setAllListings] = useState<ListingSummary[]>([]);
+  const [bundle, setBundle] = useState<HomeBundle | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     async function fetchData() {
       try {
-        const data = await api<ListingsResponse>('/api/listings?limit=40&sort=newest');
+        const data = await api<HomeBundle>('/api/listings/home');
         if (!cancelled) {
-          setAllListings(data.listings);
+          setBundle(data);
         }
       } catch {
         // Listings may not be available yet — empty states handle it.
@@ -37,9 +53,14 @@ export default function Home() {
     return () => { cancelled = true; };
   }, []);
 
-  const trending = allListings.slice(0, 4);
-  const featured = allListings.slice(4, 12);
-  const recent = allListings.length > 12 ? allListings.slice(12, 20) : allListings.slice(0, 8);
+  const trending = bundle?.trending ?? [];
+  // Shuffle once per mount — visitors who reload get a different mix.
+  const featured = useMemo(
+    () => (bundle ? shuffle(bundle.featured).slice(0, 8) : []),
+    [bundle],
+  );
+  const recent = bundle?.recent ?? [];
+  const isEmpty = !loading && !bundle?.recent.length;
 
   function handleSearch(e: FormEvent) {
     e.preventDefault();
@@ -191,7 +212,7 @@ export default function Home() {
                 ))}
           </div>
 
-          {!loading && allListings.length === 0 && (
+          {isEmpty && (
             <div className="panel clip-corner mt-4 py-16 text-center">
               <p className="text-[var(--text-muted)]">
                 No listings yet. Be the first to post!
