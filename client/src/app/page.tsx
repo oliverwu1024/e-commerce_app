@@ -17,7 +17,6 @@ export default function Home() {
   const router = useRouter();
   const [searchQuery, setSearchQuery] = useState('');
   const [allListings, setAllListings] = useState<ListingSummary[]>([]);
-  const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -27,7 +26,6 @@ export default function Home() {
         const data = await api<ListingsResponse>('/api/listings?limit=40&sort=newest');
         if (!cancelled) {
           setAllListings(data.listings);
-          setTotalCount(data.pagination.total);
         }
       } catch {
         // Listings may not be available yet — empty states handle it.
@@ -114,7 +112,7 @@ export default function Home() {
           </div>
 
           {/* Trust strip */}
-          <TrustStrip totalCount={totalCount} />
+          <TrustStrip />
         </div>
       </section>
 
@@ -385,16 +383,11 @@ function TrendingMiniGrid({
 /* ================================================================
    TRUST STRIP
    ================================================================ */
-function TrustStrip({ totalCount }: { totalCount: number }) {
-  const countLabel =
-    totalCount > 0
-      ? `${totalCount.toLocaleString()} listing${totalCount === 1 ? '' : 's'} · growing daily`
-      : 'Growing daily';
-
+function TrustStrip() {
   const items = [
     { key: 'verified', label: 'Verified sellers' },
     { key: 'australia', label: 'Australia-wide' },
-    { key: 'trending', label: countLabel },
+    { key: 'trending', label: 'Growing daily' },
   ];
 
   return (
