@@ -14,7 +14,7 @@ import {
   CONDITIONS,
 } from '@/types/listings';
 
-const ITEMS_PER_PAGE = 12;
+const ITEMS_PER_PAGE = 9;
 
 // ---------------------------------------------------------------------------
 // Pagination helper
