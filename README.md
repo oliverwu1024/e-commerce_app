@@ -1,6 +1,6 @@
 # ElectroMarket
 
-> A production peer-to-peer marketplace for buying and selling used electronics. Funds settle **directly** to each seller's own Stripe / Square / PayPal account — the platform never custodies money.
+> A production peer-to-peer marketplace for buying and selling used electronics. Funds settle **directly** to each seller's own Stripe or Square account — the platform never custodies money.
 
 **Live at [electromarket-app.com](https://electromarket-app.com)**
 
@@ -44,7 +44,7 @@ ElectroMarket is a full-stack marketplace where individuals and small businesses
 
 ### For sellers
 - Multi-image + video listings with reorderable galleries
-- Connect Stripe, Square, or PayPal — funds land in your account directly
+- Connect Stripe or Square — funds land in your account directly
 - Stripe Identity verification for higher trust tier
 - Two-way Square Catalog sync (edits in either system propagate)
 - Earnings dashboard with provider-fee breakdown
@@ -67,7 +67,7 @@ Every Listing mutation writes a `SquareSyncOutbox` row in the **same Postgres tr
 `SquareCatalogLink.version` mirrors Square's catalog version. Outbound writes include the version; on `OPTIMISTIC_LOCKING_FAILURE` we drop it and let the next sync re-fetch. Inbound webhooks (`catalog.version.updated`) only apply when the remote version is strictly greater. Net behaviour: last writer wins, with a one-side bias toward the marketplace.
 
 ### Encryption-at-rest for OAuth tokens
-Square + PayPal access/refresh tokens are encrypted with **AES-256-GCM** (12-byte IV, 16-byte auth tag) before hitting Postgres. Key lives in `PAYMENT_TOKEN_ENCRYPTION_KEY`. Backups, accidental dumps, and read-only DB access don't leak seller credentials.
+Square access/refresh tokens are encrypted with **AES-256-GCM** (12-byte IV, 16-byte auth tag) before hitting Postgres. Key lives in `PAYMENT_TOKEN_ENCRYPTION_KEY`. Backups, accidental dumps, and read-only DB access don't leak seller credentials.
 
 ### Defence-in-depth rate limiting
 Redis-backed `express-rate-limit` buckets with memory fallback. Per-user and per-IP. Notable rules: contact form ≥4/hr blocked, login ≥6/hr blocked, daily SMS budget cap, **per-phone cooldown across all accounts** (defeats account-spraying on a shared phone number).
@@ -79,7 +79,7 @@ SameSite=Lax JWT cookie + Origin-header allowlist on every state-changing reques
 Deleted users are anonymised (`deletedAt` set, PII cleared) but their orders, reviews, and messages remain so buyers/sellers on the other side keep their history. Removed listings stay readable so existing cart snapshots don't 404.
 
 ### Direct-settlement payments (no platform custody)
-Three providers behind one abstraction: **Stripe Connect Standard**, **Square OAuth**, **PayPal Partner**. Money goes directly from buyer → seller account; the platform never holds funds (regulatory + insolvency-risk win). Each provider's `/pay` endpoint returns 503 if not configured, so the marketplace stays online if a single provider is down.
+Two providers behind one abstraction: **Stripe Connect Standard** and **Square OAuth**. Money goes directly from buyer → seller account; the platform never holds funds (regulatory + insolvency-risk win). Each provider's `/pay` endpoint returns 503 if not configured, so the marketplace stays online if a single provider is down.
 
 ### Money as integers
 Newer columns (`Refund.amountCents`, `SquareFeaturedItem.priceCents`) use `Int` cents to dodge floating-point drift. Legacy `Decimal(10,2)` columns are being migrated.
@@ -99,7 +99,7 @@ Listings have a `STORED` generated `tsvector` column. Search runs through `$quer
 | ORM | Prisma 7 |
 | Database | PostgreSQL 16 |
 | Queue | BullMQ on Redis (catalog sync worker + reconciler) |
-| Payments | Stripe Connect Standard, Square OAuth, PayPal Partner |
+| Payments | Stripe Connect Standard, Square OAuth |
 | ID verification | Stripe Identity |
 | File storage | AWS S3 (presigned PUT/GET) |
 | Email | Resend (transactional + inbound via Cloudflare Worker) |
@@ -166,7 +166,7 @@ e-commerce_app/
 │   │   ├── schema.prisma            # 32 models incl. Square subsystem
 │   │   └── migrations/
 │   └── src/
-│       ├── config/                  # S3, Stripe, Square, PayPal, email
+│       ├── config/                  # S3, Stripe, Square, email
 │       ├── lib/                     # prisma singleton, crypto, password
 │       ├── middleware/              # auth, csrf, rate limiter, request log
 │       ├── queue/                   # BullMQ + ioredis singleton
@@ -241,7 +241,7 @@ Full list lives in `docker-compose.yml`. Minimum required:
 | `REDIS_URL` | Required for catalog sync; if absent, sync silently disables |
 | `PAYMENT_TOKEN_ENCRYPTION_KEY` | 32-byte hex; encrypts seller OAuth tokens |
 | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` / `AWS_S3_BUCKET` / `AWS_REGION` | S3 image + video storage |
-| `STRIPE_SECRET_KEY`, `SQUARE_APPLICATION_ID`, `PAYPAL_CLIENT_ID`, … | Per-provider payment keys (any subset is fine — missing providers return 503) |
+| `STRIPE_SECRET_KEY`, `SQUARE_APPLICATION_ID`, … | Per-provider payment keys (any subset is fine — missing providers return 503) |
 | `FIREBASE_SERVICE_ACCOUNT` | Base64 JSON for Firebase Admin (verifies client phone-OTP tokens) |
 | `ADMIN_PASSWORD_HASH` | bcrypt hash for the seeded admin user (seed.ts only) |
 
